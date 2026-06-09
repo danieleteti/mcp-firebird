@@ -34,3 +34,6 @@ __pycache__/
 
 # Firebird zip-kits (local install, not versioned)
 fb_versions/
+
+# Generated seed database (built locally by tests/seed/make_seed.ps1)
+tests/seed/*.FDB
