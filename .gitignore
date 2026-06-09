@@ -1,0 +1,33 @@
+# Delphi build artifacts
+__history/
+__recovery/
+*.local
+*.identcache
+*.projdata
+*.tvsconfig
+*.dcu
+*.~*~
+*.rsm
+*.map
+*.drc
+*.o
+*.a
+*.so
+*.dproj.local
+
+# Binaries / output
+bin/*.exe
+bin/*.dll
+*.exe
+
+# Secrets / local config
+**/.env
+!**/.env.example
+
+# Logs
+logs/
+*.log
+
+# Python test cache
+__pycache__/
+.pytest_cache/
