@@ -13,12 +13,15 @@ uses
   Firebird.Advisory in '..\..\sources\Firebird.Advisory.pas',
   Firebird.DocGen in '..\..\sources\Firebird.DocGen.pas',
   Firebird.PlanAnalyzer in '..\..\sources\Firebird.PlanAnalyzer.pas',
+  Firebird.IndexAdvisor in '..\..\sources\Firebird.IndexAdvisor.pas',
   Test.Firebird.Connection in 'Test.Firebird.Connection.pas',
   Test.Firebird.Capabilities in 'Test.Firebird.Capabilities.pas',
   Test.Firebird.Introspection in 'Test.Firebird.Introspection.pas',
   Test.Firebird.Indexes in 'Test.Firebird.Indexes.pas',
   Test.Firebird.DocGen in 'Test.Firebird.DocGen.pas',
-  Test.Firebird.PlanAnalyzer in 'Test.Firebird.PlanAnalyzer.pas';
+  Test.Firebird.PlanAnalyzer in 'Test.Firebird.PlanAnalyzer.pas',
+  Test.Firebird.IndexAdvisor in 'Test.Firebird.IndexAdvisor.pas',
+  Test.Firebird.IndexDrops in 'Test.Firebird.IndexDrops.pas';
 var
   LRunner: ITestRunner;
   LResults: IRunResults;
@@ -29,6 +32,8 @@ begin
   TDUnitX.RegisterTestFixture(Test.Firebird.Indexes.TIndexIntrospectionTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.DocGen.TDocGenTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.PlanAnalyzer.TPlanAnalyzerTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.IndexAdvisor.TIndexAdvisorTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.IndexDrops.TIndexDropTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));
   LRunner.AddLogger(TDUnitXXMLNUnitFileLogger.Create(
