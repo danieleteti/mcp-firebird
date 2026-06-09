@@ -80,11 +80,13 @@
         <DCCReference Include="..\..\sources\Firebird.Introspection.pas"/>
         <DCCReference Include="..\..\sources\Firebird.Advisory.pas"/>
         <DCCReference Include="..\..\sources\Firebird.DocGen.pas"/>
+        <DCCReference Include="..\..\sources\Firebird.PlanAnalyzer.pas"/>
         <DCCReference Include="Test.Firebird.Connection.pas"/>
         <DCCReference Include="Test.Firebird.Capabilities.pas"/>
         <DCCReference Include="Test.Firebird.Introspection.pas"/>
         <DCCReference Include="Test.Firebird.Indexes.pas"/>
         <DCCReference Include="Test.Firebird.DocGen.pas"/>
+        <DCCReference Include="Test.Firebird.PlanAnalyzer.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
