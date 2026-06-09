@@ -18,6 +18,8 @@ type
     function FbSuggestIndexes([MCPParam('The SQL query to optimize')] const sql: string): TMCPToolResult;
     [MCPTool('fb_suggest_index_drops', 'Suggests droppable indexes for a table (duplicate/redundant/inactive/low-selectivity)')]
     function FbSuggestIndexDrops([MCPParam('Table name')] const table_name: string): TMCPToolResult;
+    [MCPTool('fb_audit_table', 'Schema-health audit of a table: missing PK, over-indexing, stale statistics')]
+    function FbAuditTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
     [MCPTool('fb_evaluate_goal', 'Deterministically measures an optimization goal and returns whether it is met')]
     function FbEvaluateGoal(
       [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes')] const goal_type: string;
@@ -29,7 +31,7 @@ uses
   System.SysUtils, System.Classes, JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
-  Firebird.Goal, FirebirdConfigU, MVCFramework.MCP.Server;
+  Firebird.SchemaAudit, Firebird.Goal, FirebirdConfigU, MVCFramework.MCP.Server;
 
 function AdvisoriesToText(const Advs: TArray<TAdvisory>; const AEmptyMsg: string): string;
 var SB: TStringBuilder; X: TAdvisory;
@@ -139,6 +141,18 @@ begin
   try
     A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
     try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestDropsForTable(table_name.ToUpper), 'No droppable indexes found on ' + table_name + '.'));
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+function TFirebirdTools.FbAuditTable(const table_name: string): TMCPToolResult;
+var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
+begin
+  Conn := NewConfiguredConnection;
+  try
+    A := TFirebirdSchemaAudit.Create(Conn);
+    try Result := TMCPToolResult.Text(AdvisoriesToText(A.AuditTable(table_name.ToUpper),
+      'No schema-health issues found on ' + table_name + '.'));
     finally A.Free; end;
   finally Conn.Free; end;
 end;

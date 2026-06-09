@@ -83,6 +83,7 @@
         <DCCReference Include="..\..\sources\Firebird.PlanAnalyzer.pas"/>
         <DCCReference Include="..\..\sources\Firebird.IndexAdvisor.pas"/>
         <DCCReference Include="..\..\sources\Firebird.Goal.pas"/>
+        <DCCReference Include="..\..\sources\Firebird.SchemaAudit.pas"/>
         <DCCReference Include="Test.Firebird.Connection.pas"/>
         <DCCReference Include="Test.Firebird.Capabilities.pas"/>
         <DCCReference Include="Test.Firebird.Introspection.pas"/>
@@ -92,6 +93,7 @@
         <DCCReference Include="Test.Firebird.IndexAdvisor.pas"/>
         <DCCReference Include="Test.Firebird.IndexDrops.pas"/>
         <DCCReference Include="Test.Firebird.Goal.pas"/>
+        <DCCReference Include="Test.Firebird.SchemaAudit.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

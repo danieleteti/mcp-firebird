@@ -15,6 +15,7 @@ uses
   Firebird.PlanAnalyzer in '..\..\sources\Firebird.PlanAnalyzer.pas',
   Firebird.IndexAdvisor in '..\..\sources\Firebird.IndexAdvisor.pas',
   Firebird.Goal in '..\..\sources\Firebird.Goal.pas',
+  Firebird.SchemaAudit in '..\..\sources\Firebird.SchemaAudit.pas',
   Test.Firebird.Connection in 'Test.Firebird.Connection.pas',
   Test.Firebird.Capabilities in 'Test.Firebird.Capabilities.pas',
   Test.Firebird.Introspection in 'Test.Firebird.Introspection.pas',
@@ -23,7 +24,8 @@ uses
   Test.Firebird.PlanAnalyzer in 'Test.Firebird.PlanAnalyzer.pas',
   Test.Firebird.IndexAdvisor in 'Test.Firebird.IndexAdvisor.pas',
   Test.Firebird.IndexDrops in 'Test.Firebird.IndexDrops.pas',
-  Test.Firebird.Goal in 'Test.Firebird.Goal.pas';
+  Test.Firebird.Goal in 'Test.Firebird.Goal.pas',
+  Test.Firebird.SchemaAudit in 'Test.Firebird.SchemaAudit.pas';
 var
   LRunner: ITestRunner;
   LResults: IRunResults;
@@ -37,6 +39,7 @@ begin
   TDUnitX.RegisterTestFixture(Test.Firebird.IndexAdvisor.TIndexAdvisorTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.IndexDrops.TIndexDropTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.Goal.TGoalTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.SchemaAudit.TSchemaAuditTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));
   LRunner.AddLogger(TDUnitXXMLNUnitFileLogger.Create(
