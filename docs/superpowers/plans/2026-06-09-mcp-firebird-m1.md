@@ -2542,9 +2542,384 @@ git commit -m "docs: project README with quick start, tools, and test command"
 
 ---
 
+## Task 21: Schema-audit detectors + known-problem fixtures (TDD)
+
+> Adds four high-value, cheap detectors for the most common Firebird problems and the fixtures that prove them: **missing PRIMARY KEY**, **stale statistics**, **over-indexing**, and **external SORT** in a plan.
+
+**Files:**
+- Create: `tests/seed/problems.sql`
+- Modify: `tests/seed/make_seed.ps1` (also load `problems.sql`)
+- Create: `sources/Firebird.SchemaAudit.pas`
+- Modify: `sources/Firebird.PlanAnalyzer.pas` (add `HasExternalSort`)
+- Modify: `providers/FirebirdToolsU.pas` (surface external sort in `fb_analyze_query`; add `fb_audit_table` tool)
+- Create: `tests/coreproject/Test.Firebird.SchemaAudit.pas`
+
+- [ ] **Step 1: Add the problem fixtures** — `tests/seed/problems.sql` (cross-version, appended to the seed DB)
+
+```sql
+SET SQL DIALECT 3;
+/* (6) Table with NO primary key */
+CREATE TABLE NOPK_LOG (
+  LOG_TS    TIMESTAMP,
+  MESSAGE   VARCHAR(200)
+);
+
+/* (8) Over-indexed write-heavy table: 6 single-column indexes */
+CREATE TABLE OVERIDX (
+  ID    INTEGER NOT NULL PRIMARY KEY,
+  A INTEGER, B INTEGER, C INTEGER, D INTEGER, E INTEGER, F INTEGER
+);
+CREATE INDEX IDX_OVERIDX_A ON OVERIDX (A);
+CREATE INDEX IDX_OVERIDX_B ON OVERIDX (B);
+CREATE INDEX IDX_OVERIDX_C ON OVERIDX (C);
+CREATE INDEX IDX_OVERIDX_D ON OVERIDX (D);
+CREATE INDEX IDX_OVERIDX_E ON OVERIDX (E);
+CREATE INDEX IDX_OVERIDX_F ON OVERIDX (F);
+
+/* (7) Stale statistics: index created on the EMPTY table, rows inserted afterwards,
+       statistics never refreshed -> stored selectivity is wrong. */
+CREATE TABLE STALE_T (
+  ID   INTEGER NOT NULL PRIMARY KEY,
+  CODE INTEGER
+);
+CREATE INDEX IDX_STALE_CODE ON STALE_T (CODE);   /* computed on 0 rows */
+COMMIT;
+
+SET TERM ^ ;
+EXECUTE BLOCK AS DECLARE I INTEGER = 0; BEGIN
+  WHILE (I < 4000) DO BEGIN
+    INSERT INTO STALE_T (ID, CODE) VALUES (:I, :I);   /* now highly selective, but stats say otherwise */
+    INSERT INTO OVERIDX (ID, A, B, C, D, E, F) VALUES (:I, MOD(:I,2), MOD(:I,3), :I, :I, :I, :I);
+    I = I + 1;
+  END
+END^
+SET TERM ; ^
+COMMIT;
+```
+
+- [ ] **Step 2: Make the seed loader also run `problems.sql`** — in `tests/seed/make_seed.ps1`, after the `INPUT '$seed';` line, add a second input. Replace the here-string block with:
+
+```powershell
+$problems = Join-Path $PSScriptRoot 'seed\problems.sql'
+@"
+CREATE DATABASE '$db' USER 'SYSDBA' PASSWORD 'masterkey' DEFAULT CHARACTER SET UTF8;
+INPUT '$seed';
+INPUT '$problems';
+"@ | & $isql -q
+```
+
+- [ ] **Step 3: Write the failing tests**
+
+`tests/coreproject/Test.Firebird.SchemaAudit.pas`:
+```pascal
+unit Test.Firebird.SchemaAudit;
+interface
+uses DUnitX.TestFramework;
+type
+  [TestFixture]
+  TSchemaAuditTests = class
+  public
+    [Test] procedure Flags_Table_Without_PrimaryKey;
+    [Test] procedure Flags_OverIndexed_Table;
+    [Test] procedure Flags_Stale_Statistics;
+    [Test] procedure Detects_External_Sort_In_Plan;
+  end;
+implementation
+uses System.SysUtils, Firebird.Connection, Firebird.Capabilities, Firebird.Advisory,
+  Firebird.SchemaAudit, Firebird.PlanAnalyzer, TestFixtureU;
+
+function Mentions(const Advs: TArray<TAdvisory>; const ANeedle: string): Boolean;
+var X: TAdvisory;
+begin
+  Result := False;
+  for X in Advs do
+    if X.Finding.ToUpper.Contains(ANeedle.ToUpper) or X.SQLText.ToUpper.Contains(ANeedle.ToUpper) then Exit(True);
+end;
+
+procedure TSchemaAuditTests.Flags_Table_Without_PrimaryKey;
+var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
+begin
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdSchemaAudit.Create(Conn);
+    try Assert.IsTrue(Mentions(A.AuditTable('NOPK_LOG'), 'PRIMARY KEY'), 'missing PK flagged');
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TSchemaAuditTests.Flags_OverIndexed_Table;
+var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
+begin
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdSchemaAudit.Create(Conn);
+    try Assert.IsTrue(Mentions(A.AuditTable('OVERIDX'), 'INDEX'), 'over-indexing flagged');
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TSchemaAuditTests.Flags_Stale_Statistics;
+var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
+begin
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdSchemaAudit.Create(Conn);
+    try Assert.IsTrue(Mentions(A.AuditTable('STALE_T'), 'STATISTICS'), 'stale stats flagged with SET STATISTICS fix');
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TSchemaAuditTests.Detects_External_Sort_In_Plan;
+var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult;
+begin
+  Conn := NewTestConnection;
+  try
+    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    try
+      R := PA.Analyze('SELECT * FROM CUSTOMERS ORDER BY CITY');  // CITY not actively indexed -> SORT
+      Assert.IsTrue(R.HasExternalSort, 'ORDER BY on non-indexed column -> external SORT in plan');
+    finally PA.Free; end;
+  finally Conn.Free; end;
+end;
+end.
+```
+Add the unit to the `.dpr` `uses`.
+
+- [ ] **Step 4: Run to verify it fails** — `Firebird.SchemaAudit` not found; `HasExternalSort` undefined.
+
+- [ ] **Step 5: Add `HasExternalSort` to `TPlanResult` and `Analyze`** (in `Firebird.PlanAnalyzer.pas`)
+
+In the record add the field:
+```pascal
+    HasNaturalScan, HasExternalSort: Boolean;
+```
+At the end of `Analyze`, before assigning `NaturalTables`, add:
+```pascal
+  Result.HasExternalSort := Result.RawPlan.ToUpper.Contains('SORT');
+```
+
+- [ ] **Step 6: Implement `Firebird.SchemaAudit`**
+
+`sources/Firebird.SchemaAudit.pas`:
+```pascal
+unit Firebird.SchemaAudit;
+interface
+uses Firebird.Connection, Firebird.Advisory;
+type
+  TFirebirdSchemaAudit = class
+  private
+    FConn: TFirebirdConnection;
+    function ActualSelectivity(const ATable, AColumn: string): Double;
+  public
+    constructor Create(AConn: TFirebirdConnection);
+    function AuditTable(const ATable: string): TArray<TAdvisory>;
+  end;
+implementation
+uses System.SysUtils, System.Generics.Collections, Firebird.Introspection;
+
+const OVER_INDEX_THRESHOLD = 5;   // user indexes beyond this = over-indexing (info)
+
+constructor TFirebirdSchemaAudit.Create(AConn: TFirebirdConnection);
+begin inherited Create; FConn := AConn; end;
+
+function TFirebirdSchemaAudit.ActualSelectivity(const ATable, AColumn: string): Double;
+var Distinct, Total: Int64;
+begin
+  Total    := StrToInt64Def(FConn.ScalarStr('SELECT COUNT(*) FROM ' + ATable), 0);
+  Distinct := StrToInt64Def(FConn.ScalarStr(Format('SELECT COUNT(DISTINCT %s) FROM %s', [AColumn, ATable])), 0);
+  if (Total = 0) or (Distinct = 0) then Exit(0);
+  Result := 1.0 / Distinct;   // Firebird selectivity convention: 1/distinct
+end;
+
+function TFirebirdSchemaAudit.AuditTable(const ATable: string): TArray<TAdvisory>;
+var Intro: TFirebirdIntrospection; PK: TArray<string>; Idx: TArray<TIndexInfo>;
+    UserIdx: Integer; X: TIndexInfo; Actual: Double; Advs: TList<TAdvisory>;
+begin
+  Advs := TList<TAdvisory>.Create;
+  Intro := TFirebirdIntrospection.Create(FConn);
+  try
+    // (6) Missing primary key
+    PK := Intro.GetPrimaryKey(ATable);
+    if Length(PK) = 0 then
+      Advs.Add(TAdvisory.Make(
+        Format('Table %s has no PRIMARY KEY. Rows cannot be addressed uniquely; replication, ' +
+               'updates and joins all suffer, and there is no clustering anchor.', [ATable]),
+        Format('ALTER TABLE %s ADD CONSTRAINT PK_%s PRIMARY KEY (/* choose a unique column */);', [ATable, ATable]),
+        'fb_describe_table should then list a PRIMARY KEY constraint.',
+        'critical'));
+
+    Idx := Intro.GetIndexes(ATable);
+
+    // (8) Over-indexing
+    UserIdx := 0;
+    for X in Idx do if not X.IsSystem then Inc(UserIdx);
+    if UserIdx > OVER_INDEX_THRESHOLD then
+      Advs.Add(TAdvisory.Make(
+        Format('Table %s carries %d user indexes. Every INSERT/UPDATE/DELETE must maintain all of ' +
+               'them; on a write-heavy table this is a major cost. Keep only indexes that queries use.', [ATable, UserIdx]),
+        Format('-- Review with fb_suggest_index_drops %s and drop the unused ones.', [ATable]),
+        'Re-run fb_audit_table after dropping; the count should fall.',
+        'warning'));
+
+    // (7) Stale statistics — stored selectivity far from the real one (single-column user indexes)
+    for X in Idx do
+      if (not X.IsSystem) and (Length(X.Columns) = 1) then
+      begin
+        Actual := ActualSelectivity(ATable, X.Columns[0]);
+        if (Actual > 0) and (Abs(X.Selectivity - Actual) > (Actual * 0.5)) then
+          Advs.Add(TAdvisory.Make(
+            Format('Index %s has stale statistics: stored selectivity %.6f vs actual %.6f. ' +
+                   'The optimizer may pick a bad plan from outdated numbers (common after bulk loads).',
+                   [X.IndexName, X.Selectivity, Actual]),
+            Format('SET STATISTICS INDEX %s;', [X.IndexName]),
+            'Re-run fb_audit_table; stored and actual selectivity should match.',
+            'warning'));
+      end;
+
+    Result := Advs.ToArray;
+  finally
+    Intro.Free; Advs.Free;
+  end;
+end;
+end.
+```
+
+- [ ] **Step 7: Surface the new signals in the MCP layer** (in `providers/FirebirdToolsU.pas`)
+
+In `FbAnalyzeQuery`, after the NATURAL-scan block, add:
+```pascal
+      if R.HasExternalSort then
+        SB.AppendLine('⚠️ **External SORT** in the plan: the result is sorted without a usable index ' +
+          '(ORDER BY / GROUP BY / DISTINCT). Consider an index on the sort columns.');
+```
+Add a new tool to the class declaration and implementation:
+```pascal
+    [MCPTool('fb_audit_table', 'Schema-health audit of a table: missing PK, over-indexing, stale statistics')]
+    function FbAuditTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
+```
+```pascal
+function TFirebirdTools.FbAuditTable(const table_name: string): TMCPToolResult;
+var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
+begin
+  Conn := NewConfiguredConnection;
+  try
+    A := TFirebirdSchemaAudit.Create(Conn);
+    try Result := TMCPToolResult.Text(AdvisoriesToText(A.AuditTable(table_name.ToUpper),
+      'No schema-health issues found on ' + table_name + '.'));
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+```
+Add `Firebird.SchemaAudit` to the implementation `uses`.
+
+- [ ] **Step 8: Run to verify it passes** — 4 audit tests pass. Re-run `tests/test_mcp_firebird_stdio.py` after rebuilding the app and add `fb_audit_table` to the expected-tools set in `test_tools_list_contains_fb_tools`.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add tests/seed/problems.sql tests/seed/make_seed.ps1 sources/Firebird.SchemaAudit.pas sources/Firebird.PlanAnalyzer.pas providers/FirebirdToolsU.pas tests/coreproject/Test.Firebird.SchemaAudit.pas tests/coreproject/MCPFirebirdCoreTests.dpr tests/test_mcp_firebird_stdio.py
+git commit -m "feat(core): schema-audit detectors (missing PK, stale stats, over-index, external sort) + fixtures (TDD)"
+```
+
+---
+
+## Task 22: Known-problem catalog + M2-pending fixtures (living backlog)
+
+> Documents the full common-problem catalog and ships fixtures for the three problems whose **detection is deferred to M2** (non-sargable predicate, implicit conversion, oversized index key). Their tests are written but marked `[Ignore]` so the suite records them as known-not-yet-covered — no silent gap, ready to un-ignore in M2.
+
+**Files:**
+- Create: `docs/firebird-problem-catalog.md`
+- Modify: `tests/seed/problems.sql` (add the three M2 fixtures)
+- Create: `tests/coreproject/Test.Firebird.PendingDetectors.pas`
+
+- [ ] **Step 1: Write the catalog doc** — `docs/firebird-problem-catalog.md`
+
+```markdown
+# Firebird common-problem catalog
+
+Each row is a known Firebird problem, the fixture that provokes it, the tool that
+detects it, and the milestone the detection lands in. Fixtures live in
+`tests/seed/seed.sql` and `tests/seed/problems.sql`.
+
+| # | Problem | Fixture object | Detected by | Milestone |
+|---|---|---|---|---|
+| 1 | NATURAL scan on filtered column | CUSTOMERS.CITY | fb_analyze_query | M1 |
+| 2 | Duplicate of system FK index | IDX_ORDERS_CUSTOMER_DUP | fb_suggest_index_drops | M1 |
+| 3 | Redundant left-prefix index | IDX_CUST_NAME | fb_suggest_index_drops | M1 |
+| 4 | Inactive index | IDX_CUST_CITY | fb_suggest_index_drops | M1 |
+| 5 | Low-selectivity index | IDX_CUST_STATUS | fb_suggest_index_drops | M1 |
+| 6 | Missing PRIMARY KEY | NOPK_LOG | fb_audit_table | M1 |
+| 7 | Stale statistics | IDX_STALE_CODE | fb_audit_table | M1 |
+| 8 | Over-indexing | OVERIDX | fb_audit_table | M1 |
+| 9 | External SORT (no usable index) | CUSTOMERS ORDER BY CITY | fb_analyze_query | M1 |
+| 10 | Non-sargable predicate (LIKE '%x', <>, NOT IN, fn(col)) | NSARG_T | fb_analyze_query (heuristic) | **M2** |
+| 11 | Implicit type conversion in WHERE | CONV_T.CODE (INT vs '5') | fb_analyze_query (heuristic) | **M2** |
+| 12 | Oversized / near-limit index key | BIGKEY_T (VARCHAR(800)) | fb_audit_table (key-size check) | **M2** |
+```
+
+- [ ] **Step 2: Add the three M2 fixtures to `tests/seed/problems.sql`** (append)
+
+```sql
+/* (10) Non-sargable: query will use LIKE '%foo' / fn(col); table just needs data */
+CREATE TABLE NSARG_T (ID INTEGER NOT NULL PRIMARY KEY, NAME VARCHAR(100));
+CREATE INDEX IDX_NSARG_NAME ON NSARG_T (NAME);
+
+/* (11) Implicit conversion: INTEGER column queried with a string literal */
+CREATE TABLE CONV_T (ID INTEGER NOT NULL PRIMARY KEY, CODE INTEGER);
+CREATE INDEX IDX_CONV_CODE ON CONV_T (CODE);
+
+/* (12) Oversized index key: long VARCHAR indexed (key-size pressure on small page sizes) */
+CREATE TABLE BIGKEY_T (ID INTEGER NOT NULL PRIMARY KEY, LABEL VARCHAR(800));
+CREATE INDEX IDX_BIGKEY_LABEL ON BIGKEY_T (LABEL);
+COMMIT;
+```
+
+- [ ] **Step 3: Write the pending-detector tests, marked `[Ignore]`**
+
+`tests/coreproject/Test.Firebird.PendingDetectors.pas`:
+```pascal
+unit Test.Firebird.PendingDetectors;
+interface
+uses DUnitX.TestFramework;
+type
+  [TestFixture]
+  TPendingDetectorTests = class
+  public
+    [Test][Ignore('M2: non-sargable predicate detection not implemented yet')]
+    procedure Detects_NonSargable_LeadingWildcard;
+    [Test][Ignore('M2: implicit conversion detection not implemented yet')]
+    procedure Detects_ImplicitConversion;
+    [Test][Ignore('M2: oversized index key check not implemented yet')]
+    procedure Flags_Oversized_IndexKey;
+  end;
+implementation
+procedure TPendingDetectorTests.Detects_NonSargable_LeadingWildcard; begin end;
+procedure TPendingDetectorTests.Detects_ImplicitConversion; begin end;
+procedure TPendingDetectorTests.Flags_Oversized_IndexKey; begin end;
+end.
+```
+Add the unit to the `.dpr` `uses`. These appear in the runner output as **ignored** (visible backlog), not as passes.
+
+- [ ] **Step 4: Run the suite and confirm the 3 are reported Ignored, everything else passes**
+
+```powershell
+.\tests\coreproject\Win64\Debug\MCPFirebirdCoreTests.exe
+```
+Expected: all active tests pass; 3 tests reported as Ignored with their M2 reason.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/firebird-problem-catalog.md tests/seed/problems.sql tests/coreproject/Test.Firebird.PendingDetectors.pas tests/coreproject/MCPFirebirdCoreTests.dpr
+git commit -m "test+docs: known-problem catalog + M2-pending fixtures (ignored tests as backlog)"
+```
+
+---
+
 ## Self-review notes (addressed)
 
-- **Spec coverage:** connection (T5), capabilities/version-matrix (T6, T19), introspection+docs (T7–T9), PLAN analysis (T10–T11), index advisor suggest/drop (T12–T13), `fb_evaluate_goal`+`optimization_goal` (T14, T16), stdio MCP server (T1, T17), 4-layer tests (core T4–T14, mcp/python T18, matrix T19, boundary T17). M2/M3 tools (`fb_whats_running`, trace, write tools, `query_max_reads`/`oat_gap` goals) are intentionally **out of M1** and called out where deferred.
+- **Spec coverage:** connection (T5), capabilities/version-matrix (T6, T19), introspection+docs (T7–T9), PLAN analysis (T10–T11), index advisor suggest/drop (T12–T13), schema-audit detectors + known-problem catalog (T21–T22), `fb_evaluate_goal`+`optimization_goal` (T14, T16), stdio MCP server (T1, T17), 4-layer tests (core T4–T14/T21, mcp/python T18, matrix T19, boundary T17). M2/M3 tools (`fb_whats_running`, trace, write tools, `query_max_reads`/`oat_gap` goals, and the 3 deferred detectors in T22) are intentionally **out of M1** and called out where deferred.
+- **Known-problem coverage:** 9 of the 12 most common Firebird problems are detected and asserted in M1 (NATURAL scan, duplicate/redundant/inactive/low-selectivity indexes, missing PK, stale stats, over-indexing, external sort); the remaining 3 (non-sargable, implicit conversion, oversized key) ship as fixtures with `[Ignore]`d tests so the backlog is visible, not hidden.
 - **Type consistency:** record/method names match across tasks (`TFirebirdCapabilities.Detect`/`Parse`, `TFirebirdIntrospection.GetIndexes`, `TPlanResult.HasNaturalScan`, `TAdvisory.Make`, `TGoalResult.Met`, `SuggestForQuery`/`SuggestDropsForTable`, `Evaluate`).
 - **Known verification points** (flagged inline, not placeholders): the access-plan retrieval mechanism (resolved by the Task 10 spike before Task 11), and the exact `TMCPResourceResult` factory name (verify against the library in Task 16). Both have a concrete default and a one-line fallback.
 ```
