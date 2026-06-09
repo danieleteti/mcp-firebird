@@ -1,3 +1,0 @@
-Commits history for the v2.5 series can be found at GitHub:
-
-https://github.com/FirebirdSQL/firebird/commits/B2_5_Release

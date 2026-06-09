@@ -31,3 +31,6 @@ logs/
 # Python test cache
 __pycache__/
 .pytest_cache/
+
+# Firebird zip-kits (local install, not versioned)
+fb_versions/
