@@ -113,7 +113,7 @@ Arguments:
 
 | Arg | Meaning |
 |---|---|
-| `goal_type` | `query_time_ms` \| `query_no_natural_scan` \| `query_max_reads` \| `oat_gap` \| `all_fks_indexed` \| `no_redundant_indexes` |
+| `goal_type` | `query_time_ms` \| `query_no_natural_scan` \| `query_max_reads` \| `oat_gap` \| `no_redundant_indexes` |
 | `target` | query text, table name, or `'database'` |
 | `threshold` | numeric (ms / reads / OAT gap); ignored for boolean goals |
 | `max_iterations` | safety cap, default 5 |
@@ -151,8 +151,8 @@ Measurements use the core: timed execution, `reads`/`fetches` from MON$ stats, p
 | `fb_describe_table` | Columns, types, domains, PK/FK, indices, triggers, checks, computed | introspection |
 | `fb_generate_documentation` | Full or per-table Markdown docs (incl. `RDB$DESCRIPTION` comments) | DocGen |
 | `fb_analyze_query` | Prepare → PLAN (2.5) / explained plan (3+); flag NATURAL scans, external sorts, join order; Finding+SQL+Verify | PlanAnalyzer |
-| `fb_suggest_indexes` | New indexes: unindexed FKs, filtered/joined columns in NATURAL scans; ready DDL + selectivity estimate | IndexAdvisor |
-| `fb_suggest_index_drops` | Redundant (prefix of another), low-selectivity (`RDB$STATISTICS`→1), inactive, duplicate; ready DROP/ALTER INACTIVE | IndexAdvisor |
+| `fb_suggest_indexes` | New indexes for columns hit by NATURAL scans in an analyzed query (WHERE/JOIN/ORDER BY predicates); ready DDL + post-create `SET STATISTICS` reminder. (Note: FK constraints already auto-index in Firebird, so this is driven by plan analysis, not missing FK indexes.) | IndexAdvisor + PlanAnalyzer |
+| `fb_suggest_index_drops` | User index **duplicating** a system PK/FK index, redundant (left-prefix of another), low-selectivity (`RDB$STATISTICS`→1), inactive (`RDB$INDEX_INACTIVE=1`), exact duplicate; ready DROP / ALTER INDEX INACTIVE | IndexAdvisor |
 | `fb_evaluate_goal` | Measure state vs threshold, `met:true/false` | Goal (cross-cutting) |
 
 ### M2 — Live monitoring + config advisor (read-only)
@@ -209,8 +209,8 @@ logger.config.file.stdio=loggerpro.stdio.json
 ### Layer 1 — Core (DUnitX, `tests/coreproject`) — the real value
 
 Runs against a **seeded Firebird DB** recreated each run with known scenarios (`seed.sql`):
-- Tables with FK **without** index, **redundant** indexes, **low-selectivity** indexes, a large table forcing a NATURAL scan, stale statistics.
-- Deterministic assertions: `fb_suggest_indexes` *must* propose the index on FK X; `fb_analyze_query` *must* detect the NATURAL scan on Y; `fb_suggest_index_drops` *must* flag redundant index Z; `fb_evaluate_goal` *must* return `met=true` once the index exists.
+- Tables with a **user index duplicating the system FK index**, **redundant left-prefix** indexes, **low-selectivity** indexes, an **inactive** index, a large table forcing a NATURAL scan when filtered on a non-indexed column, stale statistics.
+- Deterministic assertions: `fb_analyze_query` *must* detect the NATURAL scan on the non-indexed filter column; `fb_suggest_indexes` *must* propose an index on that column; `fb_suggest_index_drops` *must* flag the duplicate/redundant/inactive indexes; `fb_evaluate_goal` (`query_no_natural_scan`) *must* return `met=true` once the suggested index exists.
 - **Version matrix:** the same suite runs against **FB 2.5.9 / 3.0.14 / 4.0.7 / 5.0.4** — all 64-bit **zip-kit** installs already present under `C:\DEV\mcp-firebird\fb_versions\`. Capabilities must diverge correctly (e.g. explained plan only on 3+). Versions not available locally are skipped with a logged notice (no silent pass).
 
 **Zip-kit start/stop harness** (`tests/fbkit.ps1` or a Pascal helper):
