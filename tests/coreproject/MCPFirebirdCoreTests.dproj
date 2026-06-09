@@ -76,7 +76,9 @@
         </DelphiCompile>
         <DCCReference Include="TestFixtureU.pas"/>
         <DCCReference Include="..\..\sources\Firebird.Connection.pas"/>
+        <DCCReference Include="..\..\sources\Firebird.Capabilities.pas"/>
         <DCCReference Include="Test.Firebird.Connection.pas"/>
+        <DCCReference Include="Test.Firebird.Capabilities.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

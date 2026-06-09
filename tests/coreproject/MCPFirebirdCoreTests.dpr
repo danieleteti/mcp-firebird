@@ -8,12 +8,15 @@ uses
   DUnitX.Loggers.Xml.NUnit,
   TestFixtureU in 'TestFixtureU.pas',
   Firebird.Connection in '..\..\sources\Firebird.Connection.pas',
-  Test.Firebird.Connection in 'Test.Firebird.Connection.pas';
+  Firebird.Capabilities in '..\..\sources\Firebird.Capabilities.pas',
+  Test.Firebird.Connection in 'Test.Firebird.Connection.pas',
+  Test.Firebird.Capabilities in 'Test.Firebird.Capabilities.pas';
 var
   LRunner: ITestRunner;
   LResults: IRunResults;
 begin
   TDUnitX.RegisterTestFixture(Test.Firebird.Connection.TConnectionTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.Capabilities.TCapabilitiesTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));
   LRunner.AddLogger(TDUnitXXMLNUnitFileLogger.Create(
