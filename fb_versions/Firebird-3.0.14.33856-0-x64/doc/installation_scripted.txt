@@ -1,0 +1,187 @@
+
+Setup Command Line Parameters
+=============================
+
+Contents
+o General notes on preparing a scripted install
+o Quick Summary of Firebird specific options
+o Parameters specific to Firebird installs
+o Parameters specific to Firebird uninstalls
+o Examples
+
+
+General notes on preparing a scripted install
+---------------------------------------------
+
+These notes only document the firebird specific options for a scripted
+installation. Developers should refer to the full InnoSetup documentation
+for a description of the other options available for a scripted install.
+This can be found here:
+
+  http://www.jrsoftware.org/ishelp/
+
+It is highly recommended that a scripted install is tested thoroughly
+before deployment. The easiest way to test is to run the script without
+the /SILENT parameter. This will present a standard installer with the
+scripted options preselected.
+
+NOTE that the /TASKS parameter clears all the default task settings. If
+you only need to add a task to the defaults then use /MERGETASKS.
+
+
+Quick summary of available parameters
+-------------------------------
+
+Setup parameters specific to the Firebird Installer. They are case insensitive.
+However, string values passed to the parameters are not.
+
+HELP
+/COMPONENTS="comma separated list of component names"
+/TASKS="comma separated list of task names"
+/MERGETASKS="comma separated list of task names"
+/SYSDBAPASSWORD="masterkey"
+/FORCE
+
+Setup parameters specific to the Firebird Uninstaller
+/CLEAN
+
+For general parameters available to all InnoSetup based installers see the
+documentation for innosetup. A summary is available via /? or /HELP
+
+
+Parameters specific to Firebird installs
+----------------------------------------
+
+HELP
+  Invoke this file as a help screen at installation time.
+  Note no / is prefixed !! Because /? and /HELP are now
+  used by innosetup itself to display innosetup specific help.
+
+
+/COMPONENTS="comma separated list of component names"
+
+  Choose from - ServerComponent,
+                DevAdminComponent and
+                ClientComponent
+
+  Overrides the default components settings. Using this command line
+  parameter causes Setup to automatically select a custom type. A full
+  install requires combining components. For example:
+
+    /COMPONENTS="ClientComponent"
+
+  would be required for a client only install.
+
+  NOTE - If a full server install is required there is no need to
+  specify /COMPONENTS. All three are chosen by default.
+
+
+/TASKS="comma separated list of task names"
+
+  Specifies a list of tasks that should be initially selected or
+  deselected. To deselect a task, prefix its name with a "!" character.
+
+  Choose from - UseSuperServerTask
+                UseSuperServerTask\UseGuardianTask        (optional)
+              or
+                UseSuperClassicTask
+                UseSuperClassicTask\UseGuardianTask       (optional)
+              or
+                UseClassicServerTask
+
+                UseApplicationTask
+              or
+                UseServiceTask
+
+                AutoStartTask
+                CopyFbClientToSysTask
+                CopyFbClientAsGds32Task
+                EnableLegacyClientAuth
+
+
+  Only the specified tasks (and their children) will be selected; the rest
+  will be deselected. Use the /MERGETASKS parameter instead if you want to
+  keep the default set of tasks and only select/deselect some of them.
+
+  By default the following tasks are run:
+
+    UseSuperServerTask,UseServiceTask,AutoStartTask,CopyFbClientToSysTask
+
+
+/MERGETASKS="comma separated list of task names"
+
+  Like the /TASKS parameter, except the specified tasks will be merged
+  with the set of tasks that would have otherwise been selected by
+  default.
+
+  If UsePreviousTasks is set to yes, the specified tasks will be
+  selected/deselected after any previous tasks are restored.
+
+
+/SYSDBAPASSWORD="mypassword"
+
+  If supplied this will override the default SYSDBA password "masterkey".
+
+  NOTE: If an existing Security database is found this parameter will be
+  ignored.
+
+
+/FORCE
+
+  Tells the installer to ignore its analysis of the existing
+  environment. It will attempt to install and configure Firebird as
+  if no previous version of Firebird or InterBase was installed.
+
+  This can be useful if you have a seriously broken installation that
+  you cannot uninstall. Or it could be another way to aggravate your
+  users by breaking a perfectly good working install of Firebird or InterBase.
+  Its your choice.
+
+
+
+Parameters specific to Firebird uninstalls
+------------------------------------------
+
+/CLEAN
+
+  Uninstallation has always left the following files in place after
+  the uninstallation process has completed:
+
+    firebird.conf
+    databases.conf
+    firebird.log
+    security3.fdb
+    fbtrace.conf
+
+  The assumption is that these files will be useful to users
+  re-installing or upgrading Firebird. Starting with Firebird 2.1
+  (using InnoSetup 5 to build the installation package) it is now
+  possible to pass the /clean option to remove these files.
+
+
+Examples
+--------
+These examples are just for firebird related options. In practice you
+they will probably be combined with options such as /SILENT, /LOG,
+/RESTARTEXITCODE etc.
+
+1/ Full server install of super server architecture
+  o Change SYSDBA password from default masterkey,
+  o deploy gds32 to <SYS>
+  o enable legacy authentication for older clients
+
+    /MERGETASKS="CopyFbClientAsGds32Task,EnableLegacyClientAuth" /SYSDBAPASSWORD="mypassword"
+
+2/ Deploy Classic Server and keep other default tasks
+
+    /MERGETASKS="UseClassicServerTask"
+
+3/ Really mess things up by accidentally deselecting the defaults and
+letting InnoSetup guess:
+
+    /TASKS="CopyFbClientAsGds32Task"
+
+Be careful when using the /TASKS parameter !
+
+
+

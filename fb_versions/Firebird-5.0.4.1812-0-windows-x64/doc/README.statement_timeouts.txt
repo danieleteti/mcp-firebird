@@ -1,0 +1,159 @@
+  Timeouts for running SQL statements.
+  
+Author:
+  Vlad Khorsun <hvlad@users.sf.net>
+
+
+Description:
+
+  The feature allows to set timeout for SQL statement, i.e. it allows to automatically 
+stop execution of SQL statement when it running longer than given timeout value. 
+
+  The feature could be useful for:
+- database administrators get instrument to limit heavy queries from consuming too 
+  much resources
+- application developers could use statement timeout when creating\debugging complex 
+  queries with unknown in advance execution time
+- testers could use statement timeout to detect long running queries and ensure finite 
+  run time of the test suites
+- and so on
+
+  From the end user point of view feature have following details:
+- when statement starts execution (or cursor is opened), engine starts special timer
+- fetch doesn't reset timer
+- timer is stopped when statement execution finished (or last record is fetched)
+- when timer is fired
+  - if statement execution is active, it stops at closest possible moment
+  - if statement is not active currently (between fetches, for example), it is marked 
+    as cancelled and next fetch will actually break execution and returns with error
+- timeout value could be set:
+  - at database level, by setting value in firebird.conf (or databases.conf) by database 
+    administrator
+    scope - all statements in all connections
+	units - seconds
+  - at connection level, using API and\or new SQL statement (see below)
+    scope - all statements at given connection
+	units - up to milliseconds
+  - at statement level, using API 
+    scope - given statement
+	units - milliseconds
+- effective value of timeout is evaluated every time statement starts execution 
+  (or cursor is opened) as:
+  - if not set at statement level, look at connection level
+  - if not set at connection level, look at database level
+  - in any case can't be greater than value set at database level 
+  i.e. value of statement timeout could be overriden by application developer at lower 
+  scope but it can't relax limit set by DBA (in config)
+- zero timeout means no timeout, i.e. timer will not start
+- while statement timeout is set in milliseconds at API level, we can't promise 
+  absolute precision. With big load it could be less precise. The only guarantee 
+  is that timeout will not fire before specified moment.
+- if statement execution is cancelled due to timeout, then API call returns error 
+  isc_cancelled with secondary error code specifying exact reason:
+  - isc_cfg_stmt_timeout: Config level timeout expired
+  - isc_att_stmt_timeout: Attachment level timeout expired
+  - isc_req_stmt_timeout: Statement level timeout expired
+- statement timeout is ignored for all internal queries issued by engine itself
+- statement timeout is ignored for DDL statements
+- client application could wait more time than set by timeout value if engine
+  need to undo many actions due to statement cancellation
+- when engine run EXECUTE STATEMENT statement, it pass rest of currently active timeout
+  to the new statement. If external (remote) engine doesn't support statement timeouts, 
+  local engine silently ignores corresponding error
+- when engine acquires some lock of lock manager, it could lower value of lock timeout 
+  using rest of the currently active statement timeout, if possible. Due to lock manager 
+  internals rest of statement timeout will be rounded up to the whole seconds.
+  
+  
+  Support at configuration level (firebird.conf and\or databases.conf)
+ 
+  New setting "StatementTimeout": set number of seconds after which statement execution 
+will be automatically cancelled by the engine. Zero means no timeout is set.
+Per-database configurable. Type: integer. Default value is 0.
+
+  
+  Support at API level
+  
+- get\set statement execution timeout at connection level, milliseconds:
+interface Attachment 
+	uint getStatementTimeout(Status status);
+	void setStatementTimeout(Status status, uint timeOut);
+	
+- get\set statement execution timeout at statement level, milliseconds:
+interface Statement
+	uint getTimeout(Status status);
+	void setTimeout(Status status, uint timeOut);
+
+- set statement execution timeout at statement level using ISC API, milliseconds:
+
+	ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULONG);
+
+- get statement execution timeout at config and\or connection level is possible
+  using isc_database_info() API with new info tags:
+  - fb_info_statement_timeout_db
+  - fb_info_statement_timeout_att
+
+- get statement execution timeout at statement level is possible using isc_dsql_info() 
+  API with new info tags:
+  - isc_info_sql_stmt_timeout_user		timeout value of given statement
+  - isc_info_sql_stmt_timeout_run		actual timeout value of given statement 
+		evaluated considering values set at config, connection and statement levels, see
+		"effective value of timeout" above. Valid only when timeout timer is running, i.e. 
+		for currently executed statements.
+
+Remote client implementation notes:
+  - Attachment::setStatementTimeout() issued "SET STATEMENT TIMEOUT" SQL statement
+  - Attachment::getStatementTimeout() calls isc_database_info() with 
+    fb_info_statement_timeout_att tag 
+  - Statement::setTimeout() save timeout value given and pass it with op_execute
+    and op_execute2 packets
+  - Statement::getTimeout() returns saved timeout value
+  - fb_dsql_set_timeout() is a wrapper over Statement::setTimeout()
+
+If remote server doesn't support statement timeouts (protocol version less than 16):
+  - "set" functions will return isc_wish_list error
+  - "get" functions will return zero and set isc_wish_list error 
+  - "info" functions will return isc_info_error tag in info buffer (as usual).
+
+
+  Support in SQL
+
+- New SQL statement allows to set set statement execution timeout at connection level:
+
+	SET STATEMENT TIMEOUT <value> [HOUR | MINUTE | SECOND | MILLISECOND]
+
+if timepart is not set, default is SECOND.
+This statement could run outside of transaction control and immediately effective.
+
+- Context variables
+
+  Context 'SYSTEM' have new variable: 'STATEMENT_TIMEOUT'. It contains current value of 
+statement execution timeout that was set at connection level, or zero, if timeout was 
+not set.
+
+- Monitoring tables
+  
+  MON$ATTACHMENTS
+    MON$STATEMENT_TIMEOUT			Connection level statement timeout
+
+  MON$STATEMENTS
+    MON$STATEMENT_TIMEOUT			Statement level statement timeout
+	MON$STATEMENT_TIMER				Timeout timer expiration time
+
+
+  MON$STATEMENT_TIMEOUT contains timeout values set at connection\statement level,
+	in milliseconds. Zero, if timeout is not set.
+  
+  MON$STATEMENT_TIMER contains NULL value if timeout was not set or if timer is not 
+	running.
+
+
+  Support in ISQL tool
+  
+  New ISQL command is introduced:
+
+	SET LOCAL_TIMEOUT <int>
+  
+  It allows to set statement execution timeout (in milliseconds) for the next statement.
+After statement execution it automatically reset to zero.
+

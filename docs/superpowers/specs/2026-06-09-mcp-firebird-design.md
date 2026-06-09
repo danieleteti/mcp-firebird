@@ -32,6 +32,7 @@ A Model Context Protocol (MCP) server for **Firebird**, written in Delphi, that 
 | Perf data sources | **All four:** prepare+PLAN/EXPLAIN, MON$ live snapshot, Trace API, read existing trace/firebird.log |
 | Build scope | **Phased** — M1 (foundation/docs/query-opt/index-advisor), M2 (monitoring/config), M3 (trace/write) |
 | Architecture | **Layered:** Firebird analysis core (MCP-agnostic) + thin MCP provider wrappers |
+| Target platform | **Win64** (`fbclient.dll` is 64-bit) |
 
 ## 3. Architecture
 
@@ -69,6 +70,7 @@ C:\DEV\mcp-firebird\
     ├── coreproject\                 # DUnitX: analysis core vs seeded real FB DB (version matrix)
     │   └── seed.sql                 # known scenarios (unindexed FK, redundant index, NATURAL scan…)
     ├── mcpproject\                  # DUnitX: MCP tool-level contract tests
+    ├── fbkit.ps1                    # start/stop FB zip-kit (per version, own port + fbclient)
     └── test_mcp_firebird_stdio.py   # Python MCP compliance (reuses library harness)
 ```
 
@@ -209,7 +211,15 @@ logger.config.file.stdio=loggerpro.stdio.json
 Runs against a **seeded Firebird DB** recreated each run with known scenarios (`seed.sql`):
 - Tables with FK **without** index, **redundant** indexes, **low-selectivity** indexes, a large table forcing a NATURAL scan, stale statistics.
 - Deterministic assertions: `fb_suggest_indexes` *must* propose the index on FK X; `fb_analyze_query` *must* detect the NATURAL scan on Y; `fb_suggest_index_drops` *must* flag redundant index Z; `fb_evaluate_goal` *must* return `met=true` once the index exists.
-- **Version matrix:** the same suite runs against **FB 2.5 / 3.0 / 4.0 / 5.0** (path/port from test `.env`). Capabilities must diverge correctly (e.g. explained plan only on 3+). Versions not available locally are skipped with a logged notice (no silent pass).
+- **Version matrix:** the same suite runs against **FB 2.5.9 / 3.0.14 / 4.0.7 / 5.0.4** — all 64-bit **zip-kit** installs already present under `C:\DEV\mcp-firebird\fb_versions\`. Capabilities must diverge correctly (e.g. explained plan only on 3+). Versions not available locally are skipped with a logged notice (no silent pass).
+
+**Zip-kit start/stop harness** (`tests/fbkit.ps1` or a Pascal helper):
+- Each version runs as a **foreground process**, started before its test pass and **terminated after**:
+  - FB 2.5 → `bin\fbserver.exe -a` (client lib: `bin\fbclient.dll`)
+  - FB 3.0 / 4.0 / 5.0 → `firebird.exe -a` (client lib: `fbclient.dll` in the kit root)
+- Each kit listens on its **own port** (set via that kit's `firebird.conf` `RemoteServicePort`): 2.5→3050, 3.0→3053, 4.0→3054, 5.0→3055. Kits can therefore coexist or run one-at-a-time.
+- The test client loads the **matching `fbclient.dll` per version** via FireDAC `TFDPhysFBDriverLink.VendorLib` (same mechanism as `firebird.client_lib` in §6), so each pass exercises the real client of that engine.
+- The seed DB is **created fresh** per version (SYSDBA/masterkey from the kit's security DB) and dropped after.
 
 ### Layer 2 — MCP tool (DUnitX, `tests/mcpproject`)
 
@@ -235,7 +245,7 @@ Simulates the cycle: baseline `met=false` → apply index → `fb_evaluate_goal`
 
 ## 9. Requirements
 
-- Delphi 11+ (Alexandria) or later.
+- Delphi 11+ (Alexandria) or later; **Win64 build target**.
 - DMVCFramework 3.5.x + `mcp-server-delphi` sources on the search path.
-- Firebird client `fbclient.dll` reachable (path optionally pinned via `firebird.client_lib`).
-- A reachable Firebird server (2.5–5.0) for integration tests.
+- Firebird client `fbclient.dll` (64-bit) reachable (path optionally pinned via `firebird.client_lib`).
+- Integration tests use the local zip-kits under `C:\DEV\mcp-firebird\fb_versions\` (FB 2.5.9 / 3.0.14 / 4.0.7 / 5.0.4), started/stopped by the test harness.

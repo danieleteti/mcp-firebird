@@ -1,0 +1,113 @@
+  Timeouts for idle database sessions.
+  
+Author:
+  Vlad Khorsun <hvlad@users.sf.net>
+
+
+Description:
+
+  The feature allows to automatically close user connection after period of inactivity.
+It could be used by database administrators to forcibly close old inactive connections
+and free resources it occupies. Application and tools developers also could find it as 
+easy replacement of self-made control for the connection life time. 
+  It is recommended (but not required) to set idle timeout to reasonable big value, such 
+as few hours. By default it is not enabled.
+
+  The feature works as below
+- when user API call leaves engine, special idle timer assotiated with current connection 
+  is started
+- when user API call enters engine, idle timer is stopped
+- when idle time is fired engine immediately closes the connection in the same way as 
+  with asyncronous connection cancellation:
+  - all active statements and cursors are closed
+  - all active transactions are rolled back
+  - network connection is not closed at this moment. It allows client application to get 
+    exact error code on next API call. Network connection will be closed by the server 
+	side after error is reported or due to network timeout if client side disconnects. 
+- idle session timeout could be set:
+  - at database level, by setting value in firebird.conf (or databases.conf) by database 
+    administrator
+    scope - all user connections, except of system connections (garbage collector, cache 
+		writer, etc)
+	units - minutes
+  - at connection level, using API and\or new SQL statement (see below)
+    scope - given connection
+	units - up to seconds
+- effective value of idle timeout is evaluated every time user API call leaves the engine
+  as:
+  - if not set at connection level, look at database level
+  - in any case can't be greater than value set at database level 
+  i.e. value of idle timeout could be overriden by application developer at given 
+  connection but it can't relax limit set by DBA (in config)
+- zero timeout means no timeout, i.e. idle timer will not start
+- while idle timeout is set in seconds at API level, we can't promise absolute precision. 
+  With high load it could be less precise. The only guarantee is that timeout will not 
+  fire before specified moment.
+- if connection was cancelled, next user API call returns error isc_att_shutdown with 
+  secondary error code specifying exact reason:
+  isc_att_shut_killed:		Killed by database administrator
+  isc_att_shut_idle:		Idle timeout expired
+  isc_att_shut_db_down:		Database is shutdown
+  isc_att_shut_engine:		Engine is shutdown
+
+  
+  Support at configuration level (firebird.conf and\or databases.conf)
+ 
+  New setting "ConnectionIdleTimeout": set number of minutes after which idle connection 
+will be disconnected by the engine. Zero means no timeout is set.
+Per-database configurable. Type: integer. Default value is 0.
+
+  
+  Support at API level
+  
+- get\set idle connection timeout, seconds
+interface Attachment 
+	uint getIdleTimeout(Status status);
+	void setIdleTimeout(Status status, uint timeOut);
+
+- get idle connection timeout at config and\or connection level is possible
+  using isc_database_info() API with new info tags:
+  - fb_info_ses_idle_timeout_db			value set at config level
+  - fb_info_ses_idle_timeout_att		value set at given connection level
+  - fb_info_ses_idle_timeout_run		actual timeout value for given connection
+										evaluated considering values set at config and 
+										connection levels, see "effective value of idle 
+										timeout" above
+
+Remote client implementation notes:
+  - Attachment::setIdleTimeout() issued "SET SESSION IDLE TIMEOUT" SQL statement
+  - Attachment::getIdleTimeout() calls isc_database_info() with 
+    fb_info_ses_idle_timeout_att tag 
+
+If remote server doesn't support idle connection timeouts (protocol version less than 16):
+  - Attachment::setIdleTimeout() will return isc_wish_list error
+  - Attachment::getIdleTimeout() will return zero and set isc_wish_list error 
+  - isc_database_info() will return isc_info_error tag in info buffer (as usual).
+
+
+  Support in SQL
+
+- New SQL statement allows to set idle connection timeout at connection level:
+
+	SET SESSION IDLE TIMEOUT <value> [HOUR | MINUTE | SECOND]
+
+if timepart is not set, default is MINUTE.
+This statement could run outside of transaction control and immediately effective.
+
+- Context variables
+
+  Context 'SYSTEM' have new variable: 'SESSION_IDLE_TIMEOUT'. It contains current value 
+of idle connection timeout that was set at connection level, or zero, if timeout was not
+set.
+
+- Monitoring tables
+
+  MON$ATTACHMENTS
+    MON$IDLE_TIMEOUT		Connection level idle timeout
+	MON$IDLE_TIMER			Idle timer expiration time
+
+  MON$IDLE_TIMEOUT contains timeout value set at connection level, in seconds. Zero, if 
+	timeout is not set.
+
+  MON$IDLE_TIMER contains NULL value if idle timeout was not set or if timer is not 
+	running.

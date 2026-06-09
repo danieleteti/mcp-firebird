@@ -1,0 +1,377 @@
+----------------------------------------------------
+SQL keywords introduced in different server versions
+----------------------------------------------------
+
+Deviations from the standard:
+ *  : keyword does not exist in the SQL:2016 specification and should be
+      considered a non-standard language extention.
+(1) : reserved word in SQL:2016, non-reserved in Firebird
+(2) : non-reserved word in SQL:2016, reserved word in Firebird
+
+Firebird 1.0
+------------
+
+  Added as reserved words:
+
+    BREAK *
+    CURRENT_ROLE
+    CURRENT_USER
+    DESCRIPTOR (2)
+    FIRST (2)
+    RECREATE *
+    SKIP
+    SUBSTRING
+
+Firebird 1.5
+------------
+
+  Added as reserved words:
+
+    BIGINT
+    CASE
+    CURRENT_CONNECTION *
+    CURRENT_TRANSACTION *
+    RELEASE
+    ROW_COUNT
+    SAVEPOINT
+
+  Added as non-reserved words:
+
+    COALESCE (1)
+    DELETING *
+    INSERTING *
+    LAST
+    LEAVE *
+    LOCK *
+    NULLIF (1)
+    NULLS
+    STATEMENT
+    UPDATING *
+    USING (1)
+
+  Moved from reserved words to non-reserved:
+
+    BREAK *
+    DESCRIPTOR
+    FIRST
+    SKIP (1)
+    SUBSTRING (1)
+
+Firebird 2.0
+------------
+
+  Added as reserved words:
+
+    BIT_LENGTH *
+    BOTH
+    CHAR_LENGTH
+    CHARACTER_LENGTH
+    CLOSE
+    CROSS
+    FETCH
+    LEADING
+    LOWER
+    OCTET_LENGTH
+    OPEN
+    ROWS
+    TRAILING
+    TRIM
+
+  Moved from non-reserved words to reserved:
+
+    USING
+
+  Added as non-reserved words:
+
+    BACKUP *
+    BLOCK *
+    COLLATION
+    COMMENT *
+    DIFFERENCE *
+    IIF *
+    NEXT
+    SCALAR_ARRAY *
+    SEQUENCE
+    RESTART
+    RETURNING
+
+  Moved from reserved words to non-reserved:
+
+    ACTION
+    CASCADE
+    FREE_IT *
+    RESTRICT
+    ROLE
+    TYPE
+    WEEKDAY *
+    YEARDAY *
+
+  Removed reserved words:
+
+    BASENAME *
+    CACHE *
+    CHECK_POINT_LEN *
+    GROUP_COMMIT_WAIT *
+    LOGFILE *
+    LOG_BUF_SIZE *
+    NUM_LOG_BUFS *
+    RAW_PARTITIONS *
+
+Firebird 2.1
+------------
+
+  Added as reserved words:
+
+    CONNECT
+    DISCONNECT
+    GLOBAL
+    INSENSITIVE
+    RECURSIVE
+    SENSITIVE
+    START
+
+  Added as non-reserved words:
+
+    ABS (1)
+    ACCENT *
+    ACOS (1)
+    ALWAYS
+    ASCII_CHAR *
+    ASCII_VAL *
+    ASIN (1)
+    ATAN (1)
+    ATAN2 *
+    BIN_AND *
+    BIN_OR *
+    BIN_SHL *
+    BIN_SHR *
+    BIN_XOR *
+    CEIL (1)
+    CEILING (1)
+    COS (1)
+    COSH (1)
+    COT *
+    DATEADD *
+    DATEDIFF *
+    DECODE *
+    EXP (1)
+    FLOOR (1)
+    GEN_UUID *
+    GENERATED
+    HASH *
+    LIST *
+    LN (1)
+    LOG (1)
+    LOG10 (1)
+    LPAD *
+    MATCHED
+    MATCHING *
+    MAXVALUE
+    MILLISECOND *
+    MINVALUE
+    MOD (1)
+    OVERLAY (1)
+    PAD
+    PI *
+    PLACING
+    POWER (1)
+    PRESERVE
+    RAND *
+    REPLACE *
+    REVERSE *
+    ROUND *
+    RPAD *
+    SIGN *
+    SIN (1)
+    SINH (1)
+    SPACE
+    SQRT (1)
+    TAN (1)
+    TANH (1)
+    TEMPORARY
+    TRUNC *
+    WEEK *
+
+Firebird 2.5
+------------
+
+  Added as reserved words:
+
+    SIMILAR
+
+  Added as non-reserved words:
+
+    AUTONOMOUS *
+    BIN_NOT *
+    CALLER *
+    CHAR_TO_UUID *
+    COMMON *
+    DATA
+    FIRSTNAME *
+    GRANTED
+    LASTNAME *
+    MIDDLENAME *
+    MAPPING *
+    OS_NAME *
+    SOURCE
+    TWO_PHASE *
+    UUID_TO_CHAR *
+
+Firebird 3.0
+------------
+
+  Added as reserved words:
+
+    BOOLEAN
+    CORR
+    COVAR_POP
+    COVAR_SAMP
+    DETERMINISTIC
+    FALSE
+    OFFSET
+    OVER
+    RDB$RECORD_VERSION *
+    REGR_AVGX
+    REGR_AVGY
+    REGR_COUNT
+    REGR_INTERCEPT
+    REGR_R2
+    REGR_SLOPE
+    REGR_SXX
+    REGR_SXY
+    REGR_SYY
+    RETURN
+    ROW
+    SCROLL
+    SQLSTATE
+    STDDEV_POP
+    STDDEV_SAMP
+    TRUE
+    UNKNOWN
+    VAR_POP
+    VAR_SAMP
+
+  Moved from non-reserved words to reserved:
+
+    DELETING *
+    INSERTING *
+    RDB$GET_CONTEXT *
+    RDB$SET_CONTEXT *
+    UPDATING *
+
+  Added as non-reserved words:
+
+    ABSOLUTE
+    ACOSH *
+    ASINH *
+    ATANH *
+    BODY *
+    CONTINUE
+    DDL *
+    DECRYPT *
+    DENSE_RANK (1)
+    ENCRYPT *
+    ENGINE *
+    FIRST_VALUE (1)
+    IDENTITY (1)
+    INCREMENT
+    LAST_VALUE (1)
+    LAG (1)
+    LEAD (1)
+    LINGER *
+    NAME
+    NTH_VALUE (1)
+    PACKAGE *
+    PARTITION (1)
+    PLUGIN *
+    PRIOR
+    RANK (1)
+    RELATIVE
+    ROW_NUMBER (1)
+    SERVERWIDE *
+    TAGS *
+    TRUSTED *
+    USAGE
+
+Firebird 4.0
+------------
+
+  Added as reserved words:
+
+    BINARY
+    DECFLOAT
+    LATERAL
+    LOCAL
+    LOCALTIME
+    LOCALTIMESTAMP
+    PUBLICATION *
+    RDB$GET_TRANSACTION_CN *
+    RDB$ERROR *
+    RDB$ROLE_IN_USE *
+    RDB$SYSTEM_PRIVILEGE *
+    TIMEZONE_HOUR
+    TIMEZONE_MINUTE
+    UNBOUNDED (2)
+    VARBINARY
+    WINDOW
+    WITHOUT
+
+  Added as non-reserved words:
+
+    BASE64_DECODE *
+    BASE64_ENCODE *
+    BIND *
+    COMPARE_DECFLOAT *
+    CONSISTENCY *
+    COUNTER *
+    CTR_BIG_ENDIAN *
+    CTR_LENGTH *
+    CTR_LITTLE_ENDIAN *
+    CUME_DIST (1)
+    DEFINER
+    DISABLE *
+    ENABLE *
+    EXCESS *
+    EXCLUDE
+    EXTENDED *
+    FIRST_DAY *
+    FOLLOWING
+    HEX_DECODE *
+    HEX_ENCODE *
+    IDLE *
+    INVOKER
+    IV *
+    LAST_DAY *
+    LEGACY *
+    LPARAM *
+    MAKE_DBKEY *
+    MESSAGE *
+    MODE *
+    NATIVE *
+    NORMALIZE_DECFLOAT *
+    NTILE (1)
+    NUMBER
+    OTHERS
+    OVERRIDING
+    PERCENT_RANK (1)
+    PRECEDING
+    PRIVILEGE *
+    QUANTIZE *
+    RANGE (1)
+    RESET *
+    RSA_DECRYPT *
+    RSA_ENCRYPT *
+    RSA_PRIVATE *
+    RSA_PUBLIC *
+    RSA_SIGN_HASH *
+    RSA_VERIFY_HASH *
+    SALT_LENGTH *
+    SECURITY
+    SESSION
+    SIGNATURE *
+    SQL (1)
+    SYSTEM (1)
+    TIES
+    TOTALORDER *
+    TRAPS *
+    ZONE
