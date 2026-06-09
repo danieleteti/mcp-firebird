@@ -6,7 +6,11 @@ uses
   MVCFramework.MCP.Stdio,
   MVCFramework.MCP.StdioOnly,
   BootConfigU in 'BootConfigU.pas',
-  EngineConfigU in 'EngineConfigU.pas';
+  EngineConfigU in 'EngineConfigU.pas',
+  FirebirdConfigU in '..\providers\FirebirdConfigU.pas',
+  FirebirdToolsU in '..\providers\FirebirdToolsU.pas',
+  FirebirdPromptsU in '..\providers\FirebirdPromptsU.pas',
+  FirebirdResourcesU in '..\providers\FirebirdResourcesU.pas';
 var
   LTransport: TMCPStdioTransport;
 begin

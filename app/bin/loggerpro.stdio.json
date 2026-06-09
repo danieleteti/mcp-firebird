@@ -1,7 +1,8 @@
 {
+  "configVersion": 1,
+  "minimumLevel": "Debug",
+  "defaultTag": "mcpfirebird",
   "appenders": [
-    { "class": "TLoggerProFileAppender",
-      "params": { "max_file_count": 5, "log_folder": "logs", "log_file_name_format": "{module}.{number}.{tag}.log" } }
-  ],
-  "loglevel": "debug"
+    { "type": "File", "logsFolder": "logs", "maxBackupFiles": 5 }
+  ]
 }

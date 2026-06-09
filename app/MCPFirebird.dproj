@@ -49,7 +49,7 @@
         <Icon_MainIcon>$(BDS)\bin\delphi_PROJECTICON.ico</Icon_MainIcon>
         <Icns_MainIcns>$(BDS)\bin\delphi_PROJECTICNS.icns</Icns_MainIcns>
         <DCC_ExeOutput>.\bin</DCC_ExeOutput>
-        <DCC_UnitSearchPath>C:\DEV\mcp-server-delphi\sources;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>C:\DEV\mcp-server-delphi\sources;C:\DEV\mcp-firebird\sources;C:\DEV\mcp-firebird\providers;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
@@ -77,6 +77,10 @@
         </DelphiCompile>
         <DCCReference Include="BootConfigU.pas"/>
         <DCCReference Include="EngineConfigU.pas"/>
+        <DCCReference Include="..\providers\FirebirdConfigU.pas"/>
+        <DCCReference Include="..\providers\FirebirdToolsU.pas"/>
+        <DCCReference Include="..\providers\FirebirdPromptsU.pas"/>
+        <DCCReference Include="..\providers\FirebirdResourcesU.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
