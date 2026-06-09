@@ -10,10 +10,13 @@ uses
   Firebird.Connection in '..\..\sources\Firebird.Connection.pas',
   Firebird.Capabilities in '..\..\sources\Firebird.Capabilities.pas',
   Firebird.Introspection in '..\..\sources\Firebird.Introspection.pas',
+  Firebird.Advisory in '..\..\sources\Firebird.Advisory.pas',
+  Firebird.DocGen in '..\..\sources\Firebird.DocGen.pas',
   Test.Firebird.Connection in 'Test.Firebird.Connection.pas',
   Test.Firebird.Capabilities in 'Test.Firebird.Capabilities.pas',
   Test.Firebird.Introspection in 'Test.Firebird.Introspection.pas',
-  Test.Firebird.Indexes in 'Test.Firebird.Indexes.pas';
+  Test.Firebird.Indexes in 'Test.Firebird.Indexes.pas',
+  Test.Firebird.DocGen in 'Test.Firebird.DocGen.pas';
 var
   LRunner: ITestRunner;
   LResults: IRunResults;
@@ -22,6 +25,7 @@ begin
   TDUnitX.RegisterTestFixture(Test.Firebird.Capabilities.TCapabilitiesTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.Introspection.TIntrospectionTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.Indexes.TIndexIntrospectionTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.DocGen.TDocGenTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));
   LRunner.AddLogger(TDUnitXXMLNUnitFileLogger.Create(
