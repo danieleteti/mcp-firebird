@@ -118,13 +118,13 @@ Arguments:
 
 The returned protocol instructs the agent:
 
-1. Call `evaluate_goal` → establish **baseline**.
+1. Call `fb_evaluate_goal` → establish **baseline**.
 2. If `met=true` → **STOP**, report.
-3. Otherwise call advisors (`analyze_query`, `suggest_indexes`…), propose/apply a fix.
-4. Call `evaluate_goal` again → compare to previous iteration.
+3. Otherwise call advisors (`fb_analyze_query`, `fb_suggest_indexes`…), propose/apply a fix.
+4. Call `fb_evaluate_goal` again → compare to previous iteration.
 5. Repeat until `met=true`, **or** `max_iterations` reached, **or** **no improvement for 2 rounds** (anti-loop) → report best result found and why the goal is unreachable.
 
-### 4.3 `[MCPTool('evaluate_goal')]`
+### 4.3 `[MCPTool('fb_evaluate_goal')]`
 
 Deterministic, pure, idempotent. Args: `goal_type`, `target`, `threshold`. Returns:
 
@@ -144,34 +144,34 @@ Measurements use the core: timed execution, `reads`/`fetches` from MON$ stats, p
 
 | Tool | What it does | Source |
 |---|---|---|
-| `firebird_info` | Engine version, dialect, charset, ODS, capabilities, DB size | `rdb$get_context`, header |
-| `list_tables` | Tables/views with estimated row count, PK, index count | introspection |
-| `describe_table` | Columns, types, domains, PK/FK, indices, triggers, checks, computed | introspection |
-| `generate_documentation` | Full or per-table Markdown docs (incl. `RDB$DESCRIPTION` comments) | DocGen |
-| `analyze_query` | Prepare → PLAN (2.5) / explained plan (3+); flag NATURAL scans, external sorts, join order; Finding+SQL+Verify | PlanAnalyzer |
-| `suggest_indexes` | New indexes: unindexed FKs, filtered/joined columns in NATURAL scans; ready DDL + selectivity estimate | IndexAdvisor |
-| `suggest_index_drops` | Redundant (prefix of another), low-selectivity (`RDB$STATISTICS`→1), inactive, duplicate; ready DROP/ALTER INACTIVE | IndexAdvisor |
-| `evaluate_goal` | Measure state vs threshold, `met:true/false` | Goal (cross-cutting) |
+| `fb_info` | Engine version, dialect, charset, ODS, capabilities, DB size | `rdb$get_context`, header |
+| `fb_list_tables` | Tables/views with estimated row count, PK, index count | introspection |
+| `fb_describe_table` | Columns, types, domains, PK/FK, indices, triggers, checks, computed | introspection |
+| `fb_generate_documentation` | Full or per-table Markdown docs (incl. `RDB$DESCRIPTION` comments) | DocGen |
+| `fb_analyze_query` | Prepare → PLAN (2.5) / explained plan (3+); flag NATURAL scans, external sorts, join order; Finding+SQL+Verify | PlanAnalyzer |
+| `fb_suggest_indexes` | New indexes: unindexed FKs, filtered/joined columns in NATURAL scans; ready DDL + selectivity estimate | IndexAdvisor |
+| `fb_suggest_index_drops` | Redundant (prefix of another), low-selectivity (`RDB$STATISTICS`→1), inactive, duplicate; ready DROP/ALTER INACTIVE | IndexAdvisor |
+| `fb_evaluate_goal` | Measure state vs threshold, `met:true/false` | Goal (cross-cutting) |
 
 ### M2 — Live monitoring + config advisor (read-only)
 
 | Tool | What it does | Source |
 |---|---|---|
-| `whats_running` | Active statements now, duration, attachment, I/O | `MON$STATEMENTS`/`MON$IO_STATS` |
-| `transaction_health` | OAT/OIT/Next gap, oldest active tx, garbage risk | `MON$TRANSACTIONS` |
-| `hot_tables` | Tables with most reads/writes/record versions in real time | `MON$RECORD_STATS` |
-| `analyze_config` | firebird.conf + DB header (page size, buffers, sweep interval, forced writes); version-specific advice | ConfigAdvisor |
-| `database_health` | Aggregate report: suspect indexes + tx + stale statistics (`SET STATISTICS` advised) | aggregator |
+| `fb_whats_running` | Active statements now, duration, attachment, I/O | `MON$STATEMENTS`/`MON$IO_STATS` |
+| `fb_transaction_health` | OAT/OIT/Next gap, oldest active tx, garbage risk | `MON$TRANSACTIONS` |
+| `fb_hot_tables` | Tables with most reads/writes/record versions in real time | `MON$RECORD_STATS` |
+| `fb_analyze_config` | firebird.conf + DB header (page size, buffers, sweep interval, forced writes); version-specific advice | ConfigAdvisor |
+| `fb_database_health` | Aggregate report: suspect indexes + tx + stale statistics (`SET STATISTICS` advised) | aggregator |
 
 ### M3 — Trace + write tools
 
 | Tool | What it does | Gate |
 |---|---|---|
-| `start_trace` / `stop_trace` / `read_trace` | Trace session via Services API + log parser; historically slow statements | read-only |
-| `parse_log_file` | Analyze trace/firebird.log path from config | read-only |
-| `apply_sql` | Execute DDL/DML (e.g. the suggested CREATE INDEX); transactional, dry-run option | **write** |
-| `set_statistics` | Recompute index selectivity (`SET STATISTICS INDEX`) | **write** |
-| `rebuild_index` | `ALTER INDEX INACTIVE` + `ACTIVE` | **write** |
+| `fb_start_trace` / `fb_stop_trace` / `fb_read_trace` | Trace session via Services API + log parser; historically slow statements | read-only |
+| `fb_parse_log_file` | Analyze trace/firebird.log path from config | read-only |
+| `fb_apply_sql` | Execute DDL/DML (e.g. the suggested CREATE INDEX); transactional, dry-run option | **write** |
+| `fb_set_statistics` | Recompute index selectivity (`SET STATISTICS INDEX`) | **write** |
+| `fb_rebuild_index` | `ALTER INDEX INACTIVE` + `ACTIVE` | **write** |
 
 Every write tool checks the flag; if off, returns a `TMCPToolResult.Error` explaining how to enable it.
 
@@ -208,7 +208,7 @@ logger.config.file.stdio=loggerpro.stdio.json
 
 Runs against a **seeded Firebird DB** recreated each run with known scenarios (`seed.sql`):
 - Tables with FK **without** index, **redundant** indexes, **low-selectivity** indexes, a large table forcing a NATURAL scan, stale statistics.
-- Deterministic assertions: `suggest_indexes` *must* propose the index on FK X; `analyze_query` *must* detect the NATURAL scan on Y; `suggest_index_drops` *must* flag redundant index Z; `evaluate_goal` *must* return `met=true` once the index exists.
+- Deterministic assertions: `fb_suggest_indexes` *must* propose the index on FK X; `fb_analyze_query` *must* detect the NATURAL scan on Y; `fb_suggest_index_drops` *must* flag redundant index Z; `fb_evaluate_goal` *must* return `met=true` once the index exists.
 - **Version matrix:** the same suite runs against **FB 2.5 / 3.0 / 4.0 / 5.0** (path/port from test `.env`). Capabilities must diverge correctly (e.g. explained plan only on 3+). Versions not available locally are skipped with a logged notice (no silent pass).
 
 ### Layer 2 — MCP tool (DUnitX, `tests/mcpproject`)
@@ -221,7 +221,7 @@ Providers honor the contract (Finding/SQL/Verify), write-gating on/off behaves c
 
 ### Layer 4 — Goal loop (DUnitX)
 
-Simulates the cycle: baseline `met=false` → apply index → `evaluate_goal` `met=true`; verifies stop on `max_iterations` and on no-progress.
+Simulates the cycle: baseline `met=false` → apply index → `fb_evaluate_goal` `met=true`; verifies stop on `max_iterations` and on no-progress.
 
 `run_all.bat`: recreate seed → core (per available FB version) → mcp → python. Non-zero exit on any failure.
 
