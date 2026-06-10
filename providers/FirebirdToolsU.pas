@@ -28,28 +28,38 @@ type
   end;
 implementation
 uses
-  System.SysUtils, System.Classes, JsonDataObjects,
+  System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
   Firebird.SchemaAudit, Firebird.Goal, FirebirdConfigU, MVCFramework.MCP.Server,
   MVCFramework.Logger;
 
-{ Runs a tool body and turns any exception (most commonly a database
-  connection / communication failure) into a tool result with isError=true,
-  so the message is returned to the MCP client and shown to the user — instead
-  of bubbling up as a generic JSON-RPC -32603 that clients render as an opaque
-  "Failed to call tool". Protocol errors (unknown tool, missing required param)
-  are still raised by the request handler and remain JSON-RPC errors. }
-function Guard(const AAction: TFunc<TMCPToolResult>): TMCPToolResult;
+{ Traces every tool invocation to the log and turns any exception (most commonly
+  a database connection / communication failure) into a tool result with
+  isError=true, so the message is returned to the MCP client and shown to the
+  user — instead of bubbling up as a generic JSON-RPC -32603 that clients render
+  as an opaque "Failed to call tool".
+
+  Log trail per call (all under the 'mcp' tag):
+    [INFO ] >> fb_xxx  <args>            (invocation, with the arguments received)
+    [INFO ] << fb_xxx  ok|isError  NNms  (completion + elapsed time)
+    [ERROR] !! fb_xxx failed - <message> (only on exception)
+
+  Protocol errors (unknown tool, missing required param) are still raised by the
+  request handler and remain JSON-RPC errors. }
+function Guard(const AToolName, AArgs: string; const AAction: TFunc<TMCPToolResult>): TMCPToolResult;
+var SW: TStopwatch;
 begin
+  LogI(Format('>> %s  %s', [AToolName, AArgs]), 'mcp');
+  SW := TStopwatch.StartNew;
   try
     Result := AAction();
+    LogI(Format('<< %s  %s  %dms',
+      [AToolName, IfThen(Result.IsError, 'isError', 'ok'), SW.ElapsedMilliseconds]), 'mcp');
   except
     on E: Exception do
     begin
-      // Record it in the log file too, so failures are visible both to the
-      // MCP client (via the isError result below) and to whoever reads the logs.
-      LogException(E, 'fb tool failed');
+      LogException(E, Format('!! %s failed after %dms', [AToolName, SW.ElapsedMilliseconds]));
       Result := TMCPToolResult.Error('Firebird error (' + E.ClassName + '): ' + E.Message);
     end;
   end;
@@ -71,7 +81,7 @@ end;
 
 function TFirebirdTools.FbInfo: TMCPToolResult;
 begin
-  Result := Guard(
+  Result := Guard('fb_info', '',
     function: TMCPToolResult
     var Conn: TFirebirdConnection; C: TFirebirdCapabilities; J: TJDOJsonObject;
     begin
@@ -94,7 +104,7 @@ end;
 
 function TFirebirdTools.FbListTables: TMCPToolResult;
 begin
-  Result := Guard(
+  Result := Guard('fb_list_tables', '',
     function: TMCPToolResult
     var Conn: TFirebirdConnection; I: TFirebirdIntrospection; T: string; SB: TStringBuilder;
     begin
@@ -113,7 +123,7 @@ function TFirebirdTools.FbDescribeTable(const table_name: string): TMCPToolResul
 var LTable: string;
 begin
   LTable := table_name;
-  Result := Guard(
+  Result := Guard('fb_describe_table', 'table_name=' + LTable,
     function: TMCPToolResult
     var Conn: TFirebirdConnection; D: TFirebirdDocGen;
     begin
@@ -129,7 +139,7 @@ function TFirebirdTools.FbGenerateDocumentation(const table_name: string): TMCPT
 var LTable: string;
 begin
   LTable := table_name;
-  Result := Guard(
+  Result := Guard('fb_generate_documentation', 'table_name=' + LTable,
     function: TMCPToolResult
     var Conn: TFirebirdConnection; D: TFirebirdDocGen;
     begin
@@ -148,7 +158,7 @@ function TFirebirdTools.FbAnalyzeQuery(const sql: string): TMCPToolResult;
 var LSql: string;
 begin
   LSql := sql;
-  Result := Guard(
+  Result := Guard('fb_analyze_query', 'sql=' + LSql,
     function: TMCPToolResult
     var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult; SB: TStringBuilder;
     begin
@@ -175,7 +185,7 @@ function TFirebirdTools.FbSuggestIndexes(const sql: string): TMCPToolResult;
 var LSql: string;
 begin
   LSql := sql;
-  Result := Guard(
+  Result := Guard('fb_suggest_indexes', 'sql=' + LSql,
     function: TMCPToolResult
     var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
     begin
@@ -192,7 +202,7 @@ function TFirebirdTools.FbSuggestIndexDrops(const table_name: string): TMCPToolR
 var LTable: string;
 begin
   LTable := table_name;
-  Result := Guard(
+  Result := Guard('fb_suggest_index_drops', 'table_name=' + LTable,
     function: TMCPToolResult
     var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
     begin
@@ -209,7 +219,7 @@ function TFirebirdTools.FbAuditTable(const table_name: string): TMCPToolResult;
 var LTable: string;
 begin
   LTable := table_name;
-  Result := Guard(
+  Result := Guard('fb_audit_table', 'table_name=' + LTable,
     function: TMCPToolResult
     var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
     begin
@@ -227,7 +237,8 @@ function TFirebirdTools.FbEvaluateGoal(const goal_type, target: string; const th
 var LGoalType, LTarget: string; LThreshold: Double;
 begin
   LGoalType := goal_type; LTarget := target; LThreshold := threshold;
-  Result := Guard(
+  Result := Guard('fb_evaluate_goal',
+    Format('goal_type=%s target=%s threshold=%g', [LGoalType, LTarget, LThreshold]),
     function: TMCPToolResult
     var Conn: TFirebirdConnection; G: TFirebirdGoal; R: TGoalResult; J: TJDOJsonObject;
     begin
