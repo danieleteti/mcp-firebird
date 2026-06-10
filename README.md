@@ -20,9 +20,10 @@ schema health, and drive goal-based optimization — **read-only by default**.
 4. [Configuration (`.env`)](#configuration-env)
 5. [Run & verify manually](#run--verify-manually)
 6. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
-7. [Tool reference](#tool-reference)
-8. [Testing the project](#testing-the-project)
-9. [Troubleshooting](#troubleshooting)
+7. [Using it from Claude](#using-it-from-claude) — worked examples
+8. [Tool reference](#tool-reference)
+9. [Testing the project](#testing-the-project)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -270,6 +271,104 @@ The server is a standard **stdio** MCP server. Whatever the client's config form
 > **Tip:** because every client just runs the exe, you can point different clients at different
 > databases by shipping a separate copy of `app\bin\` (each with its own `.env`) and giving each
 > client the path to its copy.
+
+---
+
+## Using it from Claude
+
+Once the server is registered, you talk to Claude in plain language — it picks the right `fb_*`
+tool, runs it against your configured database, and turns the result into ready-to-run SQL. The
+exchanges below assume the seeded demo database; swap in your own table and column names.
+
+> In **Claude Desktop** the tools appear automatically and the two prompts show up as commands
+> (the 🔌 / "+" menu). In **Claude Code** run `/mcp` to inspect the server, and the prompts are
+> available as slash commands. You can always nudge it explicitly: *"use the firebird tools"*.
+
+### 1. Get your bearings
+
+> **You:** What Firebird version am I connected to, and which features are available?
+
+Claude calls **`fb_info`** and reports the engine version, dialect, charset and detected
+capabilities (MON$ tables, explained plans, BOOLEAN, INT128, timezones, parallel workers).
+
+> **You:** List the tables in the database.
+
+→ **`fb_list_tables`** → `CUSTOMERS`, `ORDERS`, `NOPK_LOG`, `OVERIDX`, `STALE_T`, …
+
+### 2. Document a schema
+
+> **You:** Document the CUSTOMERS table.
+
+→ **`fb_describe_table`** → columns, the `CUSTOMER_ID` primary key, indexes and foreign keys.
+
+> **You:** Generate full Markdown documentation for the whole database and put it in a file.
+
+→ **`fb_generate_documentation`** (no table = whole DB). Claude returns the Markdown; ask it to
+save the text to `docs/schema.md` if you want it on disk.
+
+### 3. Diagnose a slow query and fix it
+
+> **You:** This query is slow, why?
+> `SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'`
+
+→ **`fb_analyze_query`** → *"⚠️ NATURAL scan on CUSTOMERS — the filtered column `CITY` is not
+usefully indexed."*
+
+> **You:** Suggest an index that fixes it.
+
+→ **`fb_suggest_indexes`** → a ready-to-run statement plus how to verify:
+
+```sql
+CREATE INDEX IDX_CUSTOMERS_CITY ON CUSTOMERS (CITY);
+-- Verify: re-run fb_analyze_query; the NATURAL scan on CUSTOMERS should be gone.
+```
+
+> **You:** And this one? `SELECT * FROM CUSTOMERS ORDER BY CITY`
+
+→ **`fb_analyze_query`** flags an **external SORT** (no usable index for the ordering).
+
+### 4. Clean up redundant indexes
+
+> **You:** Which indexes on ORDERS can I safely drop?
+
+→ **`fb_suggest_index_drops`** → flags `IDX_ORDERS_CUSTOMER_DUP` as a duplicate of the
+system foreign-key index, with the `DROP INDEX` statement and a verify step.
+
+> **You:** Do the same for CUSTOMERS.
+
+→ flags the redundant left-prefix (`IDX_CUST_NAME`), the inactive index (`IDX_CUST_CITY`) and
+the low-selectivity index (`IDX_CUST_STATUS`).
+
+### 5. Audit schema health
+
+> **You:** Audit the NOPK_LOG table.
+
+→ **`fb_audit_table`** → *"🛑 critical — Table NOPK_LOG has no PRIMARY KEY …"* with the
+`ALTER TABLE … ADD CONSTRAINT` fix. On `OVERIDX` it reports over-indexing; on `STALE_T` it
+reports stale statistics with the `SET STATISTICS INDEX …` fix.
+
+> **You:** Run a full health check on the database.
+
+→ Claude uses the **`health_check`** prompt: `fb_info` → `fb_list_tables` → `fb_suggest_index_drops`
+per table → a single summary grouped by table with all the ready-to-run SQL.
+
+### 6. Goal-driven optimization (iterate until met)
+
+The **`optimization_goal`** prompt makes Claude loop: measure → suggest → re-measure, stopping as
+soon as the goal is met (or it can't improve).
+
+> **You:** Use the optimization_goal prompt — keep optimizing until this query no longer does a
+> natural scan:
+> `SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'`
+
+Claude:
+1. Calls **`fb_evaluate_goal`** (`goal_type=query_no_natural_scan`) → `met: false` (baseline).
+2. Calls `fb_analyze_query` + `fb_suggest_indexes`, presents `CREATE INDEX IDX_CUSTOMERS_CITY …`.
+3. You run the SQL (writes are off by default — see [Safety](#safety--compatibility)).
+4. Calls `fb_evaluate_goal` again → `met: true`, and stops with the result.
+
+You can also state the goal numerically, e.g. *"get this query under 50 ms"*
+(`goal_type=query_time_ms`, `threshold=50`).
 
 ---
 
