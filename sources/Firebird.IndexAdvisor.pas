@@ -26,19 +26,19 @@ begin
   try
     PA := TFirebirdPlanAnalyzer.Create(FConn, FCaps);
     try R := PA.Analyze(ASQL); finally PA.Free; end;
-    if not R.HasNaturalScan then Exit(nil);
-    for T in R.NaturalTables do
-      for M in TRegEx.Matches(ASQL, '(\w+)\s*(>=|<=|=|>|<|\b(?:LIKE|BETWEEN|IN)\b)', [roIgnoreCase]) do
-      begin
-        Col := M.Groups[1].Value;
-        if SameText(Col, T) then Continue;
-        Idx := Format('IDX_%s_%s', [T, Col]).ToUpper;
-        Advs.Add(TAdvisory.Make(
-          Format('Table %s is scanned NATURAL when filtered by %s. An index lets the optimizer seek instead of scanning every row.', [T, Col]),
-          Format('CREATE INDEX %s ON %s (%s);', [Idx, T, Col]),
-          Format('Re-run fb_analyze_query on this query; the plan should use %s and no longer show "%s NATURAL". Then run SET STATISTICS INDEX %s; to refresh selectivity.', [Idx, T, Idx]),
-          'warning'));
-      end;
+    if R.HasNaturalScan then
+      for T in R.NaturalTables do
+        for M in TRegEx.Matches(ASQL, '(\w+)\s*(>=|<=|=|>|<|\b(?:LIKE|BETWEEN|IN)\b)', [roIgnoreCase]) do
+        begin
+          Col := M.Groups[1].Value;
+          if SameText(Col, T) then Continue;
+          Idx := Format('IDX_%s_%s', [T, Col]).ToUpper;
+          Advs.Add(TAdvisory.Make(
+            Format('Table %s is scanned NATURAL when filtered by %s. An index lets the optimizer seek instead of scanning every row.', [T, Col]),
+            Format('CREATE INDEX %s ON %s (%s);', [Idx, T, Col]),
+            Format('Re-run fb_analyze_query on this query; the plan should use %s and no longer show "%s NATURAL". Then run SET STATISTICS INDEX %s; to refresh selectivity.', [Idx, T, Idx]),
+            'warning'));
+        end;
     Result := Advs.ToArray;
   finally Advs.Free; end;
 end;

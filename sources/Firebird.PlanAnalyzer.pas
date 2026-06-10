@@ -34,7 +34,11 @@ begin
   if not CreateProcess(nil, PChar(LCmd), nil, nil, False, CREATE_NO_WINDOW, nil, nil, SI, PI) then
     RaiseLastOSError;
   try
-    WaitForSingleObject(PI.hProcess, 30000);
+    if WaitForSingleObject(PI.hProcess, 30000) = WAIT_TIMEOUT then
+    begin
+      TerminateProcess(PI.hProcess, 1);
+      raise Exception.Create('isql plan retrieval timed out after 30 seconds');
+    end;
   finally
     CloseHandle(PI.hThread); CloseHandle(PI.hProcess);
   end;
@@ -55,7 +59,7 @@ begin
     if not LScript.TrimRight.EndsWith(';') then LScript := LScript + ';';
     LScript := LScript + sLineBreak;
     TFile.WriteAllBytes(LIn, TEncoding.UTF8.GetBytes(LScript)); // no BOM
-    LConn := Format('localhost/%d:%s', [FConn.Config.Port, FConn.Config.Database]);
+    LConn := Format('%s/%d:%s', [FConn.Config.Host, FConn.Config.Port, FConn.Config.Database]);
     // -m merges stderr into stdout; -m2 redirects diagnostics (where the PLAN
     // line is emitted under SET PLANONLY ON) into the -o output file.
     LCmd := Format('"%s" -q -m -m2 -ch UTF8 -i "%s" -o "%s" -user %s -password %s "%s"',

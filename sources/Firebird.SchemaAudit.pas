@@ -15,13 +15,16 @@ uses System.SysUtils, System.Generics.Collections, Firebird.Introspection;
 
 const OVER_INDEX_THRESHOLD = 5;
 
+function QuoteIdent(const S: string): string;
+begin Result := '"' + S.Replace('"', '""') + '"'; end;
+
 constructor TFirebirdSchemaAudit.Create(AConn: TFirebirdConnection);
 begin inherited Create; FConn := AConn; end;
 
 function TFirebirdSchemaAudit.ActualSelectivity(const ATable, AColumn: string): Double;
 var Distinct: Int64;
 begin
-  Distinct := StrToInt64Def(FConn.ScalarStr(Format('SELECT COUNT(DISTINCT %s) FROM %s', [AColumn, ATable])), 0);
+  Distinct := StrToInt64Def(FConn.ScalarStr(Format('SELECT COUNT(DISTINCT %s) FROM %s', [QuoteIdent(AColumn), QuoteIdent(ATable)])), 0);
   if Distinct = 0 then Exit(0);
   Result := 1.0 / Distinct;
 end;

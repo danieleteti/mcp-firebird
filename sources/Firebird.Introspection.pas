@@ -28,6 +28,9 @@ type
 implementation
 uses System.SysUtils, Data.DB, FireDAC.Comp.Client;
 
+function QuoteIdent(const S: string): string;
+begin Result := '"' + S.Replace('"', '""') + '"'; end;
+
 function MapFieldType(AType, ALen, AScale: Integer): string;
 begin
   case AType of
@@ -107,7 +110,7 @@ end;
 
 function TFirebirdIntrospection.RowCount(const ATable: string): Int64;
 begin
-  Result := StrToInt64Def(FConn.ScalarStr('SELECT COUNT(*) FROM ' + ATable), 0);
+  Result := StrToInt64Def(FConn.ScalarStr('SELECT COUNT(*) FROM ' + QuoteIdent(ATable)), 0);
 end;
 
 function TFirebirdIntrospection.IndexColumns(const AIndexName: string): TArray<string>;
