@@ -27,6 +27,11 @@ end;
 
 procedure Boot;
 begin
+  // Anchor all relative paths (notably the logger's "logs" folder) to the
+  // executable / .env directory, NOT the launcher's working directory. An MCP
+  // client (Claude Desktop, etc.) starts the server with an arbitrary CWD, so
+  // without this the log files would land somewhere invisible to the user.
+  SetCurrentDir(AppPath);
   ConfigDotEnv;
   ConfigLogger;
 end;
