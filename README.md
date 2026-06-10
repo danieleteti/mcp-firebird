@@ -107,17 +107,119 @@ Copy-Item bin\.env.example bin\.env
 
 ### Choosing a different config folder: `--env <dir>`
 
-Pass `--env <dir>` to read the `.env` from another folder instead of the executable's:
+By default the `.env` is read from the executable's own folder. Pass **`--env <dir>`** to read it
+from another folder instead — the argument is a **directory** (the folder that *contains* the
+`.env`), not the file itself:
 
 ```powershell
-MCPFirebird.exe --env C:\configs\prod        # reads C:\configs\prod\.env
-MCPFirebird.exe --env=..\shared              # relative paths resolve against the working dir
+MCPFirebird.exe --env C:\configs\prod      # reads C:\configs\prod\.env
+MCPFirebird.exe --env=C:\configs\prod      # the --env=<dir> form also works
+MCPFirebird.exe --env ..\shared            # relative paths resolve against the working directory
+MCPFirebird.exe                            # no argument -> reads <exe folder>\.env
 ```
 
-The argument is a **directory** (the folder that contains the `.env`), not the file itself.
-Without `--env`, the executable's own folder is used. This lets one build serve several
-databases — give each MCP client a different `--env` folder. Logs are written to a `logs\`
-subfolder next to the executable.
+**How the argument reaches the server.** MCP clients don't go through a shell — they spawn the
+executable directly with a `command` plus an `args` **array**, where each array element becomes one
+separate argument. So there is no shell quoting to worry about (paths with spaces are fine), and you
+write the directory as its own array element. Two equivalent forms:
+
+| Form | `args` value |
+|---|---|
+| separate | `["--env", "C:\\configs\\prod"]` |
+| joined | `["--env=C:\\configs\\prod"]` |
+
+**Path notes (Windows):** in JSON, backslashes must be **doubled** (`"C:\\configs\\prod"`) — or use
+forward slashes, which Windows accepts and don't need escaping (`"C:/configs/prod"`). Prefer an
+**absolute** path in MCP clients: the working directory they launch with is unpredictable, so
+relative paths are unreliable there. Every startup logs the resolved folder to
+`bin\logs\MCPFirebird.NN.mcp.log`:
+
+```
+Boot: .env directory "C:\configs\prod" (.env exists=True)
+```
+
+> **Note:** logs are always written to a `logs\` subfolder next to the **executable** (`bin\logs\`),
+> regardless of `--env`.
+
+#### Passing `--env` from each MCP client
+
+**Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`), **Claude Code** (`.mcp.json`),
+**Cursor** (`.cursor/mcp.json`) and **VS Code** (`.vscode/mcp.json`) all use the same shape — a
+`command` plus an `args` array:
+
+```json
+{
+  "mcpServers": {
+    "firebird": {
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
+      "args": ["--env", "C:\\configs\\prod"]
+    }
+  }
+}
+```
+
+Claude Code can also add it from the CLI:
+
+```powershell
+claude mcp add firebird -- "C:\DEV\mcp-firebird\bin\MCPFirebird.exe" --env "C:\configs\prod"
+```
+
+**Gemini CLI** (`~/.gemini/settings.json`) — same `mcpServers` shape:
+
+```json
+{
+  "mcpServers": {
+    "firebird": {
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
+      "args": ["--env", "C:\\configs\\prod"]
+    }
+  }
+}
+```
+
+**OpenCode** (`opencode.json`) — note the difference: `command` is a **single array** that already
+includes the arguments (there is no separate `args` field):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "firebird": {
+      "type": "local",
+      "command": ["C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe", "--env", "C:\\configs\\prod"],
+      "enabled": true
+    }
+  }
+}
+```
+
+#### Serving several databases from one build
+
+Register the **same executable** more than once with different `--env` folders — each folder holds
+its own `.env`:
+
+```json
+{
+  "mcpServers": {
+    "firebird-prod": {
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
+      "args": ["--env", "C:\\configs\\prod"]
+    },
+    "firebird-test": {
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
+      "args": ["--env", "C:\\configs\\test"]
+    }
+  }
+}
+```
+
+```
+C:\configs\prod\.env      <- production host/port/database
+C:\configs\test\.env      <- test host/port/database
+```
+
+The client then shows two independent servers (`firebird-prod`, `firebird-test`), each connected to
+its own database.
 
 | Key | Default | Meaning |
 |---|---|---|
