@@ -332,6 +332,20 @@ The suite runs the **DUnitX core tests against real Firebird servers** (2.5 → 
 pwsh tests/run_all.ps1
 ```
 
+#### Or via PyInvoke (`tasks.py`)
+
+A `tasks.py` wraps the whole build + test workflow (`python -m pip install invoke`):
+
+```powershell
+invoke --list                 # show all tasks
+invoke build                  # build the core test project + the MCP app
+invoke core --version 5.0     # core suite against one FB version (start/seed/test/stop)
+invoke matrix                 # core suite across every present FB version
+invoke compliance             # Python stdio MCP compliance suite (on FB 5.0)
+invoke boundary               # enforce the core/MVCFramework boundary
+invoke all                    # full run_all.ps1 (matrix + boundary + compliance)
+```
+
 For each present kit it: starts the server → seeds a fresh `TESTDB.FDB` → runs the core exe →
 stops the server; then runs the boundary check and the Python suite on 5.0. Expected tail:
 
