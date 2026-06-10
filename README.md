@@ -1,68 +1,392 @@
 # MCP Firebird
 
-A Model Context Protocol server for Firebird (2.5–5.0), written in Delphi with the
-official `fbclient` driver. Documents schemas, analyzes query plans, advises on
-indexes, audits schema health, and drives goal-based optimization — read-only by default.
+A [Model Context Protocol](https://modelcontextprotocol.io) server for **Firebird 2.5 – 5.0**,
+written in Delphi with the official `fbclient` driver. It lets an AI assistant document
+schemas, analyze query plans, advise on indexes (which to add **and** which to drop), audit
+schema health, and drive goal-based optimization — **read-only by default**.
 
-## Quick start
+- **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
+- **Server identity:** `mcp-firebird` v`0.1.0`
+- **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
+- **Safety:** read-only analysis; DDL/write is gated behind `firebird.allow_ddl=true`
 
-1. Build `app/MCPFirebird.dproj` (Win64) in Delphi. Search paths: `C:\DEV\mcp-server-delphi\sources`, DMVCFramework `sources`, this repo's `sources` + `providers`.
-2. Copy `app/bin/.env.example` to `app/bin/.env` and set `firebird.*`:
-   ```bash
-   firebird.host=localhost
-   firebird.port=3055
-   firebird.database=C:\path\to\YOURDB.FDB
-   firebird.user=SYSDBA
-   firebird.password=masterkey
-   firebird.charset=UTF8
-   firebird.client_lib=C:\path\to\fbclient.dll
-   firebird.allow_ddl=false
-   ```
-3. Register with Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
-   ```json
-   { "mcpServers": { "firebird": { "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe" } } }
-   ```
+---
 
-## Tools (M1)
+## Table of contents
 
-| Tool | Purpose |
-|---|---|
-| `fb_info` | Engine version + detected capabilities |
-| `fb_list_tables` | List user tables |
-| `fb_describe_table` | Columns, PK, indexes, foreign keys |
-| `fb_generate_documentation` | Markdown docs for a table or the whole database |
-| `fb_analyze_query` | Access-plan analysis: NATURAL scan + external SORT detection |
-| `fb_suggest_indexes` | Suggest new indexes from NATURAL-scanned predicates |
-| `fb_suggest_index_drops` | Flag duplicate / redundant-prefix / inactive / low-selectivity indexes |
-| `fb_audit_table` | Schema-health audit: missing PK, over-indexing, stale statistics |
-| `fb_evaluate_goal` | Deterministic goal check (drives the `optimization_goal` loop) |
+1. [What it does](#what-it-does)
+2. [Prerequisites](#prerequisites)
+3. [Build](#build)
+4. [Configuration (`.env`)](#configuration-env)
+5. [Run & verify manually](#run--verify-manually)
+6. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
+7. [Tool reference](#tool-reference)
+8. [Testing the project](#testing-the-project)
+9. [Troubleshooting](#troubleshooting)
 
-## Prompts
+---
 
-- `optimization_goal` — goal-driven loop: set an objective, iterate `fb_*` tools until `fb_evaluate_goal` reports `met: true`.
-- `health_check` — guided database health review.
+## What it does
 
-## Resources
+### Tools (9)
 
-- `firebird://schema` — live database schema.
+| Tool | Arguments | Purpose |
+|---|---|---|
+| `fb_info` | — | Engine version + detected capabilities (JSON) |
+| `fb_list_tables` | — | List user tables |
+| `fb_describe_table` | `table_name` | Columns, PK, indexes, foreign keys |
+| `fb_generate_documentation` | `table_name?` | Markdown docs for one table or the whole database |
+| `fb_analyze_query` | `sql` | Access-plan analysis: NATURAL-scan + external-SORT detection |
+| `fb_suggest_indexes` | `sql` | New-index suggestions from NATURAL-scanned predicates (ready-to-run DDL) |
+| `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
+| `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
+| `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 
-## Safety
+Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step.
 
-Read-only by default. Write tools (M3) require `firebird.allow_ddl=true`.
+### Prompts (2)
 
-## Compatibility
+- **`optimization_goal`** — the goal-driven loop: set an objective, the assistant iterates the
+  `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
+  max-iterations / no-progress safety stop).
+- **`health_check`** — guided whole-database health review.
 
-Validated against Firebird 2.5, 3.0, 4.0, and 5.0 zip-kits. Capability detection
-adapts feature use (MON$ tables, explained plans, BOOLEAN, INT128, timezones,
-parallel workers) to the connected engine version.
+### Resources (1)
 
-## Tests
+- **`firebird://schema`** — the live database schema as a single resource.
+
+---
+
+## Prerequisites
+
+- **Windows x64** (the server is a native Win64 console app).
+- **Delphi 12 Athens** (RAD Studio 23.0) to build, with **FireDAC**. Earlier Delphi 11+ should work.
+- **DMVCFramework** and the **`mcp-server-delphi`** library checked out locally (search paths below).
+- A **Firebird client library** (`fbclient.dll`) matching — or newer than — your target server.
+  A 5.0 `fbclient.dll` connects fine to 2.5–5.0 servers.
+- A reachable **Firebird database** to point at.
+
+> For running the **test matrix** you also need the Firebird zip-kits under `fb_versions/` and
+> Python 3 with `pytest`. See [Testing the project](#testing-the-project).
+
+---
+
+## Build
+
+Search paths the project expects (set once in `app/MCPFirebird.dproj`):
+
+```
+C:\DEV\mcp-server-delphi\sources
+<DMVCFramework>\sources   (every sources subfolder DMVC needs)
+C:\DEV\mcp-firebird\sources
+C:\DEV\mcp-firebird\providers
+```
+
+Build the Win64 Debug app from the repo root:
+
+```powershell
+cmd /c _build_app.bat
+```
+
+`_build_app.bat` calls `rsvars.bat` then `msbuild app\MCPFirebird.dproj /t:Clean;Build /p:Config=Debug /p:Platform=Win64`.
+The executable lands at **`app\bin\MCPFirebird.exe`**.
+
+(There is a matching `_build_core.bat` for the DUnitX test project.)
+
+---
+
+## Configuration (`.env`)
+
+The server reads its configuration from a **`.env` file in the same folder as the executable**
+(`app\bin\.env`). Copy the template and edit it:
+
+```powershell
+Copy-Item app\bin\.env.example app\bin\.env
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `firebird.host` | `localhost` | Server host (TCP). Use the real host/IP for remote DBs |
+| `firebird.port` | `3050` | Server port |
+| `firebird.database` | *(empty)* | Full path (or alias) of the database on the server |
+| `firebird.user` | `SYSDBA` | Login user |
+| `firebird.password` | `masterkey` | Login password |
+| `firebird.charset` | `UTF8` | Connection character set |
+| `firebird.client_lib` | *(empty)* | Full path to `fbclient.dll` to load |
+| `firebird.allow_ddl` | `false` | **Safety gate** for write/DDL tools (M1 tools are read-only) |
+| `logger.config.file` | `loggerpro.stdio.json` | File-logger config (logs go to file only; stdout stays pure JSON-RPC) |
+
+Example `app\bin\.env`:
+
+```ini
+firebird.host=localhost
+firebird.port=3050
+firebird.database=C:\data\MYAPP.FDB
+firebird.user=SYSDBA
+firebird.password=masterkey
+firebird.charset=UTF8
+firebird.client_lib=C:\Program Files\Firebird\Firebird_5_0\fbclient.dll
+firebird.allow_ddl=false
+logger.config.file=loggerpro.stdio.json
+```
+
+> **Why a file and not client-passed env vars?** The dotEnv strategy is *file-then-env*: the
+> `.env` file takes priority, OS environment variables are the fallback. Configuring via
+> `app\bin\.env` works identically across every MCP client because it is read relative to the
+> `.exe`, regardless of the client's working directory. Keep this file out of version control
+> (it is already `.gitignore`d) — it holds credentials.
+
+---
+
+## Run & verify manually
+
+The server speaks JSON-RPC over stdin/stdout. You can smoke-test it without any MCP client by
+piping framed JSON lines into it. From PowerShell:
+
+```powershell
+$msgs = @(
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"manual","version":"1"}}}'
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fb_info","arguments":{}}}'
+) -join "`n"
+$msgs | & .\app\bin\MCPFirebird.exe
+```
+
+Expected: an `initialize` result naming `mcp-firebird`, a `tools/list` with the 9 `fb_*` tools,
+and `fb_info` returning the live `engine_version`. (Logs appear under `app\bin\logs\`; stdout is
+pure JSON-RPC.)
+
+---
+
+## Connect it to an MCP client
+
+All clients launch the **same command** — the absolute path to `MCPFirebird.exe` — and the server
+picks up its database connection from `app\bin\.env`. Adjust the path to where you built it.
+
+### Claude Desktop
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "firebird": {
+      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe"
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The `fb_*` tools, the `optimization_goal` / `health_check` prompts, and
+the `firebird://schema` resource appear in the client.
+
+### Claude Code (CLI)
+
+Add it with one command (local stdio server):
+
+```powershell
+claude mcp add firebird -- "C:\DEV\mcp-firebird\app\bin\MCPFirebird.exe"
+```
+
+Or commit a project-scoped `.mcp.json` at the repo root so teammates inherit it:
+
+```json
+{
+  "mcpServers": {
+    "firebird": {
+      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+Verify with `claude mcp list` (or `/mcp` inside a session).
+
+### Gemini CLI
+
+Edit `~/.gemini/settings.json` (or a project-level `.gemini/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "firebird": {
+      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe",
+      "args": [],
+      "cwd": "C:\\DEV\\mcp-firebird\\app\\bin",
+      "timeout": 30000,
+      "trust": false
+    }
+  }
+}
+```
+
+Then `/mcp` inside Gemini CLI lists the server and its tools. Setting `cwd` to the `bin` folder
+keeps the `logs\` directory tidy (the `.env` is found via the exe path regardless).
+
+### OpenCode
+
+Edit `opencode.json` (global `~/.config/opencode/opencode.json` or per-project) and register a
+**local** MCP server — `command` is an argv array:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "firebird": {
+      "type": "local",
+      "command": ["C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Cursor / VS Code
+
+Cursor reads `.cursor/mcp.json`; VS Code (and MCP-aware extensions) read `.vscode/mcp.json`.
+Both use the same shape:
+
+```json
+{
+  "mcpServers": {
+    "firebird": {
+      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe"
+    }
+  }
+}
+```
+
+### Any other MCP client
+
+The server is a standard **stdio** MCP server. Whatever the client's config format, give it:
+
+- **command:** `C:\DEV\mcp-firebird\app\bin\MCPFirebird.exe`
+- **args:** *(none)*
+- **transport:** stdio
+- **env:** *(none required)* — connection comes from `app\bin\.env`
+
+> **Tip:** because every client just runs the exe, you can point different clients at different
+> databases by shipping a separate copy of `app\bin\` (each with its own `.env`) and giving each
+> client the path to its copy.
+
+---
+
+## Tool reference
+
+A few call examples (MCP `tools/call` `arguments`):
+
+```jsonc
+// Describe a table
+{ "name": "fb_describe_table", "arguments": { "table_name": "CUSTOMERS" } }
+
+// Analyze a query's plan (flags NATURAL scans and external SORTs)
+{ "name": "fb_analyze_query", "arguments": { "sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'" } }
+
+// Suggest indexes for a slow query
+{ "name": "fb_suggest_indexes", "arguments": { "sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'" } }
+
+// Which indexes to drop on a table
+{ "name": "fb_suggest_index_drops", "arguments": { "table_name": "ORDERS" } }
+
+// Schema-health audit
+{ "name": "fb_audit_table", "arguments": { "table_name": "NOPK_LOG" } }
+
+// Goal check: "this query must no longer do a NATURAL scan"
+{ "name": "fb_evaluate_goal",
+  "arguments": { "goal_type": "query_no_natural_scan",
+                 "target": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'",
+                 "threshold": 0 } }
+```
+
+`fb_evaluate_goal` `goal_type` values supported in M1: `query_no_natural_scan`,
+`query_time_ms`, `no_redundant_indexes`. See
+[`docs/firebird-problem-catalog.md`](docs/firebird-problem-catalog.md) for every problem the
+tools detect, the fixture that provokes it, and the milestone it lands in.
+
+---
+
+## Testing the project
+
+The suite runs the **DUnitX core tests against real Firebird servers** (2.5 → 5.0) plus a
+**Python stdio compliance suite** and a **core-boundary check**.
+
+### Prerequisites for the test matrix
+
+- Firebird zip-kits present under `fb_versions/` (paths/ports in `tests/fbkit.versions.psd1`).
+  Ports: **2.5 → 3070**, 3.0 → 3053, 4.0 → 3054, 5.0 → 3055.
+- **One-time** per kit: the zip-kits ship without a usable `SYSDBA`. With the server stopped,
+  create it in embedded mode (needed for 3.0/4.0/5.0; 2.5 works out of the box):
+  ```
+  <kit>\isql.exe -user SYSDBA "<kit>\security<N>.fdb"
+    CREATE USER SYSDBA PASSWORD 'masterkey';
+    COMMIT; QUIT;
+  ```
+  (`security3.fdb` / `security4.fdb` / `security5.fdb`).
+- Python 3 with `pytest` (`python -m pip install pytest`).
+
+### Run everything (one command)
 
 ```powershell
 pwsh tests/run_all.ps1
 ```
 
-Runs the DUnitX core suite across the FB 2.5/3.0/4.0/5.0 zip-kits, the core-boundary
-check, and the Python MCP stdio compliance suite. See
-[`docs/firebird-problem-catalog.md`](docs/firebird-problem-catalog.md) for the
-catalog of detected problems and their fixtures.
+For each present kit it: starts the server → seeds a fresh `TESTDB.FDB` → runs the core exe →
+stops the server; then runs the boundary check and the Python suite on 5.0. Expected tail:
+
+```
+==== Core suite on FB 2.5 ====   ... 27 passed / 3 ignored
+==== Core suite on FB 3.0 ====   ... 27 passed / 3 ignored
+==== Core suite on FB 4.0 ====   ... 27 passed / 3 ignored
+==== Core suite on FB 5.0 ====   ... 27 passed / 3 ignored
+Core boundary OK: no MVCFramework imports in sources/
+7 passed
+ALL SUITES PASSED
+```
+
+(The 3 *ignored* tests are M2-pending detectors, kept visible as backlog.)
+
+### Run against a single version
+
+```powershell
+pwsh tests/fbkit.ps1   -Action start  -Version 5.0
+pwsh tests/seed/make_seed.ps1          -Version 5.0
+$env:FBTEST_PORT='3055'
+$env:FBTEST_DB='C:\DEV\mcp-firebird\tests\seed\TESTDB.FDB'
+$env:FBTEST_CLIENTLIB=(pwsh tests/fbkit.ps1 -Action client -Version 5.0)
+& 'C:\DEV\mcp-firebird\tests\coreproject\MCPFirebirdCoreTests.exe'
+pwsh tests/fbkit.ps1   -Action stop   -Version 5.0
+```
+
+### Python compliance only
+
+```powershell
+pwsh tests/fbkit.ps1 -Action start -Version 5.0
+pwsh tests/seed/make_seed.ps1 -Version 5.0
+python -m pytest tests/test_mcp_firebird_stdio.py -v
+pwsh tests/fbkit.ps1 -Action stop -Version 5.0
+```
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---|---|
+| Client shows the server but **no tools** | `app\bin\.env` missing or DB unreachable — the server starts but tools fail on connect. Test with the [manual smoke test](#run--verify-manually). |
+| `Your user name and password are not defined` (SQLSTATE 28000) | Wrong credentials, or a zip-kit without `SYSDBA` — see the one-time init above. |
+| Analysis tools return empty / no NATURAL scan on a **remote** DB | Ensure `firebird.host` is the real host (the plan analyzer uses the configured host). |
+| `fbclient.dll` not found / wrong bitness | Set `firebird.client_lib` to a **Win64** `fbclient.dll`; a 5.0 client works against 2.5–5.0. |
+| stdout has non-JSON noise | Logging must go to file only — keep `logger.config.file=loggerpro.stdio.json`. |
+| Port 3050 already in use by another Firebird | Use a distinct port (the test harness puts FB 2.5 on **3070** for this reason). |
+
+---
+
+## Safety & compatibility
+
+- **Read-only by default.** Write/DDL tools (planned for M3) require `firebird.allow_ddl=true`.
+- **Cross-version.** Capability detection adapts feature use (MON$ tables, explained plans,
+  BOOLEAN, INT128, timezones, parallel workers) to the connected engine; validated on FB
+  2.5 / 3.0 / 4.0 / 5.0.
+- **Single configured database** per server instance (run multiple instances for multiple DBs).
