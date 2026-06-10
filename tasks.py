@@ -37,6 +37,7 @@ VERSIONS_PSD1 = os.path.join(ROOT, "tests", "fbkit.versions.psd1")
 CORE_EXE = os.path.join(ROOT, "tests", "coreproject", "MCPFirebirdCoreTests.exe")
 SEED_DB = os.path.join(ROOT, "tests", "seed", "TESTDB.FDB")
 PY_SUITE = os.path.join(ROOT, "tests", "test_mcp_firebird_stdio.py")
+PY_SUITE_FULL = os.path.join(ROOT, "tests", "test_mcp_firebird_full.py")
 APP_EXE = os.path.join(ROOT, "app", "bin", "MCPFirebird.exe")
 
 
@@ -197,7 +198,7 @@ def compliance(c, version="5.0", keep_running=False):
     _fbkit(c, "start", version)
     try:
         _pwsh(c, MAKE_SEED, "-Version", version)
-        c.run(f'python -m pytest "{PY_SUITE}" -v', pty=False,
+        c.run(f'python -m pytest "{PY_SUITE}" "{PY_SUITE_FULL}" -v', pty=False,
               env={"MCP_FB_EXE": APP_EXE})
     finally:
         if not keep_running:

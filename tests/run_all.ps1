@@ -28,7 +28,7 @@ Write-Host "==== Python MCP compliance on FB 5.0 ===="
 try {
   & "$PSScriptRoot\seed\make_seed.ps1" -Version 5.0 | Out-Null
   pwsh "$PSScriptRoot\check_core_boundary.ps1"
-  python -m pytest "$PSScriptRoot\test_mcp_firebird_stdio.py" -v
+  python -m pytest "$PSScriptRoot\test_mcp_firebird_stdio.py" "$PSScriptRoot\test_mcp_firebird_full.py" -v
   if ($LASTEXITCODE -ne 0) { $failed = $true }
 } finally {
   & "$PSScriptRoot\fbkit.ps1" -Action stop -Version 5.0 | Out-Null
