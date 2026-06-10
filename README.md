@@ -98,12 +98,26 @@ The executable lands at **`bin\MCPFirebird.exe`**.
 
 ## Configuration (`.env`)
 
-The server reads its configuration from a **`.env` file in the same folder as the executable**
-(`bin\.env`). Copy the template and edit it:
+By default the server reads its configuration from a **`.env` file in the same folder as the
+executable** (`bin\.env`). Copy the template and edit it:
 
 ```powershell
 Copy-Item bin\.env.example bin\.env
 ```
+
+### Choosing a different config folder: `--env <dir>`
+
+Pass `--env <dir>` to read the `.env` from another folder instead of the executable's:
+
+```powershell
+MCPFirebird.exe --env C:\configs\prod        # reads C:\configs\prod\.env
+MCPFirebird.exe --env=..\shared              # relative paths resolve against the working dir
+```
+
+The argument is a **directory** (the folder that contains the `.env`), not the file itself.
+Without `--env`, the executable's own folder is used. This lets one build serve several
+databases — give each MCP client a different `--env` folder. Logs are written to a `logs\`
+subfolder next to the executable.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -264,13 +278,18 @@ Both use the same shape:
 The server is a standard **stdio** MCP server. Whatever the client's config format, give it:
 
 - **command:** `C:\DEV\mcp-firebird\bin\MCPFirebird.exe`
-- **args:** *(none)*
+- **args:** *(none)* — or `["--env", "C:\\configs\\prod"]` to use a `.env` from another folder
 - **transport:** stdio
-- **env:** *(none required)* — connection comes from `bin\.env`
+- **env:** *(none required)* — connection comes from the `.env`
 
-> **Tip:** because every client just runs the exe, you can point different clients at different
-> databases by shipping a separate copy of `bin\` (each with its own `.env`) and giving each
-> client the path to its copy.
+> **Tip:** to point different clients at different databases, give each one a different
+> `--env <dir>` (a folder with its own `.env`) — no need to copy the whole `bin\` folder. For
+> example, in a Claude Code `.mcp.json`:
+> ```json
+> { "mcpServers": { "firebird": {
+>     "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
+>     "args": ["--env", "C:\\configs\\prod"] } } }
+> ```
 
 ---
 
