@@ -90,7 +90,7 @@ cmd /c _build_app.bat
 ```
 
 `_build_app.bat` calls `rsvars.bat` then `msbuild app\MCPFirebird.dproj /t:Clean;Build /p:Config=Debug /p:Platform=Win64`.
-The executable lands at **`app\bin\MCPFirebird.exe`**.
+The executable lands at **`bin\MCPFirebird.exe`**.
 
 (There is a matching `_build_core.bat` for the DUnitX test project.)
 
@@ -99,10 +99,10 @@ The executable lands at **`app\bin\MCPFirebird.exe`**.
 ## Configuration (`.env`)
 
 The server reads its configuration from a **`.env` file in the same folder as the executable**
-(`app\bin\.env`). Copy the template and edit it:
+(`bin\.env`). Copy the template and edit it:
 
 ```powershell
-Copy-Item app\bin\.env.example app\bin\.env
+Copy-Item bin\.env.example bin\.env
 ```
 
 | Key | Default | Meaning |
@@ -117,7 +117,7 @@ Copy-Item app\bin\.env.example app\bin\.env
 | `firebird.allow_ddl` | `false` | **Safety gate** for write/DDL tools (M1 tools are read-only) |
 | `logger.config.file` | `loggerpro.stdio.json` | File-logger config (logs go to file only; stdout stays pure JSON-RPC) |
 
-Example `app\bin\.env`:
+Example `bin\.env`:
 
 ```ini
 firebird.host=localhost
@@ -133,7 +133,7 @@ logger.config.file=loggerpro.stdio.json
 
 > **Why a file and not client-passed env vars?** The dotEnv strategy is *file-then-env*: the
 > `.env` file takes priority, OS environment variables are the fallback. Configuring via
-> `app\bin\.env` works identically across every MCP client because it is read relative to the
+> `bin\.env` works identically across every MCP client because it is read relative to the
 > `.exe`, regardless of the client's working directory. Keep this file out of version control
 > (it is already `.gitignore`d) — it holds credentials.
 
@@ -150,11 +150,11 @@ $msgs = @(
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fb_info","arguments":{}}}'
 ) -join "`n"
-$msgs | & .\app\bin\MCPFirebird.exe
+$msgs | & .\bin\MCPFirebird.exe
 ```
 
 Expected: an `initialize` result naming `mcp-firebird`, a `tools/list` with the 9 `fb_*` tools,
-and `fb_info` returning the live `engine_version`. (Logs appear under `app\bin\logs\`; stdout is
+and `fb_info` returning the live `engine_version`. (Logs appear under `bin\logs\`; stdout is
 pure JSON-RPC.)
 
 ---
@@ -162,7 +162,7 @@ pure JSON-RPC.)
 ## Connect it to an MCP client
 
 All clients launch the **same command** — the absolute path to `MCPFirebird.exe` — and the server
-picks up its database connection from `app\bin\.env`. Adjust the path to where you built it.
+picks up its database connection from `bin\.env`. Adjust the path to where you built it.
 
 ### Claude Desktop
 
@@ -186,7 +186,7 @@ the `firebird://schema` resource appear in the client.
 Add it with one command (local stdio server):
 
 ```powershell
-claude mcp add firebird -- "C:\DEV\mcp-firebird\app\bin\MCPFirebird.exe"
+claude mcp add firebird -- "C:\DEV\mcp-firebird\bin\MCPFirebird.exe"
 ```
 
 Or commit a project-scoped `.mcp.json` at the repo root so teammates inherit it:
@@ -263,13 +263,13 @@ Both use the same shape:
 
 The server is a standard **stdio** MCP server. Whatever the client's config format, give it:
 
-- **command:** `C:\DEV\mcp-firebird\app\bin\MCPFirebird.exe`
+- **command:** `C:\DEV\mcp-firebird\bin\MCPFirebird.exe`
 - **args:** *(none)*
 - **transport:** stdio
-- **env:** *(none required)* — connection comes from `app\bin\.env`
+- **env:** *(none required)* — connection comes from `bin\.env`
 
 > **Tip:** because every client just runs the exe, you can point different clients at different
-> databases by shipping a separate copy of `app\bin\` (each with its own `.env`) and giving each
+> databases by shipping a separate copy of `bin\` (each with its own `.env`) and giving each
 > client the path to its copy.
 
 ---
@@ -487,7 +487,7 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Client shows the server but **no tools** | `app\bin\.env` missing or DB unreachable — the server starts but tools fail on connect. Test with the [manual smoke test](#run--verify-manually). |
+| Client shows the server but **no tools** | `bin\.env` missing or DB unreachable — the server starts but tools fail on connect. Test with the [manual smoke test](#run--verify-manually). |
 | `Your user name and password are not defined` (SQLSTATE 28000) | Wrong credentials, or a zip-kit without `SYSDBA` — see the one-time init above. |
 | Analysis tools return empty / no NATURAL scan on a **remote** DB | Ensure `firebird.host` is the real host (the plan analyzer uses the configured host). |
 | `fbclient.dll` not found / wrong bitness | Set `firebird.client_lib` to a **Win64** `fbclient.dll`; a 5.0 client works against 2.5–5.0. |

@@ -1,5 +1,7 @@
 program MCPFirebird;
+
 {$APPTYPE CONSOLE}
+
 uses
   System.SysUtils,
   MVCFramework.MCP.Server,

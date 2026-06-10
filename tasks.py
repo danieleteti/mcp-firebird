@@ -38,7 +38,7 @@ CORE_EXE = os.path.join(ROOT, "tests", "coreproject", "MCPFirebirdCoreTests.exe"
 SEED_DB = os.path.join(ROOT, "tests", "seed", "TESTDB.FDB")
 PY_SUITE = os.path.join(ROOT, "tests", "test_mcp_firebird_stdio.py")
 PY_SUITE_FULL = os.path.join(ROOT, "tests", "test_mcp_firebird_full.py")
-APP_EXE = os.path.join(ROOT, "app", "bin", "MCPFirebird.exe")
+APP_EXE = os.path.join(ROOT, "bin", "MCPFirebird.exe")
 
 
 # --------------------------------------------------------------------------- #
@@ -93,7 +93,7 @@ def build_core(c, clean=True):
 
 @task
 def build_app(c):
-    """Build the MCP stdio server app (Win64 Debug) -> app/bin/MCPFirebird.exe."""
+    """Build the MCP stdio server app (Win64 Debug) -> bin/MCPFirebird.exe."""
     c.run(os.path.join(ROOT, "_build_app.bat"), pty=False)
 
 

@@ -1,6 +1,6 @@
 import json, os, subprocess, pytest
 
-EXE = os.environ.get("MCP_FB_EXE", r"C:\DEV\mcp-firebird\app\bin\MCPFirebird.exe")
+EXE = os.environ.get("MCP_FB_EXE", r"C:\DEV\mcp-firebird\bin\MCPFirebird.exe")
 
 class StdioClient:
     def __init__(self, proc): self.proc = proc; self._id = 0; self.init_result = None
