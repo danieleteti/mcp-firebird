@@ -1,10 +1,16 @@
 unit FirebirdConfigU;
 interface
-uses Firebird.Connection;
+uses System.SysUtils, Firebird.Connection;
+type
+  { Raised when the loaded .env is missing values needed to reach the database.
+    The message names the offending key and the exact .env file, so a misrouted
+    --env (the classic cause) is obvious instead of surfacing as a cryptic
+    FireDAC "I/O error ... for file localhost/3050:". }
+  EFirebirdConfig = class(Exception);
 function LoadFirebirdConfig: TFirebirdConnectionConfig;
 function NewConfiguredConnection: TFirebirdConnection;
 implementation
-uses System.SysUtils, MVCFramework.DotEnv, MVCFramework.Commons;
+uses System.IOUtils, MVCFramework.DotEnv, MVCFramework.Commons, BootConfigU;
 
 function LoadFirebirdConfig: TFirebirdConnectionConfig;
 begin
@@ -19,9 +25,38 @@ begin
   Result.AllowDDL  := dotEnv.Env('firebird.allow_ddl', False);
 end;
 
-function NewConfiguredConnection: TFirebirdConnection;
+{ Fail fast with a message that points at the real problem, before FireDAC turns
+  an empty/wrong path into an opaque OS I/O error. No silent defaults for values
+  that must come from the .env. }
+procedure ValidateFirebirdConfig(const AConfig: TFirebirdConnectionConfig);
+
+  function EnvHint: string;
+  begin
+    if TFile.Exists(EnvFile) then
+      Result := Format('Check "firebird.database" in %s.', [EnvFile])
+    else
+      Result := Format('No .env was loaded: expected "%s" but it does not exist. '
+        + 'Point --env at the FOLDER that contains the .env (not at the file itself), '
+        + 'or drop a .env next to the executable.', [EnvFile]);
+  end;
+
 begin
-  Result := TFirebirdConnection.Create(LoadFirebirdConfig);
+  if Trim(AConfig.Database) = '' then
+    raise EFirebirdConfig.Create('Firebird database path is empty. ' + EnvHint);
+
+  if (AConfig.ClientLib <> '') and not TFile.Exists(AConfig.ClientLib) then
+    raise EFirebirdConfig.CreateFmt(
+      'Firebird client library not found: "%s" (firebird.client_lib in %s).',
+      [AConfig.ClientLib, EnvFile]);
+end;
+
+function NewConfiguredConnection: TFirebirdConnection;
+var
+  lConfig: TFirebirdConnectionConfig;
+begin
+  lConfig := LoadFirebirdConfig;
+  ValidateFirebirdConfig(lConfig);
+  Result := TFirebirdConnection.Create(lConfig);
   Result.Connect;
 end;
 end.

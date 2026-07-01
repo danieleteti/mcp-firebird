@@ -116,7 +116,18 @@ MCPFirebird.exe --env C:\configs\prod      # reads C:\configs\prod\.env
 MCPFirebird.exe --env=C:\configs\prod      # the --env=<dir> form also works
 MCPFirebird.exe --env ..\shared            # relative paths resolve against the working directory
 MCPFirebird.exe                            # no argument -> reads <exe folder>\.env
+MCPFirebird.exe --env C:\configs\prod\.env # WRONG -> stops with an error (see below)
 ```
+
+> **`--env` is a folder, never the `.env` file.** If you point it at the file (e.g.
+> `...\prod\.env`) the server refuses to start and prints the fix on stderr — which MCP clients
+> surface in their server logs — instead of silently starting with an empty config:
+>
+> ```
+> MCPFirebird: --env must point at the FOLDER that contains the .env file, not at the file itself.
+>   got:      C:\configs\prod\.env
+>   use this: C:\configs\prod
+> ```
 
 **How the argument reaches the server.** MCP clients don't go through a shell — they spawn the
 executable directly with a `command` plus an `args` **array**, where each array element becomes one
@@ -490,6 +501,53 @@ Claude:
 
 You can also state the goal numerically, e.g. *"get this query under 50 ms"*
 (`goal_type=query_time_ms`, `threshold=50`).
+
+---
+
+## Worked session: optimizing a query on `employee.fdb`
+
+A full round-trip against the stock **`employee`** sample database that ships with Firebird
+(`examples/empbuild/employee.fdb`). The outputs below are verbatim tool results.
+
+> **You:** Analyze this Firebird query and suggest improvements:
+> ```sql
+> SELECT emp_no, first_name, last_name, salary
+> FROM employee
+> WHERE salary > 60000
+> ```
+
+**1. Baseline — `fb_analyze_query`** returns (engine `3.0.12`):
+
+```
+PLAN (EMPLOYEE NATURAL)
+```
+> NATURAL scan on: EMPLOYEE. Run `fb_suggest_indexes` on this query for ready-to-run DDL.
+
+`NATURAL` means Firebird reads **every** row of `EMPLOYEE` and throws away those with
+`salary <= 60000` — there is no index on `SALARY` to seek with.
+
+**2. Confirm the problem — `fb_evaluate_goal` (`goal_type=query_no_natural_scan`):**
+
+```json
+{ "goal_type": "query_no_natural_scan", "measured": 1.0, "met": false,
+  "iteration_hint": "plan: PLAN (EMPLOYEE NATURAL)", "engine_version": "3.0.12" }
+```
+
+**3. Get the fix — `fb_suggest_indexes`:**
+
+```sql
+CREATE INDEX IDX_EMPLOYEE_SALARY ON EMPLOYEE (salary);
+```
+> **Verify:** re-run `fb_analyze_query`; the plan should use `IDX_EMPLOYEE_SALARY` and no longer show
+> `EMPLOYEE NATURAL`. Then run `SET STATISTICS INDEX IDX_EMPLOYEE_SALARY;` to refresh selectivity.
+
+**4. Apply it** (writes are off by default — run the DDL yourself, or set `firebird.allow_ddl=true`),
+then **re-analyze**: the plan becomes `PLAN (EMPLOYEE INDEX (IDX_EMPLOYEE_SALARY))` and
+`fb_evaluate_goal` returns `met: true`.
+
+**When *not* to add the index.** The win comes from `salary > 60000` being **selective** (few rows).
+If the predicate matched most of the table (e.g. `salary > 0`), the NATURAL scan is actually the
+cheaper plan and the index would just add write overhead — not every NATURAL scan is a bug.
 
 ---
 

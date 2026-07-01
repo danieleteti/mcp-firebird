@@ -16,7 +16,17 @@ uses
 var
   LTransport: TMCPStdioTransport;
 begin
-  Boot;
+  try
+    Boot;
+  except
+    on E: EBootConfig do
+    begin
+      // Startup misconfiguration (e.g. --env pointing at a file): explain it on
+      // stderr — where MCP clients surface server logs — and exit right away.
+      System.Write(ErrOutput, 'MCPFirebird: ' + E.Message + sLineBreak);
+      Halt(2);
+    end;
+  end;
   ConfigureServerIdentity;
   LTransport := TMCPStdioTransport.Create(TMCPServer.Instance);
   try
