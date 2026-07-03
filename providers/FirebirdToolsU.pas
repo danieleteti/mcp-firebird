@@ -25,14 +25,19 @@ type
       [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes')] const goal_type: string;
       [MCPParam('Target: a SQL query or a table name')] const target: string;
       [MCPParam('Threshold (ms for query_time_ms; ignored otherwise)', TMCPParamPresence.Optional)] const threshold: Double): TMCPToolResult;
+    [MCPTool('fb_monitor_transactions', 'Transaction/sweep health: OIT/OAT/Next gap and any blocking long-running transaction')]
+    function FbMonitorTransactions(
+      [MCPParam('Minutes an active transaction must run before being flagged as blocking (default 5)', TMCPParamPresence.Optional)] const stale_minutes: Integer): TMCPToolResult;
   end;
 implementation
 uses
   System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
-  Firebird.SchemaAudit, Firebird.Goal, FirebirdConfigU, MVCFramework.MCP.Server,
-  MVCFramework.Logger;
+  Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, FirebirdConfigU,
+  MVCFramework.MCP.Server, MVCFramework.Logger;
+
+const DEFAULT_STALE_MINUTES = 5;
 
 { Traces every tool invocation to the log and turns any exception (most commonly
   a database connection / communication failure) into a tool result with
@@ -256,6 +261,33 @@ begin
             Result := TMCPToolResult.JSON(J);
           finally J.Free; end;
         finally G.Free; end;
+      finally Conn.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbMonitorTransactions(const stale_minutes: Integer): TMCPToolResult;
+var LStaleMinutes: Integer;
+begin
+  // The MCP framework cannot distinguish "param omitted" from "param passed as 0"
+  // for an optional Integer, so 0-or-less falls back to the documented default here
+  // rather than in Firebird.TransactionMonitor (which keeps 0 meaning "any age" for tests).
+  LStaleMinutes := stale_minutes;
+  if LStaleMinutes <= 0 then LStaleMinutes := DEFAULT_STALE_MINUTES;
+  Result := Guard('fb_monitor_transactions', Format('stale_minutes=%d', [LStaleMinutes]),
+    function: TMCPToolResult
+    var Conn: TFirebirdConnection; M: TFirebirdTransactionMonitor; S: TTransactionSnapshot; SB: TStringBuilder;
+    begin
+      Conn := NewConfiguredConnection;
+      try
+        M := TFirebirdTransactionMonitor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+        SB := TStringBuilder.Create;
+        try
+          S := M.Snapshot;
+          SB.AppendLine(Format('**OIT:** %d  **OAT:** %d  **OST:** %d  **Next:** %d  **Gap:** %d',
+            [S.OIT, S.OAT, S.OST, S.NextTransaction, S.Gap])).AppendLine;
+          SB.Append(AdvisoriesToText(M.Analyze(LStaleMinutes), 'No transaction/sweep issues found.'));
+          Result := TMCPToolResult.Text(SB.ToString);
+        finally SB.Free; M.Free; end;
       finally Conn.Free; end;
     end);
 end;

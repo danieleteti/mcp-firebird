@@ -29,7 +29,7 @@ schema health, and drive goal-based optimization — **read-only by default**.
 
 ## What it does
 
-### Tools (9)
+### Tools (10)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
@@ -42,6 +42,7 @@ schema health, and drive goal-based optimization — **read-only by default**.
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
+| `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
 
 Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step.
 
@@ -280,7 +281,7 @@ $msgs = @(
 $msgs | & .\bin\MCPFirebird.exe
 ```
 
-Expected: an `initialize` result naming `mcp-firebird`, a `tools/list` with the 9 `fb_*` tools,
+Expected: an `initialize` result naming `mcp-firebird`, a `tools/list` with the 10 `fb_*` tools,
 and `fb_info` returning the live `engine_version`. (Logs appear under `bin\logs\`; stdout is
 pure JSON-RPC.)
 

@@ -18,3 +18,4 @@ detects it, and the milestone the detection lands in. Fixtures live in
 | 10 | Non-sargable predicate (LIKE '%x', <>, NOT IN, fn(col)) | NSARG_T | fb_analyze_query (heuristic) | **M2** |
 | 11 | Implicit type conversion in WHERE | CONV_T.CODE (INT vs '5') | fb_analyze_query (heuristic) | **M2** |
 | 12 | Oversized / near-limit index key | BIGKEY_T (VARCHAR(800)) | fb_audit_table (key-size check) | **M2** |
+| 13 | Long-running transaction blocking garbage collection (OIT/OAT/Next gap) | live held-open transaction (2nd connection; not a static fixture — see `Test.Firebird.TransactionMonitor`) | fb_monitor_transactions | **M2** |
