@@ -6,7 +6,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
   <img alt="MCP protocol 2025-03-26" src="https://img.shields.io/badge/MCP-2025--03--26-brightgreen.svg">
   <a href="https://github.com/danieleteti/mcp-server-delphi"><img alt="powered by mcp-server-delphi" src="https://img.shields.io/badge/powered%20by-mcp--server--delphi-orange.svg"></a>
-  <a href=".github/workflows/ci.yml"><img alt="CI" src="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 # MCP Firebird
@@ -29,15 +29,16 @@ schema health, and drive goal-based optimization — **read-only by default**.
 ## Table of contents
 
 1. [What it does](#what-it-does)
-2. [Prerequisites](#prerequisites)
-3. [Build](#build)
-4. [Configuration (`.env`)](#configuration-env)
-5. [Run & verify manually](#run--verify-manually)
-6. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
-7. [Using it from Claude](#using-it-from-claude) — worked examples
-8. [Tool reference](#tool-reference)
-9. [Testing the project](#testing-the-project)
-10. [Troubleshooting](#troubleshooting)
+2. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)
+3. [Prerequisites](#prerequisites)
+4. [Build](#build)
+5. [Configuration (`.env`)](#configuration-env)
+6. [Run & verify manually](#run--verify-manually)
+7. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
+8. [Using it from Claude](#using-it-from-claude) — worked examples
+9. [Tool reference](#tool-reference)
+10. [Testing the project](#testing-the-project)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -103,7 +104,7 @@ repository for the full attribute reference.
 ## Prerequisites
 
 - **Windows x64** (the server is a native Win64 console app).
-- **Delphi 12 Athens** (RAD Studio 23.0) to build, with **FireDAC**. Earlier Delphi 11+ should work.
+- **Delphi 13 Athens** (RAD Studio 37.0) to build, with **FireDAC**.
 - **DMVCFramework** and the **`mcp-server-delphi`** library checked out locally (search paths below).
 - A **Firebird client library** (`fbclient.dll`) matching — or newer than — your target server.
   A 5.0 `fbclient.dll` connects fine to 2.5–5.0 servers.
