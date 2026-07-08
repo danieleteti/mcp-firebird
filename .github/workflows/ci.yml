@@ -16,10 +16,7 @@ jobs:
 
       - name: Core boundary (no MVCFramework in sources/)
         shell: pwsh
-        run: |
-          $bad = Select-String -Path 'sources/*.pas' -Pattern 'MVCFramework' -SimpleMatch
-          if ($bad) { $bad | ForEach-Object { Write-Host "$($_.Path): $($_.Line)" }; throw 'Core boundary violated' }
-          Write-Host 'Core boundary OK'
+        run: ./tests/check_core_boundary.ps1
 
       - name: No committed .env (only .env.example)
         shell: bash
