@@ -1,0 +1,12 @@
+MCP Firebird
+Copyright 2026 Daniele Teti
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It is a showcase for and built with:
+  - mcp-server-delphi   https://github.com/danieleteti/mcp-server-delphi   (Apache-2.0)
+  - DMVCFramework       https://github.com/danieleteti/delphimvcframework  (Apache-2.0)
+  - LoggerPro           https://github.com/danieleteti/loggerpro           (Apache-2.0)
+
+Firebird and the fbclient library are property of their respective owners and
+are not distributed with this project.
