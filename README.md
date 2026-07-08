@@ -1,9 +1,23 @@
+<p align="center">
+  <img src="docs/logo.png" alt="MCP Firebird" width="360">
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <img alt="MCP protocol 2025-03-26" src="https://img.shields.io/badge/MCP-2025--03--26-brightgreen.svg">
+  <a href="https://github.com/danieleteti/mcp-server-delphi"><img alt="powered by mcp-server-delphi" src="https://img.shields.io/badge/powered%20by-mcp--server--delphi-orange.svg"></a>
+  <a href=".github/workflows/ci.yml"><img alt="CI" src="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml/badge.svg"></a>
+</p>
+
 # MCP Firebird
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for **Firebird 2.5 – 5.0**,
 written in Delphi with the official `fbclient` driver. It lets an AI assistant document
 schemas, analyze query plans, advise on indexes (which to add **and** which to drop), audit
 schema health, and drive goal-based optimization — **read-only by default**.
+
+> Built with **[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi)** — this
+> server is a complete, real-world example of what you can build with the framework.
 
 - **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
 - **Server identity:** `mcp-firebird` v`0.1.0`
@@ -56,6 +70,33 @@ Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** 
 ### Resources (1)
 
 - **`firebird://schema`** — the live database schema as a single resource.
+
+---
+
+## How it uses mcp-server-delphi
+
+Every tool is a plain Delphi method decorated with attributes from
+[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi). The framework turns the
+class into an MCP tool provider, generates the JSON-RPC schema from the attributes, and wires it
+to the stdio transport — no protocol code in this repo. From `providers/FirebirdToolsU.pas`:
+
+```pascal
+TFirebirdTools = class(TMCPToolProvider)
+public
+  [MCPTool('fb_info', 'Engine version, dialect, charset and detected capabilities of the configured Firebird database')]
+  function FbInfo: TMCPToolResult;
+
+  [MCPTool('fb_describe_table', 'Columns, primary key, indexes and foreign keys of a table')]
+  function FbDescribeTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
+
+  [MCPTool('fb_analyze_query', 'Returns and analyzes the access plan of a SQL query (flags NATURAL scans and external sorts)')]
+  function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
+end;
+```
+
+Prompts (`providers/FirebirdPromptsU.pas`) and resources (`providers/FirebirdResourcesU.pas`) use
+the same attribute approach. See the [mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi)
+repository for the full attribute reference.
 
 ---
 
