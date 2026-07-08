@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SPDX headers present
+        shell: pwsh
+        run: ./scripts/check_spdx.ps1
+
+      - name: Core boundary (no MVCFramework in sources/)
+        shell: pwsh
+        run: |
+          $bad = Select-String -Path 'sources/*.pas' -Pattern 'MVCFramework' -SimpleMatch
+          if ($bad) { $bad | ForEach-Object { Write-Host "$($_.Path): $($_.Line)" }; throw 'Core boundary violated' }
+          Write-Host 'Core boundary OK'
+
+      - name: No committed .env (only .env.example)
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "A real .env is committed — remove it."; exit 1
+          fi
+          echo "No committed .env."
