@@ -724,3 +724,13 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
   BOOLEAN, INT128, timezones, parallel workers) to the connected engine; validated on FB
   2.5 / 3.0 / 4.0 / 5.0.
 - **Single configured database** per server instance (run multiple instances for multiple DBs).
+
+---
+
+## License
+
+Licensed under the **Apache License 2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+MCP Firebird is a showcase for
+[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi). If you build your own MCP
+server in Delphi, start there.
