@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
+// Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.PlanAnalyzer;
 // Plan retrieval per Task 10 spike (docs/plan-retrieval-decision.md): isql + SET PLANONLY ON.
 interface

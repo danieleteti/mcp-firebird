@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
+// Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit FirebirdPromptsU;
 interface
 uses JsonDataObjects, MVCFramework.MCP.PromptProvider, MVCFramework.MCP.Attributes;
