@@ -35,64 +35,14 @@ uses
   System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
-  Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, FirebirdConfigU,
+  Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, FirebirdToolRuntimeU,
   MVCFramework.MCP.Server, MVCFramework.Logger;
 
 const DEFAULT_STALE_MINUTES = 5;
 
-{ Opens the configured connection, passes it to the tool body, frees it. Traces
-  every tool invocation to the log and turns any exception (a misrouted .env, a
-  database connection / communication failure, a malformed query) into a tool
-  result with isError=true, so the message is returned to the MCP client and
-  shown to the user — instead of bubbling up as a generic JSON-RPC -32603 that
-  clients render as an opaque "Failed to call tool".
-
-  Log trail per call (all under the 'mcp' tag):
-    [INFO ] >> fb_xxx  <args>            (invocation, with the arguments received)
-    [INFO ] << fb_xxx  ok|isError  NNms  (completion + elapsed time)
-    [ERROR] !! fb_xxx failed - <message> (only on exception)
-
-  Protocol errors (unknown tool, missing required param) are still raised by the
-  request handler and remain JSON-RPC errors. }
-function Guard(const AToolName, AArgs: string;
-  const AAction: TFunc<TFirebirdConnection, TMCPToolResult>): TMCPToolResult;
-var SW: TStopwatch; Conn: TFirebirdConnection;
-begin
-  LogI(Format('>> %s  %s', [AToolName, AArgs]), 'mcp');
-  SW := TStopwatch.StartNew;
-  try
-    Conn := NewConfiguredConnection;
-    try
-      Result := AAction(Conn);
-    finally Conn.Free; end;
-    LogI(Format('<< %s  %s  %dms',
-      [AToolName, IfThen(Result.IsError, 'isError', 'ok'), SW.ElapsedMilliseconds]), 'mcp');
-  except
-    on E: Exception do
-    begin
-      LogException(E, Format('!! %s failed after %dms', [AToolName, SW.ElapsedMilliseconds]));
-      Result := TMCPToolResult.Error('Firebird error (' + E.ClassName + '): ' + E.Message);
-    end;
-  end;
-end;
-
 function EngineVersion(AConn: TFirebirdConnection): string;
 begin
   Result := TFirebirdCapabilities.Detect(AConn).EngineVersion;
-end;
-
-function AdvisoriesToText(const Advs: TArray<TAdvisory>; const AEmptyMsg: string): string;
-var SB: TStringBuilder; X: TAdvisory;
-begin
-  if Length(Advs) = 0 then Exit(AEmptyMsg);
-  SB := TStringBuilder.Create;
-  try
-    for X in Advs do
-      SB.AppendLine('### ' + X.Severity).AppendLine('**Finding:** ' + X.Finding)
-        .AppendLine.AppendLine('```sql').AppendLine(X.SQLText).AppendLine('```')
-        .AppendLine('**Verify:** ' + X.Verify).AppendLine;
-    Result := SB.ToString;
-  finally SB.Free; end;
 end;
 
 function TFirebirdTools.FbInfo: TMCPToolResult;

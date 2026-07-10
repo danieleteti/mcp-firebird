@@ -14,6 +14,11 @@ import re
 
 import pytest
 
+# The Enterprise edition runs this suite verbatim against its own executable, and identifies
+# itself differently on purpose: an MCP client must be able to tell the two servers apart.
+IS_ENTERPRISE = os.environ.get("MCP_FB_EDITION") == "enterprise"
+SERVER_NAME = "mcp-firebird-enterprise" if IS_ENTERPRISE else "mcp-firebird"
+
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -46,7 +51,7 @@ def test_initialize_handshake(raw_client):
     )
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
-    assert res["serverInfo"]["name"] == "mcp-firebird"
+    assert res["serverInfo"]["name"] == SERVER_NAME
     assert res["serverInfo"]["version"] == "0.1.0"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
@@ -55,7 +60,7 @@ def test_initialize_handshake(raw_client):
 def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
-    assert res["serverInfo"]["name"] == "mcp-firebird"
+    assert res["serverInfo"]["name"] == SERVER_NAME
     assert res["serverInfo"]["version"] == "0.1.0"
     assert res["protocolVersion"] == "2025-03-26"
 
