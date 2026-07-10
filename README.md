@@ -11,10 +11,17 @@
 
 # MCP Firebird
 
+**Ask your AI assistant why a query is slow, and get an answer worth acting on.**
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server for **Firebird 2.5 – 5.0**,
-written in Delphi with the official `fbclient` driver. It lets an AI assistant document
-schemas, analyze query plans, advise on indexes (which to add **and** which to drop), audit
-schema health, and drive goal-based optimization — **read-only by default**.
+written in Delphi against the official `fbclient` driver. Point it at a database and an assistant
+can read your access plans, tell you which index you are missing and which four you should drop,
+audit a table's health, watch the transaction that has been pinning garbage collection since
+Tuesday, and iterate on an optimization goal until it measurably reports `met: true`.
+
+Not "here are some general tips about indexes." It runs `SET PLANONLY`, reads `MON$`, counts
+distinct values, and comes back with a **Finding**, ready-to-run **SQL**, and a **Verify** step.
+Read-only by default: no tool executes DDL or write SQL.
 
 > Built with **[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi)** — this
 > server is a complete, real-world example of what you can build with the framework.
@@ -23,16 +30,17 @@ schema health, and drive goal-based optimization — **read-only by default**.
 - **Server identity:** `mcp-firebird` v`0.1.0`
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
 - **Safety:** read-only analysis; no tool runs DDL or write SQL
-- **Licence:** source-available, **not open source** — see [Editions & licensing](#editions--licensing)
-- **Editions:** free for your own databases; a paid [Enterprise edition](#enterprise-edition) tunes the server itself
+- **Free** for your own databases, at any scale, with no key and no expiry — a paid
+  [Enterprise edition](#enterprise-edition) tunes the Firebird server itself
+  ([licence details](#editions--licensing))
 
 ---
 
 ## Table of contents
 
-1. [Editions & licensing](#editions--licensing)
-2. [Enterprise edition](#enterprise-edition)
-3. [What it does](#what-it-does)
+1. [What it does](#what-it-does)
+2. [Editions & licensing](#editions--licensing)
+3. [Enterprise edition](#enterprise-edition)
 4. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)
 5. [Prerequisites](#prerequisites)
 6. [Build](#build)
@@ -43,6 +51,37 @@ schema health, and drive goal-based optimization — **read-only by default**.
 11. [Tool reference](#tool-reference)
 12. [Testing the project](#testing-the-project)
 13. [Troubleshooting](#troubleshooting)
+
+---
+
+## What it does
+
+### Tools (9 free, plus 5 Enterprise announced in `tools/list`)
+
+| Tool | Arguments | Purpose |
+|---|---|---|
+| `fb_info` | — | Engine version + detected capabilities (JSON) |
+| `fb_list_tables` | — | List user tables |
+| `fb_generate_documentation` | `table_name?` | Markdown docs — columns, PK, indexes — for one table, or the whole database |
+| `fb_analyze_query` | `sql` | Access-plan analysis: NATURAL-scan + external-SORT detection |
+| `fb_suggest_indexes` | `sql` | New-index suggestions from NATURAL-scanned predicates (ready-to-run DDL) |
+| `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
+| `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
+| `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
+| `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
+
+Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step.
+
+### Prompts (2)
+
+- **`optimization_goal`** — the goal-driven loop: set an objective, the assistant iterates the
+  `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
+  max-iterations / no-progress safety stop).
+- **`health_check`** — guided whole-database health review.
+
+### Resources (1)
+
+- **`firebird://schema`** — the live database schema as a single resource.
 
 ---
 
@@ -173,38 +212,6 @@ them and say what it would do with them. Call one and it tells you how to get it
 
 **Enterprise licences, commercial licences and support subscriptions:** d.teti@bittime.it
 
----
-
-## What it does
-
-### Tools (9 free, plus 5 Enterprise announced in `tools/list`)
-
-| Tool | Arguments | Purpose |
-|---|---|---|
-| `fb_info` | — | Engine version + detected capabilities (JSON) |
-| `fb_list_tables` | — | List user tables |
-| `fb_generate_documentation` | `table_name?` | Markdown docs — columns, PK, indexes — for one table, or the whole database |
-| `fb_analyze_query` | `sql` | Access-plan analysis: NATURAL-scan + external-SORT detection |
-| `fb_suggest_indexes` | `sql` | New-index suggestions from NATURAL-scanned predicates (ready-to-run DDL) |
-| `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
-| `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
-| `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
-| `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
-
-Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step.
-
-### Prompts (2)
-
-- **`optimization_goal`** — the goal-driven loop: set an objective, the assistant iterates the
-  `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
-  max-iterations / no-progress safety stop).
-- **`health_check`** — guided whole-database health review.
-
-### Resources (1)
-
-- **`firebird://schema`** — the live database schema as a single resource.
-
----
 
 ## How it uses mcp-server-delphi
 
@@ -754,6 +761,24 @@ A few call examples (MCP `tools/call` `arguments`):
 `query_time_ms`, `no_redundant_indexes`. See
 [`docs/firebird-problem-catalog.md`](docs/firebird-problem-catalog.md) for every problem the
 tools detect, the fixture that provokes it, and the milestone it lands in.
+
+### Enterprise tools
+
+These five appear in `tools/list` here too, so your assistant knows they exist and can tell you
+what it would do with one. Calling them in this edition returns an `isError` result explaining
+how to get them. They are implemented in the [Enterprise edition](#enterprise-edition), which is
+the one allowed to read the machine the engine runs on.
+
+| Tool | Arguments | What it does |
+|---|---|---|
+| `fb_analyze_config` | — | Reads `firebird.conf` and `databases.conf` and judges every setting that matters against the engine version, the page size and the observed workload: page buffers, `TempCacheLimit`, `LockHashSlots`, `MaxUnflushedWrites`, wire compression, parallel workers |
+| `fb_analyze_db_header` | — | The database header, as `gstat -h` reports it: page size, buffers, sweep interval, forced writes, ODS version, on-disk OIT/OAT |
+| `fb_parse_log` | — | Reads `firebird.log` and separates the noise from what matters: bugchecks, crashes, sweeps that ran (or never did), I/O errors |
+| `fb_capture_trace` | — | Opens a Trace API session, samples the real workload, and ranks the statements that actually cost — not the ones you suspected |
+| `fb_analyze_host` | — | The engine against its hardware: RAM versus page buffers, CPU count versus `ParallelWorkers`, storage class versus `forced writes` |
+
+The tuning thresholds behind these — which setting is wrong, at which value, on which engine —
+are the product, and they do not ship in this repository.
 
 ---
 
