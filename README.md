@@ -178,32 +178,46 @@ see outside its own process.
 ### Where the Enterprise edition begins
 
 It is 2 GB of page buffers on a host with 8 GB of RAM. It is `forced writes` switched off for a
-batch load two years ago and never switched back. It is a sweep interval nobody tuned, an ODS
-three versions behind, `LockHashSlots` still at its 2010 default under four hundred connections,
-a bugcheck written to `firebird.log` every Tuesday at 03:00 that nobody reads.
+batch load two years ago and never switched back. It is `LockHashSlots` still at its 2010 default
+under four hundred connections, an index four levels deep, a bugcheck written to `firebird.log`
+every Tuesday at 03:00 that nobody reads.
 
-The Enterprise edition is the one allowed to look:
+The free edition connects to Firebird the way your application does: an ordinary SQL connection,
+with ordinary rights. **The Enterprise edition asks for more.** It attaches to the Services
+Manager as an administrator — which is how it streams `firebird.log` back, drives the Trace API,
+and reads the physical storage report — and it reads the server's own configuration and hardware.
+That is a different privilege, a different blast radius, and a different conversation with
+whoever owns the server. Hence a different product.
+
+And it does not stop at telling you what is wrong. **It runs the experiment.** Capture a baseline
+under real load, change exactly one parameter, measure again, compare the distributions — the p95
+and the p99, never the average — and keep the change or put it back. Nobody sells you a number.
+The database tells you the number.
 
 | | Free | Enterprise |
 |---|---|---|
 | Schema, docs, plans, index advice, schema audit | ✅ | ✅ |
 | Transaction & sweep health (`MON$`) | ✅ | ✅ |
 | Apply suggested DDL (opt-in, `firebird.allow_ddl`) | ✅ | ✅ |
-| `fb_analyze_config` — `firebird.conf` / `databases.conf` tuning, per engine version and workload | — | ✅ |
-| `fb_analyze_db_header` — page size, buffers, sweep interval, forced writes, ODS | — | ✅ |
+| `fb_analyze_config` — `firebird.conf` / `databases.conf`, read against this engine, this architecture, this workload | — | ✅ |
+| `fb_analyze_storage` — index depth, page fill ratios, record-version chains, page distribution | — | ✅ |
 | `fb_parse_log` — `firebird.log`: errors, sweeps, bugchecks, crashes | — | ✅ |
 | `fb_capture_trace` — Trace API: the real workload, and what actually costs | — | ✅ |
 | `fb_analyze_host` — RAM against page buffers, CPU against parallel workers, storage class | — | ✅ |
+| Baselines, distributions, before/after comparison — the experiment | — | ✅ |
 
 Note what is *not* in that table: nothing was moved out of the free edition to build the paid one.
 Every free tool stays free, including the M3 write tools that apply the DDL they suggest. The
-boundary is not a paywall drawn through a feature list — it is the wall between the database and
-the host, and the free edition was always on one side of it.
+boundary is not a paywall drawn through a feature list — it is the line between querying a
+database and administering a server, and the free edition was always on one side of it.
 
-The hard part was never parsing `firebird.conf`; anyone can parse an INI file. It is knowing that
-on 4.0, at that connection count, with that page size, `LockHashSlots` is wrong — and what to set
-it to instead. **Those thresholds are the product.** They are twenty years of Firebird in
-production, and they are why this edition is sold rather than given away.
+The hard part was never parsing `firebird.conf`; anyone can parse an INI file. And nobody can
+honestly hand you the right value for `LockHashSlots` — **Firebird's own documentation states no
+optimum for it**, nor for the page cache, nor for the sort cache. What experience buys you is
+knowing *which* parameter your symptom implicates: that throughput collapsing under concurrency
+while the CPU stays calm points at the lock table and never at the page cache. That map is the
+product. The value at the end of it is not asserted — it is measured, on your database, under
+your load.
 
 You will know when you need it, because the free edition will have told you.
 
@@ -766,19 +780,25 @@ tools detect, the fixture that provokes it, and the milestone it lands in.
 
 These five appear in `tools/list` here too, so your assistant knows they exist and can tell you
 what it would do with one. Calling them in this edition returns an `isError` result explaining
-how to get them. They are implemented in the [Enterprise edition](#enterprise-edition), which is
-the one allowed to read the machine the engine runs on.
+how to get them. They are implemented in the [Enterprise edition](#enterprise-edition), which
+attaches to the Services Manager as an administrator and reads the server's configuration and
+hardware — privileges this edition never asks for.
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `fb_analyze_config` | — | Reads `firebird.conf` and `databases.conf` and judges every setting that matters against the engine version, the page size and the observed workload: page buffers, `TempCacheLimit`, `LockHashSlots`, `MaxUnflushedWrites`, wire compression, parallel workers |
-| `fb_analyze_db_header` | — | The database header, as `gstat -h` reports it: page size, buffers, sweep interval, forced writes, ODS version, on-disk OIT/OAT |
-| `fb_parse_log` | — | Reads `firebird.log` and separates the noise from what matters: bugchecks, crashes, sweeps that ran (or never did), I/O errors |
-| `fb_capture_trace` | — | Opens a Trace API session, samples the real workload, and ranks the statements that actually cost — not the ones you suspected |
-| `fb_analyze_host` | — | The engine against its hardware: RAM versus page buffers, CPU count versus `ParallelWorkers`, storage class versus `forced writes` |
+| `fb_analyze_config` | — | Reads `firebird.conf` and `databases.conf` and reports every setting that matters — page buffers, `TempCacheLimit`, `LockHashSlots`, `MaxUnflushedWrites`, `GCPolicy`, parallel workers — against *this* engine version and *this* server architecture, since the defaults and even the existence of a parameter change across both |
+| `fb_analyze_storage` | `table_name?` | The physical picture no `SELECT` can show: index depth, page fill ratios, record-version chain length, page distribution |
+| `fb_parse_log` | — | Streams `firebird.log` back over the Services API and separates the noise from what matters: bugchecks, page corruption, I/O errors, sweeps that ran — or never did |
+| `fb_capture_trace` | — | Opens a bounded Trace API session, samples the real workload, and ranks the statements that actually cost — as a latency distribution, not an average |
+| `fb_analyze_host` | — | The engine against its hardware: RAM versus the memory the configuration actually commits, CPU count versus `ParallelWorkers`, storage class versus `forced writes` |
 
-The tuning thresholds behind these — which setting is wrong, at which value, on which engine —
-are the product, and they do not ship in this repository.
+Plus the part that makes them a product rather than a report: **baselines and experiments.** Take a
+measurement under real load, change one parameter, take another, and get a verdict on whether the
+tail moved — with a rollback if it did not.
+
+Firebird's documentation states no optimal value for most of these parameters, and neither will we.
+What the Enterprise edition brings is the map from a symptom to the parameter that explains it, and
+a harness that proves the change worked on your database.
 
 ---
 

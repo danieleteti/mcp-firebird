@@ -5,10 +5,11 @@ unit FirebirdStubsU;
 
 { The Enterprise tools, announced but not implemented in this edition.
 
-  The free edition only ever asks the database about itself, over FireDAC. Everything here
-  needs to read the machine that hosts the engine — its configuration files, its log, its
-  Trace API, its memory and CPU — which is a different product, a different risk profile and
-  a different licence. See README § Editions & licensing.
+  The free edition uses an ordinary SQL connection, and nothing more. Everything here needs a
+  privilege the free edition never asks for: an administrative attach to the Services Manager
+  (to stream firebird.log, to drive the Trace API, to read the storage report), or the server's
+  own configuration files and hardware. That is a different product, a different risk profile
+  and a different licence. See README § Editions & licensing.
 
   They are registered so they appear in tools/list: a user should be able to discover what
   the Enterprise edition does without reading the website. Calling one returns isError with
@@ -27,8 +28,8 @@ type
   public
     [MCPTool('fb_analyze_config', 'ENTERPRISE — Deep tuning of firebird.conf and databases.conf against the engine version and the observed workload')]
     function FbAnalyzeConfig: TMCPToolResult;
-    [MCPTool('fb_analyze_db_header', 'ENTERPRISE — Database header analysis: page size, sweep interval, forced writes, ODS version')]
-    function FbAnalyzeDbHeader: TMCPToolResult;
+    [MCPTool('fb_analyze_storage', 'ENTERPRISE — Physical storage report: index depth, page fill ratios, record-version chains, page distribution')]
+    function FbAnalyzeStorage: TMCPToolResult;
     [MCPTool('fb_parse_log', 'ENTERPRISE — Parses firebird.log: errors, sweeps, bugchecks, crashes')]
     function FbParseLog: TMCPToolResult;
     [MCPTool('fb_capture_trace', 'ENTERPRISE — Captures the real workload through the Firebird Trace API and ranks the queries that actually cost you')]
@@ -45,9 +46,9 @@ const
   UPGRADE_MESSAGE =
     '%s belongs to the MCP Firebird Enterprise edition, which is not installed.' + sLineBreak +
     sLineBreak +
-    'This edition analyzes what the database knows about itself. The Enterprise edition also ' +
-    'reads the machine hosting it — firebird.conf and databases.conf, the database header, ' +
-    'firebird.log, the Trace API, and how the engine is sized against the hardware.' + sLineBreak +
+    'This edition asks the database about itself over an ordinary SQL connection. The Enterprise ' +
+    'edition also administers the server: firebird.conf and databases.conf, firebird.log, the ' +
+    'Trace API, the physical storage report, and how the engine is sized against its hardware.' + sLineBreak +
     sLineBreak +
     'Enterprise, commercial licences and support: d.teti@bittime.it' + sLineBreak +
     'https://github.com/danieleteti/mcp-firebird#editions--licensing';
@@ -63,9 +64,9 @@ begin
   Result := Locked('fb_analyze_config');
 end;
 
-function TFirebirdEnterpriseStubs.FbAnalyzeDbHeader: TMCPToolResult;
+function TFirebirdEnterpriseStubs.FbAnalyzeStorage: TMCPToolResult;
 begin
-  Result := Locked('fb_analyze_db_header');
+  Result := Locked('fb_analyze_storage');
 end;
 
 function TFirebirdEnterpriseStubs.FbParseLog: TMCPToolResult;

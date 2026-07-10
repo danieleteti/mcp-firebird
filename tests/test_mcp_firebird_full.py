@@ -87,7 +87,7 @@ FREE_TOOLS = {
 # Announced in tools/list, implemented only in the Enterprise edition.
 ENTERPRISE_STUBS = {
     "fb_analyze_config",
-    "fb_analyze_db_header",
+    "fb_analyze_storage",
     "fb_parse_log",
     "fb_capture_trace",
     "fb_analyze_host",

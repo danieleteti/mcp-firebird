@@ -178,10 +178,13 @@ the MCP transport itself.
   seed fixture and milestone (M1/M2/M3) — check it before adding a new detector or fixture.
 - **Editions.** This repo is source-available (PolyForm Internal Use 1.0.0), not open source; new
   production sources carry the `LicenseRef-PolyForm-Internal-Use-1.0.0` SPDX header. The free
-  edition only ever asks the database about itself over FireDAC. Anything that reads the host —
-  `firebird.conf`, the DB header, `firebird.log`, the Trace API, RAM/CPU — belongs to the paid
-  Enterprise edition in the separate private repo, and is announced here by the five locked tools
-  in `providers/FirebirdStubsU.pas`. `invoke boundary` fails the build if a `sources/` unit reads
-  a file or spawns a process (`Firebird.PlanAnalyzer`, which drives a local `isql`, is the one
-  sanctioned exception). Enterprise tool names must match the stub names exactly: the Python
-  compliance suite is shared with the Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.
+  edition uses an **ordinary SQL connection and nothing more**. Two things belong to the paid
+  Enterprise edition in the separate private repo: the server's own configuration and hardware
+  (`firebird.conf`, RAM/CPU), and anything needing an **administrative attach to the Services
+  Manager** (`firebird.log`, the Trace API, the storage report — note these stream back over the
+  wire and touch no file, so a filesystem-only rule would miss them). `invoke boundary` fails the
+  build on both: file reads / process spawning in `sources/` (`Firebird.PlanAnalyzer`, which drives
+  a local `isql`, is the one sanctioned exception), and any `isc_service_*` / `TFDPhysFBService` /
+  `service_mgr` reference. The five locked tools in `providers/FirebirdStubsU.pas` announce the
+  Enterprise edition; their names are a contract — the Python compliance suite is shared with the
+  Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.

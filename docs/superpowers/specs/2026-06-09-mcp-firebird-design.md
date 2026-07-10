@@ -155,11 +155,17 @@ Measurements use the core: timed execution, `reads`/`fetches` from MON$ stats, p
 | `fb_suggest_index_drops` | User index **duplicating** a system PK/FK index, redundant (left-prefix of another), low-selectivity (`RDB$STATISTICS`→1), inactive (`RDB$INDEX_INACTIVE=1`), exact duplicate; ready DROP / ALTER INDEX INACTIVE | IndexAdvisor |
 | `fb_evaluate_goal` | Measure state vs threshold, `met:true/false` | Goal (cross-cutting) |
 
-> **Edition boundary (added 2026-07-10).** Whatever the database knows about itself is free;
-> whatever only its host machine knows belongs to the Enterprise edition. The free edition
-> reaches Firebird over FireDAC and never reads a file on the server. This supersedes the
-> original plan, in which the config advisor and the trace tools were part of the free M2/M3.
-> See `README.md` § Editions & licensing.
+> **Edition boundary (added 2026-07-10, corrected after research).** The free edition uses an
+> ordinary SQL connection and nothing more. The Enterprise edition additionally attaches to the
+> **Services Manager as an administrator** — which is how it streams `firebird.log`, drives the
+> Trace API and reads the storage report, none of which touch a file on the server — and reads
+> the server's own configuration and hardware. It is a **privilege** boundary, not a filesystem
+> one: a first draft said "reads files on the host", which would have let a Services attach slip
+> straight through. `tests/check_core_boundary.ps1` now enforces both halves.
+>
+> This supersedes the original plan, in which the config advisor and the trace tools were part of
+> the free M2/M3. See `README.md` § Editions & licensing, and the Enterprise repository's
+> `docs/enterprise-plan.md` for the research behind it.
 
 ### M2 — Live monitoring (read-only, **free**)
 
@@ -192,8 +198,8 @@ Shipped from a separate private repository; announced in this edition as the stu
 
 | Tool | What it does | Source |
 |---|---|---|
-| `fb_analyze_config` | firebird.conf + databases.conf; version- and workload-specific advice | ConfigAdvisor |
-| `fb_analyze_db_header` | DB header: page size, buffers, sweep interval, forced writes, ODS | DbHeader |
+| `fb_analyze_config` | firebird.conf + databases.conf; version- and architecture-aware | ConfigAdvisor |
+| `fb_analyze_storage` | index depth, page fill, record-version chains, page distribution | Storage |
 | `fb_parse_log` | firebird.log: errors, sweeps, bugchecks, crashes | LogParser |
 | `fb_capture_trace` | One trace session via the Services API — start, sample, stop, rank the statements that actually cost | Trace |
 | `fb_analyze_host` | RAM vs page buffers, CPU vs parallel workers, storage class | HostInfo |
