@@ -54,7 +54,7 @@ var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult;
 begin
   Conn := NewTestConnection;
   try
-    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try
       R := PA.Analyze('SELECT * FROM CUSTOMERS ORDER BY CITY');
       Assert.IsTrue(R.HasExternalSort, 'ORDER BY on non-indexed column -> external SORT. plan=' + R.RawPlan);

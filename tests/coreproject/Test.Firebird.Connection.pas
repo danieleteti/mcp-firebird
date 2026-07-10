@@ -16,7 +16,7 @@ var C: TFirebirdConnection;
 begin
   C := NewTestConnection;
   try
-    Assert.IsTrue(C.IsConnected, 'should be connected');
+    Assert.IsTrue(C.FDConnection.Connected, 'should be connected');
   finally C.Free; end;
 end;
 

@@ -15,7 +15,7 @@ var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor; Advs: TArray<TAdvisory>
 begin
   Conn := NewTestConnection;
   try
-    A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try
       Advs := A.SuggestForQuery('SELECT * FROM CUSTOMERS WHERE CITY = ''Rome''');
       Found := False;

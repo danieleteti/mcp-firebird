@@ -16,7 +16,6 @@ begin
   Result.Password  := 'masterkey';
   Result.Charset   := 'UTF8';
   Result.ClientLib := GetEnvironmentVariable('FBTEST_CLIENTLIB');
-  Result.AllowDDL  := True;
 end;
 
 function NewTestConnection: TFirebirdConnection;

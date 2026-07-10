@@ -27,7 +27,6 @@ uses
   Test.Firebird.IndexDrops in 'Test.Firebird.IndexDrops.pas',
   Test.Firebird.Goal in 'Test.Firebird.Goal.pas',
   Test.Firebird.SchemaAudit in 'Test.Firebird.SchemaAudit.pas',
-  Test.Firebird.PendingDetectors in 'Test.Firebird.PendingDetectors.pas',
   Test.Firebird.TransactionMonitor in 'Test.Firebird.TransactionMonitor.pas';
 var
   LRunner: ITestRunner;
@@ -43,7 +42,6 @@ begin
   TDUnitX.RegisterTestFixture(Test.Firebird.IndexDrops.TIndexDropTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.Goal.TGoalTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.SchemaAudit.TSchemaAuditTests);
-  TDUnitX.RegisterTestFixture(Test.Firebird.PendingDetectors.TPendingDetectorTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.TransactionMonitor.TTransactionMonitorTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));

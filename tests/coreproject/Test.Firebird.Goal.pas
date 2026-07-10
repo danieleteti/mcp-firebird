@@ -16,7 +16,7 @@ var Conn: TFirebirdConnection; G: TFirebirdGoal; R: TGoalResult;
 begin
   Conn := NewTestConnection;
   try
-    G := TFirebirdGoal.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    G := TFirebirdGoal.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try
       R := G.Evaluate('query_no_natural_scan', 'SELECT * FROM CUSTOMERS WHERE CITY = ''Rome''', 0);
       Assert.IsFalse(R.Met, 'baseline: NATURAL scan present. plan=' + R.Hint);
@@ -36,7 +36,7 @@ var Conn: TFirebirdConnection; G: TFirebirdGoal; R: TGoalResult;
 begin
   Conn := NewTestConnection;
   try
-    G := TFirebirdGoal.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    G := TFirebirdGoal.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try
       R := G.Evaluate('no_redundant_indexes', 'ORDERS', 0);
       Assert.IsFalse(R.Met, 'ORDERS has the duplicate FK index');

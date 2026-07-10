@@ -32,7 +32,7 @@ procedure TIndexDropTests.Flags_DuplicateOfSystemFkIndex;
 var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
 begin
   Conn := NewTestConnection;
-  try A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+  try A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try Assert.IsTrue(AnyMentions(A.SuggestDropsForTable('ORDERS'), 'IDX_ORDERS_CUSTOMER_DUP'));
     finally A.Free; end;
   finally Conn.Free; end;
@@ -42,7 +42,7 @@ procedure TIndexDropTests.Flags_RedundantLeftPrefix;
 var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
 begin
   Conn := NewTestConnection;
-  try A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+  try A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try Assert.IsTrue(DropsExactly(A.SuggestDropsForTable('CUSTOMERS'), 'IDX_CUST_NAME'),
           'flags IDX_CUST_NAME as redundant left-prefix of IDX_CUST_NAME_CITY');
     finally A.Free; end;
@@ -53,7 +53,7 @@ procedure TIndexDropTests.Flags_InactiveIndex;
 var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
 begin
   Conn := NewTestConnection;
-  try A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+  try A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try Assert.IsTrue(AnyMentions(A.SuggestDropsForTable('CUSTOMERS'), 'IDX_CUST_CITY'));
     finally A.Free; end;
   finally Conn.Free; end;

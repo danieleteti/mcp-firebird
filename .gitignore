@@ -43,3 +43,6 @@ fb_versions/
 
 # Generated seed database (built locally by tests/seed/make_seed.ps1)
 tests/seed/*.FDB
+
+# Private exe + .env built by `invoke compliance`
+build/

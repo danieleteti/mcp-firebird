@@ -16,7 +16,7 @@ var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult;
 begin
   Conn := NewTestConnection;
   try
-    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try
       R := PA.Analyze('SELECT * FROM CUSTOMERS WHERE CITY = ''Rome''');
       Assert.IsTrue(R.HasNaturalScan, 'filtering CITY (no active index) -> NATURAL. Got plan: ' + R.RawPlan);
@@ -30,7 +30,7 @@ var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult;
 begin
   Conn := NewTestConnection;
   try
-    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
     try
       R := PA.Analyze('SELECT * FROM CUSTOMERS WHERE CUSTOMER_ID = 1');
       Assert.IsFalse(R.HasNaturalScan, 'PK lookup uses the primary index. Got plan: ' + R.RawPlan);

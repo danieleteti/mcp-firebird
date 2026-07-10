@@ -1,13 +1,14 @@
 $ErrorActionPreference = 'Stop'
 $versions = @('2.5','3.0','4.0','5.0')
-$coreExe  = 'C:\DEV\mcp-firebird\tests\coreproject\MCPFirebirdCoreTests.exe'
-$db       = 'C:\DEV\mcp-firebird\tests\seed\TESTDB.FDB'
+$root     = Split-Path -Parent $PSScriptRoot
+$coreExe  = Join-Path $PSScriptRoot 'coreproject\MCPFirebirdCoreTests.exe'
+$db       = Join-Path $PSScriptRoot 'seed\TESTDB.FDB'
 $failed   = $false
 
 # Core suite across the whole version matrix
 foreach ($v in $versions) {
   $dir = (Import-PowerShellDataFile "$PSScriptRoot\fbkit.versions.psd1")[$v].Dir
-  if (-not (Test-Path "C:\DEV\mcp-firebird\fb_versions\$dir")) { Write-Host "SKIP FB $v (kit not present)"; continue }
+  if (-not (Test-Path (Join-Path $root "fb_versions\$dir"))) { Write-Host "SKIP FB $v (kit not present)"; continue }
   Write-Host "==== Core suite on FB $v ===="
   & "$PSScriptRoot\fbkit.ps1" -Action start -Version $v | Out-Null
   try {

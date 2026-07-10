@@ -48,7 +48,7 @@
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
         <Icon_MainIcon>$(BDS)\bin\delphi_PROJECTICON.ico</Icon_MainIcon>
         <Icns_MainIcns>$(BDS)\bin\delphi_PROJECTICNS.icns</Icns_MainIcns>
-        <DCC_UnitSearchPath>C:\Program Files (x86)\Embarcadero\Studio\23.0\source\DUnitX;C:\DEV\mcp-firebird\sources;C:\DEV\mcp-server-delphi\sources;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>$(BDS)\source\DUnitX;C:\DEV\mcp-firebird\sources;C:\DEV\mcp-server-delphi\sources;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
@@ -95,7 +95,6 @@
         <DCCReference Include="Test.Firebird.IndexDrops.pas"/>
         <DCCReference Include="Test.Firebird.Goal.pas"/>
         <DCCReference Include="Test.Firebird.SchemaAudit.pas"/>
-        <DCCReference Include="Test.Firebird.PendingDetectors.pas"/>
         <DCCReference Include="Test.Firebird.TransactionMonitor.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
