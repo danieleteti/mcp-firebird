@@ -24,23 +24,25 @@ schema health, and drive goal-based optimization — **read-only by default**.
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
 - **Safety:** read-only analysis; no tool runs DDL or write SQL
 - **Licence:** source-available, **not open source** — see [Editions & licensing](#editions--licensing)
+- **Editions:** free for your own databases; a paid [Enterprise edition](#enterprise-edition) tunes the server itself
 
 ---
 
 ## Table of contents
 
 1. [Editions & licensing](#editions--licensing)
-2. [What it does](#what-it-does)
-3. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)
-4. [Prerequisites](#prerequisites)
-5. [Build](#build)
-6. [Configuration (`.env`)](#configuration-env)
-7. [Run & verify manually](#run--verify-manually)
-8. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
-9. [Using it from Claude](#using-it-from-claude) — worked examples
-10. [Tool reference](#tool-reference)
-11. [Testing the project](#testing-the-project)
-12. [Troubleshooting](#troubleshooting)
+2. [Enterprise edition](#enterprise-edition)
+3. [What it does](#what-it-does)
+4. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)
+5. [Prerequisites](#prerequisites)
+6. [Build](#build)
+7. [Configuration (`.env`)](#configuration-env)
+8. [Run & verify manually](#run--verify-manually)
+9. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
+10. [Using it from Claude](#using-it-from-claude) — worked examples
+11. [Tool reference](#tool-reference)
+12. [Testing the project](#testing-the-project)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -108,25 +110,68 @@ software ends up, never what you did with it.** As long as every copy of MCP Fir
 your hands, you owe nothing — not for the scale you run it at, not for the money it makes you,
 not for whose database you point it at. The moment a copy leaves, we should talk.
 
-### What you get in each edition
+There is also a paid **[Enterprise edition](#enterprise-edition)** — a different product, not a
+crippled free tier. Everything described in the rest of this README is in the free one.
 
-The line is simple: **whatever the database knows about itself is free; whatever only its
-host machine knows is paid.** Everything in the free edition talks to Firebird over
-FireDAC — it never reads a file on the server.
+---
+
+## Enterprise edition
+
+### Where the free edition ends
+
+The free edition is not a demo, and it is not the Enterprise edition with the good parts taken
+out. It is the whole of one job, done properly: **it makes the database answer for itself.**
+
+It reads your schema. It explains your plans. It finds the index you are missing and the four
+you do not need. It catches the missing primary key, the stale statistics, the transaction
+pinning garbage collection since Tuesday. For most databases, most of the time, that is where
+the problem is, and that is where the problem gets fixed. Plenty of people will use it for years
+and never need anything else — and they will never be asked for a cent.
+
+Then one day it comes back and tells you the truth: *your schema is fine. Your indexes are fine.
+No natural scans, no external sorts, statistics fresh.* And the database is still slow.
+
+**That is the line.** The free edition has answered its question honestly and completely, and the
+answer is that the problem is not in the database. It is in the machine underneath it — and no
+`SELECT` will ever show you that. Not because the tool is holding back, but because SQL cannot
+see outside its own process.
+
+### Where the Enterprise edition begins
+
+It is 2 GB of page buffers on a host with 8 GB of RAM. It is `forced writes` switched off for a
+batch load two years ago and never switched back. It is a sweep interval nobody tuned, an ODS
+three versions behind, `LockHashSlots` still at its 2010 default under four hundred connections,
+a bugcheck written to `firebird.log` every Tuesday at 03:00 that nobody reads.
+
+The Enterprise edition is the one allowed to look:
 
 | | Free | Enterprise |
 |---|---|---|
 | Schema, docs, plans, index advice, schema audit | ✅ | ✅ |
 | Transaction & sweep health (`MON$`) | ✅ | ✅ |
 | Apply suggested DDL (opt-in, `firebird.allow_ddl`) | ✅ | ✅ |
-| `firebird.conf` / `databases.conf` deep tuning | — | ✅ |
-| Database header analysis (page size, sweep interval, forced writes) | — | ✅ |
-| `firebird.log` parsing (errors, sweeps, bugchecks) | — | ✅ |
-| Trace API capture — real workload, real hot queries | — | ✅ |
-| Host sizing (RAM vs page buffers, CPU vs parallel workers) | — | ✅ |
+| `fb_analyze_config` — `firebird.conf` / `databases.conf` tuning, per engine version and workload | — | ✅ |
+| `fb_analyze_db_header` — page size, buffers, sweep interval, forced writes, ODS | — | ✅ |
+| `fb_parse_log` — `firebird.log`: errors, sweeps, bugchecks, crashes | — | ✅ |
+| `fb_capture_trace` — Trace API: the real workload, and what actually costs | — | ✅ |
+| `fb_analyze_host` — RAM against page buffers, CPU against parallel workers, storage class | — | ✅ |
 
-The Enterprise tools appear in `tools/list` in this edition too, and tell you so when
-called. **Enterprise, commercial licences, and support subscriptions:** d.teti@bittime.it
+Note what is *not* in that table: nothing was moved out of the free edition to build the paid one.
+Every free tool stays free, including the M3 write tools that apply the DDL they suggest. The
+boundary is not a paywall drawn through a feature list — it is the wall between the database and
+the host, and the free edition was always on one side of it.
+
+The hard part was never parsing `firebird.conf`; anyone can parse an INI file. It is knowing that
+on 4.0, at that connection count, with that page size, `LockHashSlots` is wrong — and what to set
+it to instead. **Those thresholds are the product.** They are twenty years of Firebird in
+production, and they are why this edition is sold rather than given away.
+
+You will know when you need it, because the free edition will have told you.
+
+The five tools above already appear in `tools/list` in the free edition, so your assistant can see
+them and say what it would do with them. Call one and it tells you how to get it.
+
+**Enterprise licences, commercial licences and support subscriptions:** d.teti@bittime.it
 
 ---
 
