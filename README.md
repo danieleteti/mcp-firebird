@@ -790,7 +790,7 @@ hardware — privileges this edition never asks for.
 | `fb_analyze_storage` | `table_name?` | The physical picture no `SELECT` can show: index depth, page fill ratios, record-version chain length, page distribution |
 | `fb_parse_log` | — | Streams `firebird.log` back over the Services API and separates the noise from what matters: bugchecks, page corruption, I/O errors, sweeps that ran — or never did |
 | `fb_capture_trace` | — | Opens a bounded Trace API session, samples the real workload, and ranks the statements that actually cost — as a latency distribution, not an average |
-| `fb_analyze_host` | — | The engine against its hardware: RAM versus the memory the configuration actually commits, CPU count versus `ParallelWorkers`, storage class versus `forced writes` |
+| `fb_analyze_host` | `config_dir?` | The engine against its hardware: RAM versus the memory the configuration actually commits, core count versus `MaxParallelWorkers` and `CpuAffinityMask`, free space versus the size of the database, and whether the pages it misses cost a seek |
 
 Plus the part that makes them a product rather than a report: **baselines and experiments.** Take a
 measurement under real load, change one parameter, take another, and get a verdict on whether the
