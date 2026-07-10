@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.Connection;
@@ -15,7 +15,6 @@ type
     Password: string;
     Charset: string;
     ClientLib: string;
-    AllowDDL: Boolean;
   end;
 
   TFirebirdConnection = class
@@ -27,7 +26,6 @@ type
     constructor Create(const AConfig: TFirebirdConnectionConfig);
     destructor Destroy; override;
     procedure Connect;
-    function IsConnected: Boolean;
     function OpenQuery(const ASQL: string): TFDQuery; overload;
     function OpenQuery(const ASQL: string; const AParams: array of Variant): TFDQuery; overload;
     function ExecSQL(const ASQL: string): Integer;
@@ -67,11 +65,6 @@ end;
 procedure TFirebirdConnection.Connect;
 begin
   FConn.Connected := True;
-end;
-
-function TFirebirdConnection.IsConnected: Boolean;
-begin
-  Result := FConn.Connected;
 end;
 
 function TFirebirdConnection.OpenQuery(const ASQL: string): TFDQuery;

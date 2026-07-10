@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An MCP (Model Context Protocol) **server** for Firebird 2.5–5.0, written in Delphi against the
 official `fbclient` driver + FireDAC. It talks JSON-RPC 2.0 over stdio. Given a configured
-database, it documents schemas, analyzes query plans, helps the DBA and advises on indexes — read-only by
-default (DDL/write tools are gated behind `firebird.allow_ddl=true` and are still M3/未
-implemented). Full user-facing docs, tool reference and worked examples live in `README.md` —
+database, it documents schemas, analyzes query plans, helps the DBA and advises on indexes — strictly
+read-only: no tool runs DDL or write SQL (write tools are M3, still unimplemented, and will ship
+behind an explicit opt-in setting). Full user-facing docs, tool reference and worked examples live in `README.md` —
 read it for anything about *using* the server; this file is about *building* it.
 
 ## Prerequisites
@@ -125,7 +125,7 @@ attribute system. Never add an MVCFramework import to a `sources/*.pas` unit —
 
 Key `sources/` units and what they own:
 - `Firebird.Connection` — `TFirebirdConnection` / `TFirebirdConnectionConfig`: the FireDAC wrapper
-  (host/port/db/user/pass/charset/client_lib/allow_ddl), `OpenQuery`/`ExecSQL`/`ScalarStr`.
+  (host/port/db/user/pass/charset/client_lib), `OpenQuery`/`ExecSQL`/`ScalarStr`.
 - `Firebird.Capabilities` — runtime feature detection (MON$ tables, explained plans, BOOLEAN,
   INT128, timezones, parallel workers) keyed off engine version, so behavior adapts across 2.5-5.0
   instead of hardcoding one engine's SQL dialect.
@@ -145,8 +145,9 @@ Key `sources/` units and what they own:
 `providers/` layer:
 - `FirebirdConfigU` — reads `firebird.*` keys from dotEnv into `TFirebirdConnectionConfig`
   (`LoadFirebirdConfig`), validates them with speaking errors (`NewConfiguredConnection`).
-- `FirebirdToolsU` — the 10 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
-  `Guard()`, which logs `>> tool args` / `<< tool ok|isError Nms` to the `mcp` log tag and converts
+- `FirebirdToolsU` — the 9 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
+  `Guard()`, which opens/frees the configured connection and hands it to the body, logs
+  `>> tool args` / `<< tool ok|isError Nms` to the `mcp` log tag and converts
   any exception into an `isError` `TMCPToolResult` instead of an opaque JSON-RPC -32603 — keep new
   tools inside `Guard` so failures surface to the MCP client instead of just crashing the request.
 - `FirebirdPromptsU` — the `optimization_goal` and `health_check` prompts.
@@ -170,8 +171,17 @@ the MCP transport itself.
 
 - Every advisory-producing function returns `TAdvisory` (Severity/Finding/SQLText/Verify) — new
   detectors should follow this shape so `AdvisoriesToText` can render them without special-casing.
-- Read-only by default: any new tool that executes DDL/write SQL must be gated behind
-  `firebird.allow_ddl` (see `TFirebirdConnectionConfig.AllowDDL`), consistent with the M1-M2
-  read-only scope described in README's Safety section.
+- Read-only: no tool executes DDL/write SQL. The first one that needs to must introduce an
+  explicit opt-in setting and enforce it, consistent with the M1-M2 read-only scope described in
+  README's Safety section.
 - `docs/firebird-problem-catalog.md` is the source of truth mapping each detected problem to its
   seed fixture and milestone (M1/M2/M3) — check it before adding a new detector or fixture.
+- **Editions.** This repo is source-available (PolyForm Internal Use 1.0.0), not open source; new
+  production sources carry the `LicenseRef-PolyForm-Internal-Use-1.0.0` SPDX header. The free
+  edition only ever asks the database about itself over FireDAC. Anything that reads the host —
+  `firebird.conf`, the DB header, `firebird.log`, the Trace API, RAM/CPU — belongs to the paid
+  Enterprise edition in the separate private repo, and is announced here by the five locked tools
+  in `providers/FirebirdStubsU.pas`. `invoke boundary` fails the build if a `sources/` unit reads
+  a file or spawns a process (`Firebird.PlanAnalyzer`, which drives a local `isql`, is the one
+  sanctioned exception). Enterprise tool names must match the stub names exactly: the Python
+  compliance suite is shared with the Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.

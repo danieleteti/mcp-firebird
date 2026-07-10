@@ -2,6 +2,11 @@ import json, os, subprocess, pytest
 
 EXE = os.environ.get("MCP_FB_EXE", r"C:\DEV\mcp-firebird\bin\MCPFirebird.exe")
 
+# mcp-firebird-enterprise reuses this suite verbatim against its own executable, adding its own
+# tests on top. It sets MCP_FB_EXE to its executable and MCP_FB_EDITION=enterprise, which skips
+# the tests asserting the Enterprise tools are locked. Both editions expose the same five tool
+# names, so everything else in the suite runs unchanged against either.
+
 class StdioClient:
     def __init__(self, proc): self.proc = proc; self._id = 0; self.init_result = None
     def call(self, method, params=None):

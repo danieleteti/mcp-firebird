@@ -25,11 +25,14 @@ stdio JSON-RPC. It is also a real-world showcase for
 - **Layer boundary:** `sources/*.pas` is pure Delphi/FireDAC domain logic and must **never**
   import `MVCFramework.*`. MCP-facing code lives in `providers/*`. Enforced by
   `tests/check_core_boundary.ps1`.
-- **Read-only by default:** any tool running DDL/write SQL must be gated behind
-  `firebird.allow_ddl`.
+- **Read-only:** no tool runs DDL/write SQL. The first one that needs to must introduce an
+  explicit opt-in setting and enforce it.
 - **stdout is reserved for JSON-RPC.** All logging goes to `bin/logs/` via LoggerPro. Never write
   to stdout outside the MCP transport.
-- New production source files carry the SPDX Apache-2.0 header (see `scripts/check_spdx.ps1`).
+- New production source files carry the SPDX `LicenseRef-PolyForm-Internal-Use-1.0.0` header
+  (see `scripts/check_spdx.ps1`). This project is source-available, not open source.
+- Never add host access (file reads, process spawning) to `sources/` — that is the paid
+  Enterprise edition's territory. `invoke boundary` enforces it.
 
 ## Build & test
 

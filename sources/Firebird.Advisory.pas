@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.Advisory;

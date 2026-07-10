@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.PlanAnalyzer;
 // Plan retrieval per Task 10 spike (docs/plan-retrieval-decision.md): isql + SET PLANONLY ON.
 interface
-uses Firebird.Connection, Firebird.Capabilities;
+uses Firebird.Connection;
 type
   TPlanResult = record
     RawPlan, ExplainedPlan, EngineVersion: string;
@@ -14,10 +14,10 @@ type
   TFirebirdPlanAnalyzer = class
   private
     FConn: TFirebirdConnection;
-    FCaps: TFirebirdCapabilities;
+    FEngineVersion: string;
     function GetRawPlan(const ASQL: string): string;
   public
-    constructor Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
+    constructor Create(AConn: TFirebirdConnection; const AEngineVersion: string);
     function Analyze(const ASQL: string): TPlanResult;
   end;
 implementation
@@ -25,8 +25,8 @@ uses
   Winapi.Windows, System.SysUtils, System.Classes, System.IOUtils,
   System.RegularExpressions;
 
-constructor TFirebirdPlanAnalyzer.Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
-begin inherited Create; FConn := AConn; FCaps := ACaps; end;
+constructor TFirebirdPlanAnalyzer.Create(AConn: TFirebirdConnection; const AEngineVersion: string);
+begin inherited Create; FConn := AConn; FEngineVersion := AEngineVersion; end;
 
 procedure RunAndWait(const ACmd: string);
 var SI: TStartupInfo; PI: TProcessInformation; LCmd: string;
@@ -88,7 +88,7 @@ function TFirebirdPlanAnalyzer.Analyze(const ASQL: string): TPlanResult;
 var M: TMatch;
 begin
   Result := Default(TPlanResult);
-  Result.EngineVersion := FCaps.EngineVersion;
+  Result.EngineVersion := FEngineVersion;
   Result.RawPlan := GetRawPlan(ASQL);
   Result.HasNaturalScan := Result.RawPlan.ToUpper.Contains('NATURAL');
   Result.HasExternalSort := Result.RawPlan.ToUpper.Contains('SORT');

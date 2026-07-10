@@ -4,6 +4,12 @@ Each row is a known Firebird problem, the fixture that provokes it, the tool tha
 detects it, and the milestone the detection lands in. Fixtures live in
 `tests/seed/seed.sql` and `tests/seed/problems.sql`.
 
+**Every problem below is detected by the free edition.** All thirteen are visible from inside
+the database, and that is exactly what defines the free edition (see `README.md` § Editions &
+licensing). The Enterprise problems — a misconfigured `firebird.conf`, a page size fighting the
+hardware, a sweep that never runs, a bugcheck buried in `firebird.log` — are not in this catalog:
+they need a fixture on the host, not in the schema, and they live in the private repository.
+
 | # | Problem | Fixture object | Detected by | Milestone |
 |---|---|---|---|---|
 | 1 | NATURAL scan on filtered column | CUSTOMERS.CITY | fb_analyze_query | M1 |

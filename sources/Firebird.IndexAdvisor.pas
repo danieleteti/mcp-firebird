@@ -1,16 +1,16 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.IndexAdvisor;
 interface
-uses Firebird.Connection, Firebird.Capabilities, Firebird.Advisory;
+uses Firebird.Connection, Firebird.Advisory;
 type
   TFirebirdIndexAdvisor = class
   private
     FConn: TFirebirdConnection;
-    FCaps: TFirebirdCapabilities;
+    FEngineVersion: string;
   public
-    constructor Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
+    constructor Create(AConn: TFirebirdConnection; const AEngineVersion: string);
     function SuggestForQuery(const ASQL: string): TArray<TAdvisory>;
     function SuggestDropsForTable(const ATable: string): TArray<TAdvisory>;
   end;
@@ -19,15 +19,15 @@ uses
   System.SysUtils, System.Classes, System.StrUtils, System.Generics.Collections,
   System.RegularExpressions, Firebird.PlanAnalyzer, Firebird.Introspection;
 
-constructor TFirebirdIndexAdvisor.Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
-begin inherited Create; FConn := AConn; FCaps := ACaps; end;
+constructor TFirebirdIndexAdvisor.Create(AConn: TFirebirdConnection; const AEngineVersion: string);
+begin inherited Create; FConn := AConn; FEngineVersion := AEngineVersion; end;
 
 function TFirebirdIndexAdvisor.SuggestForQuery(const ASQL: string): TArray<TAdvisory>;
 var PA: TFirebirdPlanAnalyzer; R: TPlanResult; T, Col, Idx: string; M: TMatch; Advs: TList<TAdvisory>;
 begin
   Advs := TList<TAdvisory>.Create;
   try
-    PA := TFirebirdPlanAnalyzer.Create(FConn, FCaps);
+    PA := TFirebirdPlanAnalyzer.Create(FConn, FEngineVersion);
     try R := PA.Analyze(ASQL); finally PA.Free; end;
     if R.HasNaturalScan then
       for T in R.NaturalTables do
@@ -71,7 +71,7 @@ begin
         Advs.Add(TAdvisory.Make(
           Format('Index %s on %s is INACTIVE: it is not used for reads but still must be maintained if reactivated.', [Idx[I].IndexName, ATable]),
           Format('DROP INDEX %s;  -- or ALTER INDEX %s ACTIVE; if you intend to use it', [Idx[I].IndexName, Idx[I].IndexName]),
-          'Confirm no query relies on it, then drop. fb_describe_table should no longer list it.',
+          'Confirm no query relies on it, then drop. fb_generate_documentation should no longer list it.',
           'warning'));
       if not Idx[I].IsSystem then
         for J := 0 to High(Idx) do
@@ -82,7 +82,7 @@ begin
               Format('Index %s duplicates %s (same columns %s). Firebird already maintains the other index%s; the duplicate only adds write cost.',
                 [Idx[I].IndexName, Idx[J].IndexName, string.Join(', ', Idx[I].Columns), IfThen(Idx[J].IsSystem, ' (a system constraint index)', '')]),
               Format('DROP INDEX %s;', [Idx[I].IndexName]),
-              'fb_describe_table should list one index on these columns afterwards.',
+              'fb_generate_documentation should list one index on these columns afterwards.',
               'warning'))
           else if IsLeftPrefixOf(Idx[I].Columns, Idx[J].Columns) and not Idx[I].Unique then
             Advs.Add(TAdvisory.Make(

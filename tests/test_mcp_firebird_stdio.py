@@ -5,7 +5,7 @@ def test_initialize_reports_server_name(client):
 def test_tools_list_contains_fb_tools(client):
     r = client.call("tools/list")
     names = {t["name"] for t in r["result"]["tools"]}
-    for expected in {"fb_info", "fb_list_tables", "fb_describe_table",
+    for expected in {"fb_info", "fb_list_tables",
                      "fb_generate_documentation", "fb_analyze_query",
                      "fb_suggest_indexes", "fb_suggest_index_drops",
                      "fb_evaluate_goal", "fb_audit_table"}:

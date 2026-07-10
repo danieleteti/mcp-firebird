@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.Introspection;
@@ -26,8 +26,11 @@ type
     function GetPrimaryKey(const ATable: string): TArray<string>;
     function GetIndexes(const ATable: string): TArray<TIndexInfo>;
     function GetForeignKeys(const ATable: string): TArray<TForeignKeyInfo>;
-    function RowCount(const ATable: string): Int64;
   end;
+
+{ Wraps an identifier in double quotes for use in SQL text. }
+function QuoteIdent(const S: string): string;
+
 implementation
 uses System.SysUtils, Data.DB, FireDAC.Comp.Client;
 
@@ -109,11 +112,6 @@ begin
     try while not Q.Eof do begin L.Add(Q.Fields[0].AsString); Q.Next; end; finally Q.Free; end;
     Result := L.ToArray;
   finally L.Free; end;
-end;
-
-function TFirebirdIntrospection.RowCount(const ATable: string): Int64;
-begin
-  Result := StrToInt64Def(FConn.ScalarStr('SELECT COUNT(*) FROM ' + QuoteIdent(ATable)), 0);
 end;
 
 function TFirebirdIntrospection.IndexColumns(const AIndexName: string): TArray<string>;

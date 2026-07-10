@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="LICENSE"><img alt="License: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/License-PolyForm_Internal_Use-blue.svg"></a>
   <img alt="MCP protocol 2025-03-26" src="https://img.shields.io/badge/MCP-2025--03--26-brightgreen.svg">
   <a href="https://github.com/danieleteti/mcp-server-delphi"><img alt="powered by mcp-server-delphi" src="https://img.shields.io/badge/powered%20by-mcp--server--delphi-orange.svg"></a>
   <a href="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml/badge.svg"></a>
@@ -22,36 +22,123 @@ schema health, and drive goal-based optimization — **read-only by default**.
 - **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
 - **Server identity:** `mcp-firebird` v`0.1.0`
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
-- **Safety:** read-only analysis; DDL/write is gated behind `firebird.allow_ddl=true`
+- **Safety:** read-only analysis; no tool runs DDL or write SQL
+- **Licence:** source-available, **not open source** — see [Editions & licensing](#editions--licensing)
 
 ---
 
 ## Table of contents
 
-1. [What it does](#what-it-does)
-2. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)
-3. [Prerequisites](#prerequisites)
-4. [Build](#build)
-5. [Configuration (`.env`)](#configuration-env)
-6. [Run & verify manually](#run--verify-manually)
-7. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
-8. [Using it from Claude](#using-it-from-claude) — worked examples
-9. [Tool reference](#tool-reference)
-10. [Testing the project](#testing-the-project)
-11. [Troubleshooting](#troubleshooting)
+1. [Editions & licensing](#editions--licensing)
+2. [What it does](#what-it-does)
+3. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)
+4. [Prerequisites](#prerequisites)
+5. [Build](#build)
+6. [Configuration (`.env`)](#configuration-env)
+7. [Run & verify manually](#run--verify-manually)
+8. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
+9. [Using it from Claude](#using-it-from-claude) — worked examples
+10. [Tool reference](#tool-reference)
+11. [Testing the project](#testing-the-project)
+12. [Troubleshooting](#troubleshooting)
+
+---
+
+## Editions & licensing
+
+Short version: **if you are using it on your own databases, it is free — and it stays free.**
+No trial, no expiry, no licence key, no seat count, no limit on how many tables or databases
+you point it at. Install it, use it in production, use it every day. Nothing phones home.
+
+The one thing you cannot do is hand it to somebody else.
+
+MCP Firebird is **source-available, not open source** as the Open Source Initiative defines the
+term. Saying that plainly matters more than a badge: from **v0.2.0** it is licensed under the
+[PolyForm Internal Use License 1.0.0](LICENSE). Versions up to and including **v0.1.0 were
+released under Apache-2.0 and remain so** for everyone who received them — a licence already
+granted cannot be revoked, and this project does not pretend otherwise.
+
+### What you may do, free of charge
+
+- Run it against any database you like — yours, your employer's, your client's. Development,
+  staging, production, all of them.
+- Run it at any scale. A hundred tables or ten thousand; one database or fifty.
+- **Use it in your consulting practice.** Diagnose, tune, audit and support your clients'
+  Firebird databases with it, and charge them for your time. It is your tool; keep it.
+- Read the source. All of it. Learn from it, and use what you learn.
+- Modify it. Fix a bug, add a detector, change a message. Run your modified build.
+- Use it in a company of any size, commercial or not, for-profit or not, with no fee and no
+  registration.
+
+### What requires a licence
+
+One idea, expressed three ways: **letting the software out of your hands.**
+
+- **Redistributing it.** Publishing a fork, uploading a build, putting it on a CD, sending the
+  binary to a customer, leaving it installed on a client's server when the engagement ends.
+- **Embedding it in a product you sell.** Shipping it inside your ERP, your installer, your
+  Docker image, your appliance — in source or binary form, modified or not.
+- **Offering it as a service.** Standing it up behind an API or a hosted agent that people
+  outside your organisation can reach.
+
+Where the software runs, and whose database it examines, is your business. Where copies of it end
+up is ours.
+
+If your case is one of these, the licence exists and it is not expensive relative to what you are
+building with it. Write to **d.teti@bittime.it**.
+
+### When you need to buy a licence — worked cases
+
+| Your situation | Licence needed? |
+|---|---|
+| Your DBA runs it against the company's production Firebird every morning | **No.** |
+| Your team of forty developers each run it locally | **No.** No seat count, no registration. |
+| You are a consultant, and you run it from your laptop against your client's database | **No.** It is your tool and it stays your tool. Charge them what you like. |
+| Same, but you are sitting at the client's desk, running it on their server | **No.** Take it with you when you leave. |
+| You leave a copy of it installed on your client's server when you go | **Yes.** The software left your hands. |
+| You are a hosting provider, and you run it against the databases you host | **No.** |
+| ...and you give your customers a button that runs it for them | **Yes.** That is offering it as a service. |
+| You ship it inside your Delphi ERP so your customers get "AI database tuning" | **Yes.** Embedding in a product you supply. |
+| You publish a fork on GitHub with your improvements | **Yes.** Talk to us first — we would rather merge it. |
+| You are writing a blog post, a talk, or a university course about it | **No.** Read it, quote it, teach it. |
+| You are on `v0.1.0`, which you obtained under Apache-2.0 | **No.** That version stays Apache-2.0 for you forever. |
+
+The rule behind the table, if you would rather reason than look things up: **ask where the
+software ends up, never what you did with it.** As long as every copy of MCP Firebird stays in
+your hands, you owe nothing — not for the scale you run it at, not for the money it makes you,
+not for whose database you point it at. The moment a copy leaves, we should talk.
+
+### What you get in each edition
+
+The line is simple: **whatever the database knows about itself is free; whatever only its
+host machine knows is paid.** Everything in the free edition talks to Firebird over
+FireDAC — it never reads a file on the server.
+
+| | Free | Enterprise |
+|---|---|---|
+| Schema, docs, plans, index advice, schema audit | ✅ | ✅ |
+| Transaction & sweep health (`MON$`) | ✅ | ✅ |
+| Apply suggested DDL (opt-in, `firebird.allow_ddl`) | ✅ | ✅ |
+| `firebird.conf` / `databases.conf` deep tuning | — | ✅ |
+| Database header analysis (page size, sweep interval, forced writes) | — | ✅ |
+| `firebird.log` parsing (errors, sweeps, bugchecks) | — | ✅ |
+| Trace API capture — real workload, real hot queries | — | ✅ |
+| Host sizing (RAM vs page buffers, CPU vs parallel workers) | — | ✅ |
+
+The Enterprise tools appear in `tools/list` in this edition too, and tell you so when
+called. **Enterprise, commercial licences, and support subscriptions:** d.teti@bittime.it
 
 ---
 
 ## What it does
 
-### Tools (10)
+### Tools (9 free, plus 5 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
 | `fb_info` | — | Engine version + detected capabilities (JSON) |
 | `fb_list_tables` | — | List user tables |
-| `fb_describe_table` | `table_name` | Columns, PK, indexes, foreign keys |
-| `fb_generate_documentation` | `table_name?` | Markdown docs for one table or the whole database |
+| `fb_generate_documentation` | `table_name?` | Markdown docs — columns, PK, indexes — for one table, or the whole database |
 | `fb_analyze_query` | `sql` | Access-plan analysis: NATURAL-scan + external-SORT detection |
 | `fb_suggest_indexes` | `sql` | New-index suggestions from NATURAL-scanned predicates (ready-to-run DDL) |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
@@ -87,8 +174,8 @@ public
   [MCPTool('fb_info', 'Engine version, dialect, charset and detected capabilities of the configured Firebird database')]
   function FbInfo: TMCPToolResult;
 
-  [MCPTool('fb_describe_table', 'Columns, primary key, indexes and foreign keys of a table')]
-  function FbDescribeTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
+  [MCPTool('fb_generate_documentation', 'Markdown documentation — columns, primary key, indexes — for one table, or for the whole database when table_name is empty')]
+  function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
 
   [MCPTool('fb_analyze_query', 'Returns and analyzes the access plan of a SQL query (flags NATURAL scans and external sorts)')]
   function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
@@ -284,7 +371,6 @@ its own database.
 | `firebird.password` | `masterkey` | Login password |
 | `firebird.charset` | `UTF8` | Connection character set |
 | `firebird.client_lib` | *(empty)* | Full path to `fbclient.dll` to load |
-| `firebird.allow_ddl` | `false` | **Safety gate** for write/DDL tools (M1 tools are read-only) |
 | `logger.config.file` | `loggerpro.stdio.json` | File-logger config (logs go to file only; stdout stays pure JSON-RPC) |
 
 Example `bin\.env`:
@@ -297,7 +383,6 @@ firebird.user=SYSDBA
 firebird.password=masterkey
 firebird.charset=UTF8
 firebird.client_lib=C:\Program Files\Firebird\Firebird_5_0\fbclient.dll
-firebird.allow_ddl=false
 logger.config.file=loggerpro.stdio.json
 ```
 
@@ -474,11 +559,11 @@ capabilities (MON$ tables, explained plans, BOOLEAN, INT128, timezones, parallel
 
 > **You:** Document the CUSTOMERS table.
 
-→ **`fb_describe_table`** → columns, the `CUSTOMER_ID` primary key, indexes and foreign keys.
+→ **`fb_generate_documentation`** → columns, the `CUSTOMER_ID` primary key and the indexes.
 
 > **You:** Generate full Markdown documentation for the whole database and put it in a file.
 
-→ **`fb_generate_documentation`** (no table = whole DB). Claude returns the Markdown; ask it to
+→ **`fb_generate_documentation`** again (no table = whole DB). Claude returns the Markdown; ask it to
 save the text to `docs/schema.md` if you want it on disk.
 
 ### 3. Diagnose a slow query and fix it
@@ -584,8 +669,7 @@ CREATE INDEX IDX_EMPLOYEE_SALARY ON EMPLOYEE (salary);
 > **Verify:** re-run `fb_analyze_query`; the plan should use `IDX_EMPLOYEE_SALARY` and no longer show
 > `EMPLOYEE NATURAL`. Then run `SET STATISTICS INDEX IDX_EMPLOYEE_SALARY;` to refresh selectivity.
 
-**4. Apply it** (writes are off by default — run the DDL yourself, or set `firebird.allow_ddl=true`),
-then **re-analyze**: the plan becomes `PLAN (EMPLOYEE INDEX (IDX_EMPLOYEE_SALARY))` and
+**4. Apply it** (the server is read-only — run the DDL yourself), then **re-analyze**: the plan becomes `PLAN (EMPLOYEE INDEX (IDX_EMPLOYEE_SALARY))` and
 `fb_evaluate_goal` returns `met: true`.
 
 **When *not* to add the index.** The win comes from `salary > 60000` being **selective** (few rows).
@@ -599,8 +683,8 @@ cheaper plan and the index would just add write overhead — not every NATURAL s
 A few call examples (MCP `tools/call` `arguments`):
 
 ```jsonc
-// Describe a table
-{ "name": "fb_describe_table", "arguments": { "table_name": "CUSTOMERS" } }
+// Describe a table (omit table_name for the whole database)
+{ "name": "fb_generate_documentation", "arguments": { "table_name": "CUSTOMERS" } }
 
 // Analyze a query's plan (flags NATURAL scans and external SORTs)
 { "name": "fb_analyze_query", "arguments": { "sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'" } }
@@ -720,7 +804,8 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 ## Safety & compatibility
 
-- **Read-only by default.** Write/DDL tools (planned for M3) require `firebird.allow_ddl=true`.
+- **Read-only.** No tool runs DDL or write SQL; write tools are planned for M3 and will ship
+  behind an explicit opt-in setting.
 - **Cross-version.** Capability detection adapts feature use (MON$ tables, explained plans,
   BOOLEAN, INT128, timezones, parallel workers) to the connected engine; validated on FB
   2.5 / 3.0 / 4.0 / 5.0.

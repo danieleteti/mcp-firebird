@@ -155,27 +155,62 @@ Measurements use the core: timed execution, `reads`/`fetches` from MON$ stats, p
 | `fb_suggest_index_drops` | User index **duplicating** a system PK/FK index, redundant (left-prefix of another), low-selectivity (`RDB$STATISTICS`→1), inactive (`RDB$INDEX_INACTIVE=1`), exact duplicate; ready DROP / ALTER INDEX INACTIVE | IndexAdvisor |
 | `fb_evaluate_goal` | Measure state vs threshold, `met:true/false` | Goal (cross-cutting) |
 
-### M2 — Live monitoring + config advisor (read-only)
+> **Edition boundary (added 2026-07-10).** Whatever the database knows about itself is free;
+> whatever only its host machine knows belongs to the Enterprise edition. The free edition
+> reaches Firebird over FireDAC and never reads a file on the server. This supersedes the
+> original plan, in which the config advisor and the trace tools were part of the free M2/M3.
+> See `README.md` § Editions & licensing.
+
+### M2 — Live monitoring (read-only, **free**)
 
 | Tool | What it does | Source |
 |---|---|---|
 | `fb_whats_running` | Active statements now, duration, attachment, I/O | `MON$STATEMENTS`/`MON$IO_STATS` |
 | `fb_transaction_health` | OAT/OIT/Next gap, oldest active tx, garbage risk | `MON$TRANSACTIONS` |
 | `fb_hot_tables` | Tables with most reads/writes/record versions in real time | `MON$RECORD_STATS` |
-| `fb_analyze_config` | firebird.conf + DB header (page size, buffers, sweep interval, forced writes); version-specific advice | ConfigAdvisor |
 | `fb_database_health` | Aggregate report: suspect indexes + tx + stale statistics (`SET STATISTICS` advised) | aggregator |
 
-### M3 — Trace + write tools
+`fb_database_health` is split, not moved: its in-database findings stay free, its database-header
+findings belong to `fb_analyze_db_header` in the Enterprise edition.
+
+### M3 — Write tools (**free**, opt-in)
 
 | Tool | What it does | Gate |
 |---|---|---|
-| `fb_start_trace` / `fb_stop_trace` / `fb_read_trace` | Trace session via Services API + log parser; historically slow statements | read-only |
-| `fb_parse_log_file` | Analyze trace/firebird.log path from config | read-only |
 | `fb_apply_sql` | Execute DDL/DML (e.g. the suggested CREATE INDEX); transactional, dry-run option | **write** |
 | `fb_set_statistics` | Recompute index selectivity (`SET STATISTICS INDEX`) | **write** |
 | `fb_rebuild_index` | `ALTER INDEX INACTIVE` + `ACTIVE` | **write** |
 
-Every write tool checks the flag; if off, returns a `TMCPToolResult.Error` explaining how to enable it.
+Every write tool checks the `firebird.allow_ddl` flag; if off, returns a `TMCPToolResult.Error`
+explaining how to enable it. Writing to the database is in-database work, so it stays free — the
+principle is not held hostage to the scariest feature.
+
+### Enterprise — the host, not the database (paid)
+
+Shipped from a separate private repository; announced in this edition as the stubs in
+`providers/FirebirdStubsU.pas`.
+
+| Tool | What it does | Source |
+|---|---|---|
+| `fb_analyze_config` | firebird.conf + databases.conf; version- and workload-specific advice | ConfigAdvisor |
+| `fb_analyze_db_header` | DB header: page size, buffers, sweep interval, forced writes, ODS | DbHeader |
+| `fb_parse_log` | firebird.log: errors, sweeps, bugchecks, crashes | LogParser |
+| `fb_capture_trace` | One trace session via the Services API — start, sample, stop, rank the statements that actually cost | Trace |
+| `fb_analyze_host` | RAM vs page buffers, CPU vs parallel workers, storage class | HostInfo |
+
+The tuning thresholds — which setting matters, at which value, on which engine version — are the
+product. They do not ship in the public repository.
+
+Two constraints follow from the Enterprise repository being an *extension* of this one, never a
+copy:
+
+- **The tool names above are the stub names**, exactly. `providers/FirebirdStubsU.pas` here and
+  `providers/FirebirdEnterpriseToolsU.pas` there register the same five names; the Enterprise
+  `.dpr` omits the stub unit and includes the real one. The Python compliance suite is shared,
+  so a name that drifts breaks the build on the other side.
+- Trace is **one** tool, not the `fb_start_trace`/`fb_stop_trace`/`fb_read_trace` triple this
+  document originally planned. A language model should not have to carry session state across
+  three calls to answer "what is slow?".
 
 ### Resources & Prompts
 

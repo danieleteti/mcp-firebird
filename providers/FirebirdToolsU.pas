@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit FirebirdToolsU;
@@ -11,9 +11,7 @@ type
     function FbInfo: TMCPToolResult;
     [MCPTool('fb_list_tables', 'Lists user tables (and views) in the configured database')]
     function FbListTables: TMCPToolResult;
-    [MCPTool('fb_describe_table', 'Columns, primary key, indexes and foreign keys of a table')]
-    function FbDescribeTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
-    [MCPTool('fb_generate_documentation', 'Markdown documentation for one table, or the whole database when table_name is empty')]
+    [MCPTool('fb_generate_documentation', 'Markdown documentation — columns, primary key, indexes — for one table, or for the whole database when table_name is empty')]
     function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
     [MCPTool('fb_analyze_query', 'Returns and analyzes the access plan of a SQL query (flags NATURAL scans and external sorts)')]
     function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
@@ -42,11 +40,12 @@ uses
 
 const DEFAULT_STALE_MINUTES = 5;
 
-{ Traces every tool invocation to the log and turns any exception (most commonly
-  a database connection / communication failure) into a tool result with
-  isError=true, so the message is returned to the MCP client and shown to the
-  user — instead of bubbling up as a generic JSON-RPC -32603 that clients render
-  as an opaque "Failed to call tool".
+{ Opens the configured connection, passes it to the tool body, frees it. Traces
+  every tool invocation to the log and turns any exception (a misrouted .env, a
+  database connection / communication failure, a malformed query) into a tool
+  result with isError=true, so the message is returned to the MCP client and
+  shown to the user — instead of bubbling up as a generic JSON-RPC -32603 that
+  clients render as an opaque "Failed to call tool".
 
   Log trail per call (all under the 'mcp' tag):
     [INFO ] >> fb_xxx  <args>            (invocation, with the arguments received)
@@ -55,13 +54,17 @@ const DEFAULT_STALE_MINUTES = 5;
 
   Protocol errors (unknown tool, missing required param) are still raised by the
   request handler and remain JSON-RPC errors. }
-function Guard(const AToolName, AArgs: string; const AAction: TFunc<TMCPToolResult>): TMCPToolResult;
-var SW: TStopwatch;
+function Guard(const AToolName, AArgs: string;
+  const AAction: TFunc<TFirebirdConnection, TMCPToolResult>): TMCPToolResult;
+var SW: TStopwatch; Conn: TFirebirdConnection;
 begin
   LogI(Format('>> %s  %s', [AToolName, AArgs]), 'mcp');
   SW := TStopwatch.StartNew;
   try
-    Result := AAction();
+    Conn := NewConfiguredConnection;
+    try
+      Result := AAction(Conn);
+    finally Conn.Free; end;
     LogI(Format('<< %s  %s  %dms',
       [AToolName, IfThen(Result.IsError, 'isError', 'ok'), SW.ElapsedMilliseconds]), 'mcp');
   except
@@ -71,6 +74,11 @@ begin
       Result := TMCPToolResult.Error('Firebird error (' + E.ClassName + '): ' + E.Message);
     end;
   end;
+end;
+
+function EngineVersion(AConn: TFirebirdConnection): string;
+begin
+  Result := TFirebirdCapabilities.Detect(AConn).EngineVersion;
 end;
 
 function AdvisoriesToText(const Advs: TArray<TAdvisory>; const AEmptyMsg: string): string;
@@ -90,56 +98,34 @@ end;
 function TFirebirdTools.FbInfo: TMCPToolResult;
 begin
   Result := Guard('fb_info', '',
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; C: TFirebirdCapabilities; J: TJDOJsonObject;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var C: TFirebirdCapabilities; J: TJDOJsonObject;
     begin
-      Conn := NewConfiguredConnection;
+      C := TFirebirdCapabilities.Detect(Conn);
+      J := TJDOJsonObject.Create;
       try
-        C := TFirebirdCapabilities.Detect(Conn);
-        J := TJDOJsonObject.Create;
-        try
-          J.S['engine_version'] := C.EngineVersion;
-          J.I['major'] := C.Major; J.I['minor'] := C.Minor;
-          J.B['has_explained_plan'] := C.HasExplainedPlan;
-          J.B['has_boolean_type'] := C.HasBooleanType;
-          J.B['has_parallel_workers'] := C.HasParallelWorkers;
-          J.S['database'] := Conn.Config.Database;
-          Result := TMCPToolResult.JSON(J);
-        finally J.Free; end;
-      finally Conn.Free; end;
+        J.S['engine_version'] := C.EngineVersion;
+        J.I['major'] := C.Major; J.I['minor'] := C.Minor;
+        J.B['has_explained_plan'] := C.HasExplainedPlan;
+        J.B['has_boolean_type'] := C.HasBooleanType;
+        J.B['has_parallel_workers'] := C.HasParallelWorkers;
+        J.S['database'] := Conn.Config.Database;
+        Result := TMCPToolResult.JSON(J);
+      finally J.Free; end;
     end);
 end;
 
 function TFirebirdTools.FbListTables: TMCPToolResult;
 begin
   Result := Guard('fb_list_tables', '',
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; I: TFirebirdIntrospection; T: string; SB: TStringBuilder;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var I: TFirebirdIntrospection; T: string; SB: TStringBuilder;
     begin
-      Conn := NewConfiguredConnection;
+      I := TFirebirdIntrospection.Create(Conn); SB := TStringBuilder.Create;
       try
-        I := TFirebirdIntrospection.Create(Conn); SB := TStringBuilder.Create;
-        try
-          for T in I.ListTables do SB.AppendLine('- ' + T);
-          Result := TMCPToolResult.Text(SB.ToString);
-        finally SB.Free; I.Free; end;
-      finally Conn.Free; end;
-    end);
-end;
-
-function TFirebirdTools.FbDescribeTable(const table_name: string): TMCPToolResult;
-var LTable: string;
-begin
-  LTable := table_name;
-  Result := Guard('fb_describe_table', 'table_name=' + LTable,
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; D: TFirebirdDocGen;
-    begin
-      Conn := NewConfiguredConnection;
-      try
-        D := TFirebirdDocGen.Create(TFirebirdIntrospection.Create(Conn));
-        try Result := TMCPToolResult.Text(D.TableMarkdown(LTable.ToUpper)); finally D.Free; end;
-      finally Conn.Free; end;
+        for T in I.ListTables do SB.AppendLine('- ' + T);
+        Result := TMCPToolResult.Text(SB.ToString);
+      finally SB.Free; I.Free; end;
     end);
 end;
 
@@ -148,17 +134,14 @@ var LTable: string;
 begin
   LTable := table_name;
   Result := Guard('fb_generate_documentation', 'table_name=' + LTable,
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; D: TFirebirdDocGen;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var D: TFirebirdDocGen;
     begin
-      Conn := NewConfiguredConnection;
+      D := TFirebirdDocGen.Create(TFirebirdIntrospection.Create(Conn));
       try
-        D := TFirebirdDocGen.Create(TFirebirdIntrospection.Create(Conn));
-        try
-          if LTable.Trim.IsEmpty then Result := TMCPToolResult.Text(D.DatabaseMarkdown)
-          else Result := TMCPToolResult.Text(D.TableMarkdown(LTable.ToUpper));
-        finally D.Free; end;
-      finally Conn.Free; end;
+        if LTable.Trim.IsEmpty then Result := TMCPToolResult.Text(D.DatabaseMarkdown)
+        else Result := TMCPToolResult.Text(D.TableMarkdown(LTable.ToUpper));
+      finally D.Free; end;
     end);
 end;
 
@@ -167,25 +150,22 @@ var LSql: string;
 begin
   LSql := sql;
   Result := Guard('fb_analyze_query', 'sql=' + LSql,
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult; SB: TStringBuilder;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var PA: TFirebirdPlanAnalyzer; R: TPlanResult; SB: TStringBuilder;
     begin
-      Conn := NewConfiguredConnection;
+      PA := TFirebirdPlanAnalyzer.Create(Conn, EngineVersion(Conn)); SB := TStringBuilder.Create;
       try
-        PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn)); SB := TStringBuilder.Create;
-        try
-          R := PA.Analyze(LSql);
-          SB.AppendLine('**Engine:** ' + R.EngineVersion).AppendLine;
-          SB.AppendLine('**PLAN:**').AppendLine('```').AppendLine(R.RawPlan).AppendLine('```');
-          if R.HasNaturalScan then
-            SB.AppendLine('NATURAL scan on: ' + string.Join(', ', R.NaturalTables) + '. Run fb_suggest_indexes on this query for ready-to-run DDL.')
-          else
-            SB.AppendLine('No NATURAL scan: every table is accessed via an index.');
-          if R.HasExternalSort then
-            SB.AppendLine('External SORT in the plan (ORDER BY / GROUP BY / DISTINCT without a usable index). Consider an index on the sort columns.');
-          Result := TMCPToolResult.Text(SB.ToString);
-        finally SB.Free; PA.Free; end;
-      finally Conn.Free; end;
+        R := PA.Analyze(LSql);
+        SB.AppendLine('**Engine:** ' + R.EngineVersion).AppendLine;
+        SB.AppendLine('**PLAN:**').AppendLine('```').AppendLine(R.RawPlan).AppendLine('```');
+        if R.HasNaturalScan then
+          SB.AppendLine('NATURAL scan on: ' + string.Join(', ', R.NaturalTables) + '. Run fb_suggest_indexes on this query for ready-to-run DDL.')
+        else
+          SB.AppendLine('No NATURAL scan: every table is accessed via an index.');
+        if R.HasExternalSort then
+          SB.AppendLine('External SORT in the plan (ORDER BY / GROUP BY / DISTINCT without a usable index). Consider an index on the sort columns.');
+        Result := TMCPToolResult.Text(SB.ToString);
+      finally SB.Free; PA.Free; end;
     end);
 end;
 
@@ -194,15 +174,12 @@ var LSql: string;
 begin
   LSql := sql;
   Result := Guard('fb_suggest_indexes', 'sql=' + LSql,
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var A: TFirebirdIndexAdvisor;
     begin
-      Conn := NewConfiguredConnection;
-      try
-        A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
-        try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestForQuery(LSql), 'No new index suggested: the query has no NATURAL scan.'));
-        finally A.Free; end;
-      finally Conn.Free; end;
+      A := TFirebirdIndexAdvisor.Create(Conn, EngineVersion(Conn));
+      try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestForQuery(LSql), 'No new index suggested: the query has no NATURAL scan.'));
+      finally A.Free; end;
     end);
 end;
 
@@ -211,15 +188,12 @@ var LTable: string;
 begin
   LTable := table_name;
   Result := Guard('fb_suggest_index_drops', 'table_name=' + LTable,
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; A: TFirebirdIndexAdvisor;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var A: TFirebirdIndexAdvisor;
     begin
-      Conn := NewConfiguredConnection;
-      try
-        A := TFirebirdIndexAdvisor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
-        try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestDropsForTable(LTable.ToUpper), 'No droppable indexes found on ' + LTable + '.'));
-        finally A.Free; end;
-      finally Conn.Free; end;
+      A := TFirebirdIndexAdvisor.Create(Conn, EngineVersion(Conn));
+      try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestDropsForTable(LTable.ToUpper), 'No droppable indexes found on ' + LTable + '.'));
+      finally A.Free; end;
     end);
 end;
 
@@ -228,16 +202,13 @@ var LTable: string;
 begin
   LTable := table_name;
   Result := Guard('fb_audit_table', 'table_name=' + LTable,
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; A: TFirebirdSchemaAudit;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var A: TFirebirdSchemaAudit;
     begin
-      Conn := NewConfiguredConnection;
-      try
-        A := TFirebirdSchemaAudit.Create(Conn);
-        try Result := TMCPToolResult.Text(AdvisoriesToText(A.AuditTable(LTable.ToUpper),
-          'No schema-health issues found on ' + LTable + '.'));
-        finally A.Free; end;
-      finally Conn.Free; end;
+      A := TFirebirdSchemaAudit.Create(Conn);
+      try Result := TMCPToolResult.Text(AdvisoriesToText(A.AuditTable(LTable.ToUpper),
+        'No schema-health issues found on ' + LTable + '.'));
+      finally A.Free; end;
     end);
 end;
 
@@ -247,24 +218,21 @@ begin
   LGoalType := goal_type; LTarget := target; LThreshold := threshold;
   Result := Guard('fb_evaluate_goal',
     Format('goal_type=%s target=%s threshold=%g', [LGoalType, LTarget, LThreshold]),
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; G: TFirebirdGoal; R: TGoalResult; J: TJDOJsonObject;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var G: TFirebirdGoal; R: TGoalResult; J: TJDOJsonObject;
     begin
-      Conn := NewConfiguredConnection;
+      G := TFirebirdGoal.Create(Conn, EngineVersion(Conn));
       try
-        G := TFirebirdGoal.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+        R := G.Evaluate(LGoalType, LTarget, LThreshold);
+        J := TJDOJsonObject.Create;
         try
-          R := G.Evaluate(LGoalType, LTarget, LThreshold);
-          J := TJDOJsonObject.Create;
-          try
-            J.S['goal_type'] := R.GoalType; J.S['target'] := R.Target;
-            J.F['measured'] := R.Measured; J.F['threshold'] := R.Threshold;
-            J.B['met'] := R.Met; J.F['gap'] := R.Gap;
-            J.S['iteration_hint'] := R.Hint; J.S['engine_version'] := R.EngineVersion;
-            Result := TMCPToolResult.JSON(J);
-          finally J.Free; end;
-        finally G.Free; end;
-      finally Conn.Free; end;
+          J.S['goal_type'] := R.GoalType; J.S['target'] := R.Target;
+          J.F['measured'] := R.Measured; J.F['threshold'] := R.Threshold;
+          J.B['met'] := R.Met; J.F['gap'] := R.Gap;
+          J.S['iteration_hint'] := R.Hint; J.S['engine_version'] := R.EngineVersion;
+          Result := TMCPToolResult.JSON(J);
+        finally J.Free; end;
+      finally G.Free; end;
     end);
 end;
 
@@ -277,21 +245,18 @@ begin
   LStaleMinutes := stale_minutes;
   if LStaleMinutes <= 0 then LStaleMinutes := DEFAULT_STALE_MINUTES;
   Result := Guard('fb_monitor_transactions', Format('stale_minutes=%d', [LStaleMinutes]),
-    function: TMCPToolResult
-    var Conn: TFirebirdConnection; M: TFirebirdTransactionMonitor; S: TTransactionSnapshot; SB: TStringBuilder;
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var M: TFirebirdTransactionMonitor; S: TTransactionSnapshot; SB: TStringBuilder;
     begin
-      Conn := NewConfiguredConnection;
+      M := TFirebirdTransactionMonitor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+      SB := TStringBuilder.Create;
       try
-        M := TFirebirdTransactionMonitor.Create(Conn, TFirebirdCapabilities.Detect(Conn));
-        SB := TStringBuilder.Create;
-        try
-          S := M.Snapshot;
-          SB.AppendLine(Format('**OIT:** %d  **OAT:** %d  **OST:** %d  **Next:** %d  **Gap:** %d',
-            [S.OIT, S.OAT, S.OST, S.NextTransaction, S.Gap])).AppendLine;
-          SB.Append(AdvisoriesToText(M.Analyze(LStaleMinutes), 'No transaction/sweep issues found.'));
-          Result := TMCPToolResult.Text(SB.ToString);
-        finally SB.Free; M.Free; end;
-      finally Conn.Free; end;
+        S := M.Snapshot;
+        SB.AppendLine(Format('**OIT:** %d  **OAT:** %d  **OST:** %d  **Next:** %d  **Gap:** %d',
+          [S.OIT, S.OAT, S.OST, S.NextTransaction, S.Gap])).AppendLine;
+        SB.Append(AdvisoriesToText(M.Analyze(LStaleMinutes), 'No transaction/sweep issues found.'));
+        Result := TMCPToolResult.Text(SB.ToString);
+      finally SB.Free; M.Free; end;
     end);
 end;
 

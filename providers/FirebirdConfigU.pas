@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit FirebirdConfigU;
@@ -25,7 +25,6 @@ begin
   Result.Password  := dotEnv.Env('firebird.password', 'masterkey');
   Result.Charset   := dotEnv.Env('firebird.charset', 'UTF8');
   Result.ClientLib := dotEnv.Env('firebird.client_lib', '');
-  Result.AllowDDL  := dotEnv.Env('firebird.allow_ddl', False);
 end;
 
 { Fail fast with a message that points at the real problem, before FireDAC turns

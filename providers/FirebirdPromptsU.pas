@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit FirebirdPromptsU;
@@ -39,9 +39,8 @@ begin
         '1. Call fb_evaluate_goal(goal_type, target, threshold) to establish the baseline.' + sLineBreak +
         '2. If met=true, STOP and report the result.' + sLineBreak +
         '3. Otherwise call fb_analyze_query and fb_suggest_indexes (for query goals) or ' +
-        'fb_suggest_index_drops (for table goals). Present the suggested SQL. If the user has ' +
-        'enabled writes (firebird.allow_ddl=true) you may apply it with the write tools; otherwise ' +
-        'ask the user to run the SQL.' + sLineBreak +
+        'fb_suggest_index_drops (for table goals). Present the suggested SQL and ask the user to ' +
+        'run it — this server is read-only and cannot apply it.' + sLineBreak +
         '4. Call fb_evaluate_goal again and compare "measured" to the previous iteration.' + sLineBreak +
         '5. Repeat until met=true, OR max_iterations is reached, OR there is no improvement for 2 ' +
         'consecutive iterations. In the last two cases, report the best result found and explain ' +

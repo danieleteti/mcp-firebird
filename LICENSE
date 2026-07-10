@@ -1,201 +1,110 @@
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+Licensor:  Daniele Teti
+Software:  MCP Firebird — https://github.com/danieleteti/mcp-firebird
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+MCP Firebird is source-available software, not open source as defined by the
+Open Source Initiative. You may read it, run it, and modify it for the internal
+business operations of you and your company, at any scale, free of charge. You
+may not distribute it, embed it in a product you ship, or offer it as a service.
 
-   1. Definitions.
+ADDITIONAL GRANT
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+The licence below is reproduced verbatim and is not modified. This section only
+grants you MORE than it does; it takes nothing away.
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+In addition to the permitted purpose stated in the licence below, the Licensor
+permits you to use the Software to analyse databases that do not belong to you —
+including consulting, diagnostic, tuning, audit and support work you perform for
+your clients — provided that the Software itself stays with you. Doing so is use
+for a permitted purpose.
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+"Stays with you" means you do not do, for any third party, what the licence below
+already forbids: you do not give them a copy of the Software, in source or object
+form; you do not install it on systems you will leave behind; you do not embed it
+in anything you supply to them; and you do not stand it up as a service they can
+reach. Where the Software runs, and whose database it examines, is your business.
+Where copies of it end up is ours.
 
-      "You" (or "Your") shall mean an individual or Legal Entity exercising
-      permissions granted by this License.
+If your work needs the Software to leave your hands, that is what the commercial
+licence is for, and it is not expensive.
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+ACCEPTANCE
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+By downloading, copying, compiling, installing, running or otherwise using the
+Software, in whole or in part, you accept this licence in its entirety — this
+preamble and the PolyForm Internal Use License 1.0.0 reproduced below, together
+and without reservation. You accept it on your own behalf and, where you act for
+an organisation, on that organisation's behalf, warranting that you are
+authorised to do so.
 
-      "Work" shall mean the work of authorship, whether in Source or Object
-      form, made available under the License, with a notice indicating
-      that it is governed by this License.
+If you do not accept it in its entirety, you have no licence to the Software, and
+you must not use it or keep a copy of it.
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+Nothing you use the Software through — an AI assistant, an MCP client, an
+automation script — obtains any licence beyond your own, and using it through
+such a tool is your use.
 
-      "Contribution" shall mean any work of authorship, including
-      the original Work and any other work that intentionally submits,
-      displays, incorporates, or arranges for inclusion of, such Work or
-      portions thereof in, or derived from, the Work (an example of this
-      would be a patch file or a file that results from such a patch applied
-      to the Work). For purposes of this definition, "submitted" means any
-      form of electronic, verbal, or written communication sent to the Work
-      or its representatives or associated project maintainers, including but
-      not limited to communication on electronic mailing lists, source code
-      control systems, and issue tracking systems that are managed by, or on
-      behalf of, the licensor for the purpose of discussing and improving the
-      Work, but excluding communication that is conspicuously marked or
-      otherwise designated in writing by the copyright owner as "Not a
-      Contribution."
+Need a commercial licence, or the Enterprise edition? Write to d.teti@bittime.it.
+Consultants: the terms are straightforward and we would rather have you as a
+partner than as an infringer.
 
-      "Contributor" shall mean Licensor and any Legal Entity on behalf of
-      whom a Contribution has been received by Licensor and subsequently
-      incorporated within the Work.
+Versions up to and including v0.1.0 were released under the Apache License 2.0
+and remain available to their recipients under those terms. From v0.2.0 onward
+the licence is the following.
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+--------------------------------------------------------------------------------
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
+# PolyForm Internal Use License 1.0.0
 
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
+<https://polyformproject.org/licenses/internal-use/1.0.0>
 
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
+## Acceptance
 
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
+## Copyright License
 
-      (d) If the Work includes a "NOTICE" text file, then any
-          Derivative Works that You distribute must include a readable
-          copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE from the Work, provided that
-          such additional attribution notices cannot be construed
-          as modifying the License.
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license), and you may not distribute the software.
 
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions of this License.
+## Changes and New Works License
 
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contribution.
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
 
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
+## Patent License
 
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
+## Fair Use
 
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
+You may have "fair use" rights for the software under the law. These terms do not limit them.
 
-   END OF TERMS AND CONDITIONS
+## Internal Business Use
 
-   APPENDIX: How to apply the Apache License to your work.
+Use of the software for the internal business operations of you and your company is use for a permitted purpose.
 
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
+## No Other Rights
 
-         Copyright [yyyy] [name of copyright owner]
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
 
-         Licensed under the Apache License, Version 2.0 (the "License");
-         you may not use this file except in compliance with the License.
-         You may obtain a copy of the License at
+## Patent Defense
 
-             http://www.apache.org/licenses/LICENSE-2.0
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
 
-         Unless required by applicable law or agreed to in writing, software
-         distributed under the License is distributed on an "AS IS" BASIS,
-         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-         See the License for the specific language governing permissions and
-         limitations under the License.
+## Violations
+
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+**You** refers to the individual or entity agreeing to these terms.
+
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the software under these terms.
+
+**Use** means anything you do with the software requiring one of your licenses.

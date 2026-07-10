@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $patterns = @('sources/*.pas', 'providers/*.pas', 'app/*.pas', 'app/*.dpr')
-$expected = 'SPDX-License-Identifier: Apache-2.0'
+$expected = 'SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0'
 $missing = @()
 foreach ($p in $patterns) {
     Get-ChildItem -Path (Join-Path $root $p) -File | ForEach-Object {
@@ -14,4 +14,4 @@ if ($missing.Count -gt 0) {
     $missing | ForEach-Object { Write-Host "  $_" }
     exit 1
 }
-Write-Host "SPDX OK: all production sources carry the Apache-2.0 header."
+Write-Host "SPDX OK: all production sources carry the PolyForm Internal Use header."

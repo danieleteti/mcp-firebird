@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.SchemaAudit;
@@ -17,9 +17,6 @@ implementation
 uses System.SysUtils, System.Generics.Collections, Firebird.Introspection;
 
 const OVER_INDEX_THRESHOLD = 5;
-
-function QuoteIdent(const S: string): string;
-begin Result := '"' + S.Replace('"', '""') + '"'; end;
 
 constructor TFirebirdSchemaAudit.Create(AConn: TFirebirdConnection);
 begin inherited Create; FConn := AConn; end;
@@ -44,7 +41,7 @@ begin
       Advs.Add(TAdvisory.Make(
         Format('Table %s has no PRIMARY KEY. Rows cannot be addressed uniquely; replication, updates and joins all suffer.', [ATable]),
         Format('ALTER TABLE %s ADD CONSTRAINT PK_%s PRIMARY KEY (/* choose a unique column */);', [ATable, ATable]),
-        'fb_describe_table should then list a PRIMARY KEY constraint.',
+        'fb_generate_documentation should then list a PRIMARY KEY constraint.',
         'critical'));
 
     Idx := Intro.GetIndexes(ATable);

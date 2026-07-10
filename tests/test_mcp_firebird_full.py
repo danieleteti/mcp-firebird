@@ -9,6 +9,8 @@ fixtures and use substring/upper() checks rather than brittle exact equality.
 Companion to test_mcp_firebird_stdio.py — both share the fixtures in conftest.py.
 """
 import json
+import os
+import re
 
 import pytest
 
@@ -70,26 +72,60 @@ def test_ping_returns_result(client):
 # --------------------------------------------------------------------------- #
 # 3. tools/list
 # --------------------------------------------------------------------------- #
-def test_tools_list_exactly_nine(client):
+FREE_TOOLS = {
+    "fb_info",
+    "fb_list_tables",
+    "fb_generate_documentation",
+    "fb_analyze_query",
+    "fb_suggest_indexes",
+    "fb_suggest_index_drops",
+    "fb_audit_table",
+    "fb_evaluate_goal",
+    "fb_monitor_transactions",
+}
+
+# Announced in tools/list, implemented only in the Enterprise edition.
+ENTERPRISE_STUBS = {
+    "fb_analyze_config",
+    "fb_analyze_db_header",
+    "fb_parse_log",
+    "fb_capture_trace",
+    "fb_analyze_host",
+}
+
+
+def test_tools_list_free_plus_enterprise_stubs(client):
     r = client.call("tools/list")
     tools = r["result"]["tools"]
     names = {t["name"] for t in tools}
-    expected = {
-        "fb_info",
-        "fb_list_tables",
-        "fb_describe_table",
-        "fb_generate_documentation",
-        "fb_analyze_query",
-        "fb_suggest_indexes",
-        "fb_suggest_index_drops",
-        "fb_audit_table",
-        "fb_evaluate_goal",
-    }
-    assert names == expected
-    assert len(tools) == 9
+    assert names == FREE_TOOLS | ENTERPRISE_STUBS
+    assert len(tools) == len(FREE_TOOLS) + len(ENTERPRISE_STUBS)
     for t in tools:
         assert t["description"].strip(), f"{t['name']} has empty description"
         assert isinstance(t["inputSchema"], dict), f"{t['name']} inputSchema not object"
+
+
+@pytest.mark.skipif(
+    os.environ.get("MCP_FB_EDITION") == "enterprise",
+    reason="the Enterprise edition implements these tools instead of locking them",
+)
+@pytest.mark.parametrize("name", sorted(ENTERPRISE_STUBS))
+def test_enterprise_stub_is_locked_but_discoverable(client, name):
+    r = client.call("tools/call", {"name": name, "arguments": {}})
+    result = r["result"]
+    assert result["isError"] is True, f"{name} should report isError"
+    text = result["content"][0]["text"]
+    assert "Enterprise" in text
+    assert "d.teti@bittime.it" in text, "the upsell must name a way to buy"
+    # a stub must never leak a threshold or touch the host
+    assert client.call("ping")["result"] == {}
+
+
+def test_free_tools_are_not_locked(client):
+    """The whole free edition must keep working next to the stubs."""
+    for name in ("fb_info", "fb_list_tables"):
+        r = client.call("tools/call", {"name": name, "arguments": {}})
+        assert not r["result"].get("isError"), f"{name} regressed into an error"
 
 
 # --------------------------------------------------------------------------- #
@@ -113,10 +149,12 @@ def test_fb_list_tables_contains_seed_tables(client):
 
 
 # --------------------------------------------------------------------------- #
-# 6. fb_describe_table
+# 6. fb_generate_documentation describes one table
 # --------------------------------------------------------------------------- #
-def test_fb_describe_table_customers(client):
-    text = _tool_text(client, "fb_describe_table", {"table_name": "CUSTOMERS"}).upper()
+def test_fb_generate_documentation_describes_customers(client):
+    text = _tool_text(
+        client, "fb_generate_documentation", {"table_name": "CUSTOMERS"}
+    ).upper()
     assert "CUSTOMER_ID" in text
     assert "CITY" in text
     assert "PRIMARY KEY" in text
@@ -271,7 +309,18 @@ def test_fb_evaluate_goal_query_time_ms(client):
 
 
 # --------------------------------------------------------------------------- #
-# 21-23. prompts
+# 21. fb_monitor_transactions
+# --------------------------------------------------------------------------- #
+def test_fb_monitor_transactions_reports_gap(client):
+    text = _tool_text(client, "fb_monitor_transactions", {})
+    for label in ("OIT:", "OAT:", "OST:", "Next:", "Gap:"):
+        assert label in text
+    gap = int(re.search(r"\*\*Gap:\*\*\s*(\d+)", text).group(1))
+    assert gap >= 0
+
+
+# --------------------------------------------------------------------------- #
+# 22-24. prompts
 # --------------------------------------------------------------------------- #
 def test_prompts_list(client):
     r = client.call("prompts/list")
@@ -335,10 +384,11 @@ def test_resources_read_schema(client):
 # 26-27. error handling & recovery
 # --------------------------------------------------------------------------- #
 def test_bad_table_does_not_crash_server(client):
-    # fb_describe_table on a non-existent table responds gracefully (empty doc,
-    # an isError flag, or a JSON-RPC error) without taking the server down.
+    # fb_generate_documentation on a non-existent table responds gracefully (empty
+    # doc, an isError flag, or a JSON-RPC error) without taking the server down.
     r = client.call(
-        "tools/call", {"name": "fb_describe_table", "arguments": {"table_name": "NO_SUCH_TABLE"}}
+        "tools/call",
+        {"name": "fb_generate_documentation", "arguments": {"table_name": "NO_SUCH_TABLE"}},
     )
     blob = json.dumps(r).upper()
     handled_gracefully = (
