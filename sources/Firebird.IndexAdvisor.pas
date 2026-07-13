@@ -49,7 +49,7 @@ var
   PA: TFirebirdPlanAnalyzer; R: TPlanResult; Advs: TList<TAdvisory>;
   Aliases: TDictionary<string, string>; Intro: TFirebirdIntrospection;
   Scanned, T, Qual, Col, Idx: string; M: TMatch; C: TColumnInfo; X: TIndexInfo;
-  Cols, Indexed, Seen: TStringList;
+  Cols, Indexed, Dormant, Seen: TStringList;
 
   function Resolve(const AName: string): string;
   begin
@@ -69,12 +69,22 @@ begin
     begin
       T := Resolve(Scanned);
       Cols := TStringList.Create; Indexed := TStringList.Create; Seen := TStringList.Create;
+      Dormant := TStringList.Create;
       try
         Cols.CaseSensitive := False; Indexed.CaseSensitive := False; Seen.CaseSensitive := False;
+        Dormant.CaseSensitive := False;
         for C in Intro.GetColumns(T) do Cols.Add(C.FieldName);
-        // An INACTIVE index cannot serve a read, so it does not make its column indexed.
+        // An INACTIVE index cannot serve a read, so it does not make its column indexed -- but it
+        // exists, and the fix is to switch it back on, not to build a second one beside it. Told
+        // only "no index on CITY", a caller creates IDX_CUSTOMERS_CITY next to the sleeping
+        // IDX_CUST_CITY: two indexes over one column, both written on every INSERT, one of them
+        // dead. Remember the name, so the advice can be the real one.
         for X in Intro.GetIndexes(T) do
-          if (not X.Inactive) and (Length(X.Columns) > 0) then Indexed.Add(X.Columns[0]);
+          if Length(X.Columns) > 0 then
+            if X.Inactive then
+              Dormant.AddPair(X.Columns[0], X.IndexName)
+            else
+              Indexed.Add(X.Columns[0]);
 
         for M in TRegEx.Matches(ASQL,
           '(?:(\w+)\s*\.\s*)?(\w+)\s*(>=|<=|=|>|<|\b(?:LIKE|BETWEEN|IN)\b)', [roIgnoreCase]) do
@@ -92,6 +102,20 @@ begin
           if Seen.IndexOf(Col) >= 0 then Continue;
           Seen.Add(Col);
 
+          // The index the query wants is already there, switched off. Reactivating it rebuilds it
+          // from the current data; creating another one duplicates it forever.
+          Idx := Dormant.Values[Col];
+          if Idx <> '' then
+          begin
+            Advs.Add(TAdvisory.Make(
+              Format('Table %s is scanned NATURAL when filtered by %s, and index %s (%s) already covers that column — but it is INACTIVE, so the optimizer cannot use it. Do not create a second index: reactivate this one.',
+                [T, Col, Idx, Col]),
+              Format('ALTER INDEX %s ACTIVE;', [Idx]),
+              Format('Re-run fb_analyze_query on this query; the plan should use %s and no longer show "%s NATURAL". ALTER INDEX ACTIVE rebuilds the index, so its statistics are current; run SET STATISTICS INDEX %s; later if the data shifts.', [Idx, T, Idx]),
+              'warning'));
+            Continue;
+          end;
+
           Idx := Format('IDX_%s_%s', [T, Col]).ToUpper;
           Advs.Add(TAdvisory.Make(
             Format('Table %s is scanned NATURAL when filtered by %s. An index lets the optimizer seek instead of scanning every row.', [T, Col]),
@@ -99,7 +123,12 @@ begin
             Format('Re-run fb_analyze_query on this query; the plan should use %s and no longer show "%s NATURAL". Then run SET STATISTICS INDEX %s; to refresh selectivity.', [Idx, T, Idx]),
             'warning'));
         end;
-      finally Cols.Free; Indexed.Free; Seen.Free; end;
+      finally
+        Cols.Free;
+        Indexed.Free;
+        Dormant.Free;
+        Seen.Free;
+      end;
     end;
     Result := Advs.ToArray;
   finally Advs.Free; Aliases.Free; Intro.Free; end;

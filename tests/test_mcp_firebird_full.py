@@ -52,7 +52,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.2.2"
+    assert res["serverInfo"]["version"] == "0.2.3"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -61,7 +61,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.2.2"
+    assert res["serverInfo"]["version"] == "0.2.3"
     assert res["protocolVersion"] == "2025-03-26"
 
 
@@ -227,12 +227,32 @@ def test_fb_analyze_query_on_bad_sql_is_an_error_not_an_all_clear(client):
     assert "NO_SUCH_TABLE_HERE" in text.upper(), "the error must name what Firebird refused"
 
 
-def test_fb_suggest_indexes_city(client):
+def test_fb_suggest_indexes_reactivates_a_dormant_index_instead_of_duplicating_it(client):
+    """IDX_CUST_CITY covers CITY, but it is INACTIVE — so the plan is CUSTOMERS NATURAL.
+
+    The advisor knew the column had no *usable* index and stopped there, so it prescribed
+    CREATE INDEX IDX_CUSTOMERS_CITY: a second index over the same column, beside the sleeping
+    one. Two indexes, both written on every INSERT, one of them dead — and the actual fix, one
+    ALTER away, never named. The tool must say which index to wake, not leave the caller to
+    notice.
+    """
     text = _tool_text(
         client, "fb_suggest_indexes", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}
     ).upper()
+    assert "ALTER INDEX IDX_CUST_CITY ACTIVE" in text, "the remedy is to reactivate the index"
+    assert "INACTIVE" in text, "and to say why the existing index is not being used"
+    assert "CREATE INDEX" not in text, "creating a second index over CITY duplicates IDX_CUST_CITY"
+
+
+def test_fb_suggest_indexes_still_creates_one_when_no_index_covers_the_column(client):
+    """The reactivation path must not swallow the ordinary case: ORDERS.TOTAL has no index at
+    all, dormant or otherwise, and there CREATE INDEX is the right answer."""
+    text = _tool_text(
+        client, "fb_suggest_indexes", {"sql": "SELECT * FROM ORDERS WHERE TOTAL > 1000"}
+    ).upper()
     assert "CREATE INDEX" in text
-    assert "CITY" in text
+    assert "ON ORDERS (TOTAL)" in text
+    assert "ALTER INDEX" not in text
 
 
 # The DDL is the product of this tool: it is advertised as ready to run. A query with aliases —
@@ -244,11 +264,13 @@ ALIASED_JOIN = (
 
 
 def test_fb_suggest_indexes_resolves_the_alias_to_the_table(client):
-    """Firebird prints the ALIAS in the plan ("C NATURAL"). CREATE INDEX ... ON C (CITY) does
-    not run: there is no table C."""
-    text = _tool_text(client, "fb_suggest_indexes", {"sql": ALIASED_JOIN}).upper()
-    assert "ON CUSTOMERS (CITY)" in text, "the DDL must name the table, not the alias"
-    assert "ON C (" not in text
+    """Firebird prints the ALIAS in the plan ("O NATURAL"). CREATE INDEX ... ON O (TOTAL) does
+    not run: there is no table O."""
+    text = _tool_text(
+        client, "fb_suggest_indexes", {"sql": "SELECT * FROM ORDERS o WHERE o.TOTAL > 1000"}
+    ).upper()
+    assert "ON ORDERS (TOTAL)" in text, "the DDL must name the table, not the alias"
+    assert "ON O (" not in text
 
 
 def test_fb_suggest_indexes_ignores_columns_of_other_tables(client):
