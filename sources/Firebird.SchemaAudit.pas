@@ -63,8 +63,11 @@ begin
         Actual := ActualSelectivity(ATable, X.Columns[0]);
         if (Actual > 0) and (Abs(X.Selectivity - Actual) > (Actual * 0.5)) then
           Advs.Add(TAdvisory.Make(
-            Format('Index %s has stale statistics: stored selectivity %.6f vs actual %.6f. The optimizer may pick a bad plan from outdated numbers (common after bulk loads).',
-                   [X.IndexName, X.Selectivity, Actual]),
+            // %g, not %f: on a table of twenty million rows the real selectivity is ~5e-8, and
+            // six decimals render both figures as "0.000000". Invariant settings, because these
+            // numbers are read by a machine and a decimal comma is not a number to it.
+            Format('Index %s has stale statistics: stored selectivity %g vs actual %g. The optimizer may pick a bad plan from outdated numbers (common after bulk loads).',
+                   [X.IndexName, X.Selectivity, Actual], TFormatSettings.Invariant),
             Format('SET STATISTICS INDEX %s;', [X.IndexName]),
             'Re-run fb_audit_table; stored and actual selectivity should match.',
             'warning'));

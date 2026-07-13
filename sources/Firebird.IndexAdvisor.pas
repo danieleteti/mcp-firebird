@@ -94,7 +94,8 @@ begin
         end;
       if (not Idx[I].IsSystem) and (Idx[I].Selectivity > 0.5) then
         Advs.Add(TAdvisory.Make(
-          Format('Index %s has poor selectivity (%.3f, 1.0 = all rows identical). It rarely helps the optimizer.', [Idx[I].IndexName, Idx[I].Selectivity]),
+          Format('Index %s has poor selectivity (%.3f, 1.0 = all rows identical). It rarely helps the optimizer.',
+            [Idx[I].IndexName, Idx[I].Selectivity], TFormatSettings.Invariant),
           Format('-- Review usage before dropping:%sDROP INDEX %s;', [sLineBreak, Idx[I].IndexName]),
           'Run SET STATISTICS INDEX ' + Idx[I].IndexName + '; first to refresh; if still > 0.5 it is a drop candidate.',
           'info'));

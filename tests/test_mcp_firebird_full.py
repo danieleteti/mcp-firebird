@@ -270,6 +270,14 @@ def test_fb_audit_table_stale_stats(client):
     assert "STATISTICS" in text
 
 
+def test_fb_audit_table_selectivity_is_locale_independent(client):
+    """The selectivity numbers are read by machines. A decimal comma (an Italian Windows box,
+    Format without invariant settings) makes "0,000004" unparseable to every consumer."""
+    text = _tool_text(client, "fb_audit_table", {"table_name": "STALE_T"})
+    line = next(l for l in text.splitlines() if "selectivity" in l.lower())
+    assert not re.search(r"\d,\d", line), f"decimal comma in a selectivity figure: {line}"
+
+
 def test_fb_audit_table_does_not_ask_to_refresh_an_inactive_index(client):
     """IDX_CUST_CITY is INACTIVE, so it has no statistics at all — not stale ones.
 
