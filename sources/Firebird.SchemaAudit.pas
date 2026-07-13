@@ -56,7 +56,9 @@ begin
         'warning'));
 
     for X in Idx do
-      if (not X.IsSystem) and (Length(X.Columns) = 1) then
+      // An INACTIVE index has no statistics to be stale: RDB$STATISTICS is NULL, the optimizer
+      // cannot use it for reads, and the remedy is fb_suggest_index_drops, not SET STATISTICS.
+      if (not X.IsSystem) and (not X.Inactive) and (Length(X.Columns) = 1) then
       begin
         Actual := ActualSelectivity(ATable, X.Columns[0]);
         if (Actual > 0) and (Abs(X.Selectivity - Actual) > (Actual * 0.5)) then

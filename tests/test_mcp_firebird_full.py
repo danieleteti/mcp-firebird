@@ -270,6 +270,18 @@ def test_fb_audit_table_stale_stats(client):
     assert "STATISTICS" in text
 
 
+def test_fb_audit_table_does_not_ask_to_refresh_an_inactive_index(client):
+    """IDX_CUST_CITY is INACTIVE, so it has no statistics at all — not stale ones.
+
+    Reporting a NULL selectivity as "stale" and prescribing SET STATISTICS is wrong advice
+    twice over: the index cannot be used for reads, and the remedy is to drop it (which
+    fb_suggest_index_drops already says).
+    """
+    text = _tool_text(client, "fb_audit_table", {"table_name": "CUSTOMERS"}).upper()
+    assert "SET STATISTICS INDEX IDX_CUST_CITY" not in text
+    assert "IDX_CUST_CITY HAS STALE STATISTICS" not in text
+
+
 # --------------------------------------------------------------------------- #
 # 17-20. fb_evaluate_goal
 # --------------------------------------------------------------------------- #
