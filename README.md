@@ -214,6 +214,7 @@ The database tells you the number.
 |---|---|---|
 | Schema, docs, plans, index advice, schema audit | ✅ | ✅ |
 | Transaction & sweep health (`MON$`) | ✅ | ✅ |
+| `fb_diagnose`: the entry point, what is already known and the ordered route to run next | ❌ | ✅ |
 | `fb_analyze_config`: `firebird.conf` / `databases.conf`, read against this engine, this architecture, this workload | ❌ | ✅ |
 | `fb_analyze_storage`: index depth, page fill ratios, record-version chains, page distribution | ❌ | ✅ |
 | `fb_parse_log` (`firebird.log`): errors, sweeps, bugchecks, crashes | ❌ | ✅ |
@@ -236,7 +237,7 @@ your load.
 
 You will know when you need it, because the free edition will have told you.
 
-The five tools above already appear in `tools/list` in the free edition, so your assistant can see
+The six tools above already appear in `tools/list` in the free edition, so your assistant can see
 them and say what it would do with them. Call one and it tells you how to get it.
 
 **Enterprise licences, commercial licences and support subscriptions:** d.teti@bittime.it
