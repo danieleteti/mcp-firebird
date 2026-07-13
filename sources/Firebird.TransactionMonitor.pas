@@ -27,10 +27,17 @@ type
   private
     FConn: TFirebirdConnection;
     FCaps: TFirebirdCapabilities;
+    FSnapshot: TTransactionSnapshot;
+    FTaken: Boolean;
     function OldestActiveTransaction: TActiveTransactionInfo;
     function LastStatementSQL(const ATransactionID: Int64): string;
+    function ReadSnapshot: TTransactionSnapshot;
   public
     constructor Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
+    { Measured once and held: reading MON$DATABASE costs transactions, so MON$NEXT_TRANSACTION
+      moves under the reader. A report that read it twice — a header, then Analyze — quoted two
+      different gaps for the same instant. One monitor is one measurement; the tools build one
+      per call. }
     function Snapshot: TTransactionSnapshot;
     function Analyze(const AStaleMinutes: Integer = 5): TArray<TAdvisory>;
   end;
@@ -113,6 +120,16 @@ begin
 end;
 
 function TFirebirdTransactionMonitor.Snapshot: TTransactionSnapshot;
+begin
+  if not FTaken then
+  begin
+    FSnapshot := ReadSnapshot;
+    FTaken := True;
+  end;
+  Result := FSnapshot;
+end;
+
+function TFirebirdTransactionMonitor.ReadSnapshot: TTransactionSnapshot;
 var Q: TFDQuery;
 begin
   Result := Default(TTransactionSnapshot);
