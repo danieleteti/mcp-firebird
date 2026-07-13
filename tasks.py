@@ -100,24 +100,35 @@ DIST = os.path.join(ROOT, "build", "dist")
 
 
 # What someone who downloaded a binary has no use for: how to compile it, and how to run a test
-# suite whose fixtures are not in the zip. Stripping at packaging time keeps ONE README in the
-# repository -- a second, "for the release" copy would drift from it within two commits.
-RELEASE_README_DROP = ("How it uses mcp-server-delphi", "Build", "Testing the project")
+# suite whose fixtures are not in the zip. Stripping at packaging time keeps ONE README per language
+# in the repository -- a second, "for the release" copy would drift from it within two commits.
+#
+# The sections are marked in the source, not listed here by title: the README exists in four
+# languages, and a list of English headings would silently strip nothing from the other three and
+# ship a German reader instructions for compiling Delphi he does not have.
+DROP_MARK = "<!-- release:drop -->"
 
 
 def _write_release_readme(dest):
-    """Copy README.md into the release, minus the sections that only a builder needs."""
-    lines = open(os.path.join(ROOT, "README.md"), encoding="utf-8").read().splitlines(True)
-    out, drop = [], False
-    for line in lines:
-        if line.startswith("## "):
-            drop = line[3:].strip() in RELEASE_README_DROP
-        # The table of contents links to them too, one numbered item per line.
-        if drop or any(f"[{t}](#" in line for t in RELEASE_README_DROP):
-            continue
-        out.append(line)
-    with open(os.path.join(dest, "README.md"), "w", encoding="utf-8") as f:
-        f.write("".join(out))
+    """Copy each README into the release, minus the sections marked for the builder only."""
+    for name in ("README.md", "README-IT.md", "README-ES.md", "README-DE.md"):
+        src = os.path.join(ROOT, name)
+        out, drop, marked = [], False, False
+        for line in open(src, encoding="utf-8").read().splitlines(True):
+            stripped = line.strip()
+            if stripped == DROP_MARK:  # sits on its own line, above the section it kills
+                drop, marked = True, True
+                continue
+            if line.startswith("## "):
+                if marked:
+                    marked = False  # this is the marked heading itself; keep dropping
+                else:
+                    drop = False  # the next section starts, and it stays
+            if drop or stripped.endswith(DROP_MARK):  # the latter: its table-of-contents entry
+                continue
+            out.append(line)
+        with open(os.path.join(dest, name), "w", encoding="utf-8") as f:
+            f.write("".join(out))
 
 
 @task(help={"version": "Tag to build, e.g. 0.2.1. Must already exist as a git tag."})

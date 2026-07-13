@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-13
+
+### Fixed
+- `fb_suggest_indexes` prescribed `CREATE INDEX` on a column that already had an index, when that
+  index was **INACTIVE**. The plan says `CUSTOMERS NATURAL`, the advisor correctly refused to count
+  a disabled index as usable, and then forgot the index existed: the advice was to build a second
+  one beside the sleeping one. Two indexes over the same column, both written on every INSERT, one
+  of them dead, and the one-statement fix never named. It now prescribes
+  `ALTER INDEX IDX_CUST_CITY ACTIVE;` and says why the existing index is being ignored.
+- The `## License` section claimed **Apache License 2.0**, contradicting the badge, the licensing
+  chapter and the `LICENSE` file itself, all of which say PolyForm Internal Use 1.0.0 from v0.2.0.
+  A reader who scrolled to the bottom was told the software may be redistributed. It may not.
+- The comparison table advertised "Apply suggested DDL (opt-in, `firebird.allow_ddl`)" as shipping
+  in both editions. No such tool and no such setting exist: all nine tools are read-only.
+- The README named the milestone `M3` twice, as if the reader knew what it was.
+
+### Added
+- Italian, Spanish and German READMEs (`README-IT.md`, `README-ES.md`, `README-DE.md`), each linked
+  from a language bar at the top of all four. Written as documents in their own language, not
+  translated sentence by sentence.
+- The release packages all four READMEs, each stripped of the build and test chapters at packaging
+  time (marked in the source with `<!-- release:drop -->`, so the strip is language-independent).
+
 ## [0.2.2] - 2026-07-13
 
 Documentation only — the code is 0.2.1. The 0.2.1 download shipped a README that could not be
