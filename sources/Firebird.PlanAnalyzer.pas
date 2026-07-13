@@ -77,6 +77,12 @@ begin
         if Line.TrimLeft.StartsWith('PLAN', True) then
           PlanLines.AppendLine(Line.Trim);
       Result := PlanLines.ToString.Trim;
+      // isql prints "Statement failed, SQLSTATE = ..." into this same output when the engine
+      // refuses the statement. Harvesting only the PLAN lines would leave an empty plan, which
+      // every caller reads as "no NATURAL scan" — an all-clear on a query that never ran.
+      if Result = '' then
+        raise Exception.Create('Firebird produced no plan for this statement:' + sLineBreak +
+          LOutput.Trim);
     finally SL.Free; PlanLines.Free; end;
   finally
     if FileExists(LIn) then System.SysUtils.DeleteFile(LIn);

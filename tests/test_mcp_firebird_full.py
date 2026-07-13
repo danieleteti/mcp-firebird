@@ -209,12 +209,54 @@ def test_fb_analyze_query_indexed_no_natural(client):
 # --------------------------------------------------------------------------- #
 # 11. fb_suggest_indexes
 # --------------------------------------------------------------------------- #
+def test_fb_analyze_query_on_bad_sql_is_an_error_not_an_all_clear(client):
+    """A statement Firebird refuses produces no plan — and must never be reported as a clean one.
+
+    The plan comes from isql under SET PLANONLY ON, which prints its diagnostics into the same
+    output. Harvesting only the PLAN lines turned "Table unknown" into an empty plan and the
+    reassuring "No NATURAL scan: every table is accessed via an index."
+    """
+    r = client.call(
+        "tools/call",
+        {"name": "fb_analyze_query", "arguments": {"sql": "SELECT * FROM NO_SUCH_TABLE_HERE"}},
+    )
+    result = r["result"]
+    text = result["content"][0]["text"]
+    assert result.get("isError") is True, f"a refused statement must report isError, got: {text}"
+    assert "NO NATURAL SCAN" not in text.upper()
+    assert "NO_SUCH_TABLE_HERE" in text.upper(), "the error must name what Firebird refused"
+
+
 def test_fb_suggest_indexes_city(client):
     text = _tool_text(
         client, "fb_suggest_indexes", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}
     ).upper()
     assert "CREATE INDEX" in text
     assert "CITY" in text
+
+
+# The DDL is the product of this tool: it is advertised as ready to run. A query with aliases —
+# the common case in real code — is where that promise breaks.
+ALIASED_JOIN = (
+    "SELECT c.NAME FROM CUSTOMERS c JOIN ORDERS o ON o.CUSTOMER_ID = c.CUSTOMER_ID "
+    "WHERE c.CITY = 'Rome'"
+)
+
+
+def test_fb_suggest_indexes_resolves_the_alias_to_the_table(client):
+    """Firebird prints the ALIAS in the plan ("C NATURAL"). CREATE INDEX ... ON C (CITY) does
+    not run: there is no table C."""
+    text = _tool_text(client, "fb_suggest_indexes", {"sql": ALIASED_JOIN}).upper()
+    assert "ON CUSTOMERS (CITY)" in text, "the DDL must name the table, not the alias"
+    assert "ON C (" not in text
+
+
+def test_fb_suggest_indexes_ignores_columns_of_other_tables(client):
+    """Columns were harvested from the whole statement and pinned on every NATURAL table,
+    whatever they belonged to — so a join key already carrying the primary-key index came back
+    as an index to create."""
+    text = _tool_text(client, "fb_suggest_indexes", {"sql": ALIASED_JOIN}).upper()
+    assert "CUSTOMER_ID" not in text, "the join key is already indexed; it is not a suggestion"
 
 
 # --------------------------------------------------------------------------- #
@@ -250,6 +292,26 @@ def test_fb_audit_table_overidx(client):
 def test_fb_audit_table_stale_stats(client):
     text = _tool_text(client, "fb_audit_table", {"table_name": "STALE_T"}).upper()
     assert "STATISTICS" in text
+
+
+def test_fb_audit_table_selectivity_is_locale_independent(client):
+    """The selectivity numbers are read by machines. A decimal comma (an Italian Windows box,
+    Format without invariant settings) makes "0,000004" unparseable to every consumer."""
+    text = _tool_text(client, "fb_audit_table", {"table_name": "STALE_T"})
+    line = next(l for l in text.splitlines() if "selectivity" in l.lower())
+    assert not re.search(r"\d,\d", line), f"decimal comma in a selectivity figure: {line}"
+
+
+def test_fb_audit_table_does_not_ask_to_refresh_an_inactive_index(client):
+    """IDX_CUST_CITY is INACTIVE, so it has no statistics at all — not stale ones.
+
+    Reporting a NULL selectivity as "stale" and prescribing SET STATISTICS is wrong advice
+    twice over: the index cannot be used for reads, and the remedy is to drop it (which
+    fb_suggest_index_drops already says).
+    """
+    text = _tool_text(client, "fb_audit_table", {"table_name": "CUSTOMERS"}).upper()
+    assert "SET STATISTICS INDEX IDX_CUST_CITY" not in text
+    assert "IDX_CUST_CITY HAS STALE STATISTICS" not in text
 
 
 # --------------------------------------------------------------------------- #
