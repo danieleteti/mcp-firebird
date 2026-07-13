@@ -26,6 +26,8 @@ uses MVCFramework.MCP.ToolProvider, MVCFramework.MCP.Attributes;
 type
   TFirebirdEnterpriseStubs = class(TMCPToolProvider)
   public
+    [MCPTool('fb_diagnose', 'ENTERPRISE — Start here when something is wrong and you do not know why: what is already known about this server, what to ask, and which tools to run in what order')]
+    function FbDiagnose: TMCPToolResult;
     [MCPTool('fb_analyze_config', 'ENTERPRISE — Deep tuning of firebird.conf and databases.conf against the engine version and the observed workload')]
     function FbAnalyzeConfig: TMCPToolResult;
     [MCPTool('fb_analyze_storage', 'ENTERPRISE — Physical storage report: index depth, page fill ratios, record-version chains, page distribution')]
@@ -57,6 +59,11 @@ function Locked(const AToolName: string): TMCPToolResult;
 begin
   LogI(Format('>> %s  (enterprise stub)', [AToolName]), 'mcp');
   Result := TMCPToolResult.Error(Format(UPGRADE_MESSAGE, [AToolName]));
+end;
+
+function TFirebirdEnterpriseStubs.FbDiagnose: TMCPToolResult;
+begin
+  Result := Locked('fb_diagnose');
 end;
 
 function TFirebirdEnterpriseStubs.FbAnalyzeConfig: TMCPToolResult;

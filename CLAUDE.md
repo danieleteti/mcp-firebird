@@ -185,6 +185,6 @@ the MCP transport itself.
   wire and touch no file, so a filesystem-only rule would miss them). `invoke boundary` fails the
   build on both: file reads / process spawning in `sources/` (`Firebird.PlanAnalyzer`, which drives
   a local `isql`, is the one sanctioned exception), and any `isc_service_*` / `TFDPhysFBService` /
-  `service_mgr` reference. The five locked tools in `providers/FirebirdStubsU.pas` announce the
+  `service_mgr` reference. The six locked tools in `providers/FirebirdStubsU.pas` announce the
   Enterprise edition; their names are a contract — the Python compliance suite is shared with the
   Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.
