@@ -10,6 +10,6 @@ uses
 procedure ConfigureServerIdentity;
 begin
   TMCPServer.Instance.ServerName := 'mcp-firebird';
-  TMCPServer.Instance.ServerVersion := '0.2.0';
+  TMCPServer.Instance.ServerVersion := '0.2.1';
 end;
 end.

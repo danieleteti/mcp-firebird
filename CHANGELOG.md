@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-13
+
+### Fixed
+- `fb_suggest_index_drops` advised dropping a **DESCENDING** index as a duplicate of the ascending
+  index over the same column — typically the primary key. Only the descending index serves
+  `ORDER BY col DESC` and `MAX(col)` without a sort, so the advice took a working index away and
+  turned the hottest query of a queue-shaped table into a scan and a sort. Index direction
+  (`RDB$INDEX_TYPE`) is now read, and it is part of the identity a duplicate is judged by.
+- `fb_monitor_transactions` contradicted itself inside one report — a header quoting one
+  transaction gap over a finding quoting another. It read `MON$DATABASE` twice, and reading it
+  costs transactions, so `MON$NEXT_TRANSACTION` moved between the two reads. The monitor now takes
+  one snapshot and reports it.
+
 ## [0.2.0] - 2026-07-13
 
 ### Fixed
