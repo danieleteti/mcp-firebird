@@ -235,6 +235,30 @@ def test_fb_suggest_indexes_city(client):
     assert "CITY" in text
 
 
+# The DDL is the product of this tool: it is advertised as ready to run. A query with aliases —
+# the common case in real code — is where that promise breaks.
+ALIASED_JOIN = (
+    "SELECT c.NAME FROM CUSTOMERS c JOIN ORDERS o ON o.CUSTOMER_ID = c.CUSTOMER_ID "
+    "WHERE c.CITY = 'Rome'"
+)
+
+
+def test_fb_suggest_indexes_resolves_the_alias_to_the_table(client):
+    """Firebird prints the ALIAS in the plan ("C NATURAL"). CREATE INDEX ... ON C (CITY) does
+    not run: there is no table C."""
+    text = _tool_text(client, "fb_suggest_indexes", {"sql": ALIASED_JOIN}).upper()
+    assert "ON CUSTOMERS (CITY)" in text, "the DDL must name the table, not the alias"
+    assert "ON C (" not in text
+
+
+def test_fb_suggest_indexes_ignores_columns_of_other_tables(client):
+    """Columns were harvested from the whole statement and pinned on every NATURAL table,
+    whatever they belonged to — so a join key already carrying the primary-key index came back
+    as an index to create."""
+    text = _tool_text(client, "fb_suggest_indexes", {"sql": ALIASED_JOIN}).upper()
+    assert "CUSTOMER_ID" not in text, "the join key is already indexed; it is not a suggestion"
+
+
 # --------------------------------------------------------------------------- #
 # 12-13. fb_suggest_index_drops
 # --------------------------------------------------------------------------- #

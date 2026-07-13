@@ -22,19 +22,76 @@ uses
 constructor TFirebirdIndexAdvisor.Create(AConn: TFirebirdConnection; const AEngineVersion: string);
 begin inherited Create; FConn := AConn; FEngineVersion := AEngineVersion; end;
 
+{ Alias -> table, read from the FROM/JOIN clauses, plus every table mapped to itself.
+
+  Firebird prints the ALIAS in the plan ("PLAN JOIN (C NATURAL, O INDEX (...))"), so without this
+  the suggested DDL says CREATE INDEX ... ON C, and there is no table C. }
+function AliasMap(const ASQL: string): TDictionary<string, string>;
+const
+  // A word that follows the table name but is not an alias.
+  KEYWORDS = 'ON,WHERE,JOIN,INNER,LEFT,RIGHT,FULL,OUTER,CROSS,NATURAL,GROUP,ORDER,HAVING,' +
+             'UNION,PLAN,FOR,SET,RETURNING,WITH,AS';
+var M: TMatch; Table, Alias: string;
+begin
+  Result := TDictionary<string, string>.Create;
+  for M in TRegEx.Matches(ASQL, '\b(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?', [roIgnoreCase]) do
+  begin
+    Table := M.Groups[1].Value.ToUpper;
+    Result.AddOrSetValue(Table, Table);
+    Alias := M.Groups[2].Value.ToUpper;
+    if (Alias <> '') and (IndexStr(Alias, KEYWORDS.Split([','])) < 0) then
+      Result.AddOrSetValue(Alias, Table);
+  end;
+end;
+
 function TFirebirdIndexAdvisor.SuggestForQuery(const ASQL: string): TArray<TAdvisory>;
-var PA: TFirebirdPlanAnalyzer; R: TPlanResult; T, Col, Idx: string; M: TMatch; Advs: TList<TAdvisory>;
+var
+  PA: TFirebirdPlanAnalyzer; R: TPlanResult; Advs: TList<TAdvisory>;
+  Aliases: TDictionary<string, string>; Intro: TFirebirdIntrospection;
+  Scanned, T, Qual, Col, Idx: string; M: TMatch; C: TColumnInfo; X: TIndexInfo;
+  Cols, Indexed, Seen: TStringList;
+
+  function Resolve(const AName: string): string;
+  begin
+    if not Aliases.TryGetValue(AName.ToUpper, Result) then Result := AName.ToUpper;
+  end;
+
 begin
   Advs := TList<TAdvisory>.Create;
+  Aliases := AliasMap(ASQL);
+  Intro := TFirebirdIntrospection.Create(FConn);
   try
     PA := TFirebirdPlanAnalyzer.Create(FConn, FEngineVersion);
     try R := PA.Analyze(ASQL); finally PA.Free; end;
-    if R.HasNaturalScan then
-      for T in R.NaturalTables do
-        for M in TRegEx.Matches(ASQL, '(\w+)\s*(>=|<=|=|>|<|\b(?:LIKE|BETWEEN|IN)\b)', [roIgnoreCase]) do
+    if not R.HasNaturalScan then Exit(nil);
+
+    for Scanned in R.NaturalTables do
+    begin
+      T := Resolve(Scanned);
+      Cols := TStringList.Create; Indexed := TStringList.Create; Seen := TStringList.Create;
+      try
+        Cols.CaseSensitive := False; Indexed.CaseSensitive := False; Seen.CaseSensitive := False;
+        for C in Intro.GetColumns(T) do Cols.Add(C.FieldName);
+        // An INACTIVE index cannot serve a read, so it does not make its column indexed.
+        for X in Intro.GetIndexes(T) do
+          if (not X.Inactive) and (Length(X.Columns) > 0) then Indexed.Add(X.Columns[0]);
+
+        for M in TRegEx.Matches(ASQL,
+          '(?:(\w+)\s*\.\s*)?(\w+)\s*(>=|<=|=|>|<|\b(?:LIKE|BETWEEN|IN)\b)', [roIgnoreCase]) do
         begin
-          Col := M.Groups[1].Value;
-          if SameText(Col, T) then Continue;
+          Qual := M.Groups[1].Value;
+          Col := M.Groups[2].Value;
+          // A qualified column belongs to the table its qualifier names, and to no other.
+          if (Qual <> '') and not SameText(Resolve(Qual), T) then Continue;
+          // Unqualified, it belongs to this table only if this table has such a column — the
+          // regex also matches the right-hand side of a join predicate and plain literals.
+          if Cols.IndexOf(Col) < 0 then Continue;
+          // Already the leading column of an index: the optimizer can seek it, and chose not to.
+          // Suggesting it again (a join key on its own primary key, typically) is noise.
+          if Indexed.IndexOf(Col) >= 0 then Continue;
+          if Seen.IndexOf(Col) >= 0 then Continue;
+          Seen.Add(Col);
+
           Idx := Format('IDX_%s_%s', [T, Col]).ToUpper;
           Advs.Add(TAdvisory.Make(
             Format('Table %s is scanned NATURAL when filtered by %s. An index lets the optimizer seek instead of scanning every row.', [T, Col]),
@@ -42,8 +99,10 @@ begin
             Format('Re-run fb_analyze_query on this query; the plan should use %s and no longer show "%s NATURAL". Then run SET STATISTICS INDEX %s; to refresh selectivity.', [Idx, T, Idx]),
             'warning'));
         end;
+      finally Cols.Free; Indexed.Free; Seen.Free; end;
+    end;
     Result := Advs.ToArray;
-  finally Advs.Free; end;
+  finally Advs.Free; Aliases.Free; Intro.Free; end;
 end;
 
 function TFirebirdIndexAdvisor.SuggestDropsForTable(const ATable: string): TArray<TAdvisory>;
