@@ -209,6 +209,24 @@ def test_fb_analyze_query_indexed_no_natural(client):
 # --------------------------------------------------------------------------- #
 # 11. fb_suggest_indexes
 # --------------------------------------------------------------------------- #
+def test_fb_analyze_query_on_bad_sql_is_an_error_not_an_all_clear(client):
+    """A statement Firebird refuses produces no plan — and must never be reported as a clean one.
+
+    The plan comes from isql under SET PLANONLY ON, which prints its diagnostics into the same
+    output. Harvesting only the PLAN lines turned "Table unknown" into an empty plan and the
+    reassuring "No NATURAL scan: every table is accessed via an index."
+    """
+    r = client.call(
+        "tools/call",
+        {"name": "fb_analyze_query", "arguments": {"sql": "SELECT * FROM NO_SUCH_TABLE_HERE"}},
+    )
+    result = r["result"]
+    text = result["content"][0]["text"]
+    assert result.get("isError") is True, f"a refused statement must report isError, got: {text}"
+    assert "NO NATURAL SCAN" not in text.upper()
+    assert "NO_SUCH_TABLE_HERE" in text.upper(), "the error must name what Firebird refused"
+
+
 def test_fb_suggest_indexes_city(client):
     text = _tool_text(
         client, "fb_suggest_indexes", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}
