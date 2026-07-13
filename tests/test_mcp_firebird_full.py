@@ -91,6 +91,7 @@ FREE_TOOLS = {
 
 # Announced in tools/list, implemented only in the Enterprise edition.
 ENTERPRISE_STUBS = {
+    "fb_diagnose",
     "fb_analyze_config",
     "fb_analyze_storage",
     "fb_parse_log",

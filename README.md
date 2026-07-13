@@ -810,7 +810,7 @@ tools detect, the fixture that provokes it, and the milestone it lands in.
 
 ### Enterprise tools
 
-These five appear in `tools/list` here too, so your assistant knows they exist and can tell you
+These six appear in `tools/list` here too, so your assistant knows they exist and can tell you
 what it would do with one. Calling them in this edition returns an `isError` result explaining
 how to get them. They are implemented in the [Enterprise edition](#enterprise-edition), which
 attaches to the Services Manager as an administrator and reads the server's configuration and
@@ -818,6 +818,7 @@ hardware: privileges this edition never asks for.
 
 | Tool | Arguments | What it does |
 |---|---|---|
+| `fb_diagnose` | *(none)* | Start here when something is wrong and you do not know why: what is already known, what to ask, and the route to follow |
 | `fb_analyze_config` | *(none)* | Reads `firebird.conf` and `databases.conf` and reports every setting that matters (page buffers, `TempCacheLimit`, `LockHashSlots`, `MaxUnflushedWrites`, `GCPolicy`, parallel workers) against *this* engine version and *this* server architecture, since the defaults and even the existence of a parameter change across both |
 | `fb_analyze_storage` | `table_name?` | The physical picture no `SELECT` can show: index depth, page fill ratios, record-version chain length, page distribution |
 | `fb_parse_log` | *(none)* | Streams `firebird.log` back over the Services API and separates the noise from what matters: bugchecks, page corruption, I/O errors, sweeps that ran, or never did |
