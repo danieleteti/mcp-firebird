@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
+﻿// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit EngineConfigU;
@@ -10,6 +10,6 @@ uses
 procedure ConfigureServerIdentity;
 begin
   TMCPServer.Instance.ServerName := 'mcp-firebird';
-  TMCPServer.Instance.ServerVersion := '0.1.0';
+  TMCPServer.Instance.ServerVersion := '0.2.0';
 end;
 end.

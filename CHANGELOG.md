@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-13
+
+### Fixed
+- `fb_analyze_query` reported a statement the engine had **refused** as a clean plan. The plan
+  comes from `isql` under `SET PLANONLY ON`, whose diagnostics share the same output; only the
+  `PLAN` lines were kept, so "Table unknown" became an empty plan and the reassuring "No NATURAL
+  scan: every table is accessed via an index." A statement that produces no plan is now an error
+  carrying the engine's own message — in `fb_suggest_indexes` and `fb_evaluate_goal` too.
+- `fb_suggest_indexes` wrote the **table alias** from the plan into its DDL: `CREATE INDEX
+  IDX_C_CITY ON C (CITY)`, against a table `C` that does not exist. It also pinned every
+  `column operator` match in the statement on every scanned table, so a join key already carrying
+  the primary-key index came back as an index to create. Aliases are now resolved from the
+  FROM/JOIN clauses, a column is attributed to the table it belongs to, and a column already
+  served by an active index is not suggested.
+- `fb_audit_table` called an **INACTIVE** index's missing statistics "stale" and prescribed
+  `SET STATISTICS` on an index the optimizer cannot use for reads. The remedy for it is the drop
+  `fb_suggest_index_drops` already recommends.
+- Selectivity figures were unreadable and unparseable: `%.6f` printed both sides as `0.000000` on
+  a large table (where the real value is ~5e-8), and `Format` without invariant settings took the
+  decimal separator from the host locale, yielding `0,250000` on an Italian Windows box.
+
 ### Changed
 - **Breaking: licence.** From the next release the project is licensed under the
   [PolyForm Internal Use License 1.0.0](LICENSE) — source-available, **not open source**.
