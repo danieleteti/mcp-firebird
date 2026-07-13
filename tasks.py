@@ -94,6 +94,88 @@ def _check(version):
 # --------------------------------------------------------------------------- #
 # build
 # --------------------------------------------------------------------------- #
+RSVARS = r"C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat"
+DPROJ_APP = os.path.join(ROOT, "app", "MCPFirebird.dproj")
+DIST = os.path.join(ROOT, "build", "dist")
+
+
+@task(help={"version": "Tag to build, e.g. 0.2.1. Must already exist as a git tag."})
+def release(c, version):
+    """Package a downloadable release: a RELEASE build of the exe, and what it needs to run.
+
+    Everything else in this file builds Debug, which is right for testing and wrong for a
+    download: the Debug exe is 36 MB and ships a 77 MB .rsm of debug symbols beside it.
+
+    What goes in, and what deliberately does not:
+
+    - MCPFirebird.exe, built Release.
+    - .env.example and loggerpro.stdio.json, which are the whole of the configuration.
+    - NOT bin\\.env. That is the maintainer's own database and password.
+    - NOT fbclient.dll. The copy in bin/ is Firebird 3.0.14 while this server is tested against
+      2.5, 3.0, 4.0 and 5.0 -- each using its OWN client library. Shipping one client would make
+      that choice for the user, silently and sometimes wrongly: a 3.0 client against a 5.0
+      database mishandles the types 4.0 introduced. The .env names firebird.client_lib for
+      exactly this reason, and the release tells the user to point it at their own server's
+      client. A wrong client in the zip is worse than no client in the zip.
+    """
+    if os.path.exists(DIST):
+        shutil.rmtree(DIST)
+    os.makedirs(DIST)
+
+    c.run(f'cmd /c ""{RSVARS}" && msbuild "{DPROJ_APP}" /t:Clean;Build '
+          f'/p:Config=Release /p:Platform=Win64 /p:DCC_ExeOutput="{DIST}" '
+          f'/p:DCC_DcuOutput="{os.path.join(ROOT, "build", "dcu")}""', pty=False)
+
+    exe = os.path.join(DIST, "MCPFirebird.exe")
+    if not os.path.exists(exe):
+        raise SystemExit("The Release build produced no exe. Nothing is packaged.")
+
+    # The linker drops a .rsm beside the exe -- 72 MB of remote debug symbols, which zip happily
+    # squeezes small enough that nobody notices they downloaded them. They are of no use to anyone
+    # but us, and they are half the map of the source we do not ship.
+    for junk in os.listdir(DIST):
+        if junk.lower().endswith((".rsm", ".map", ".drc", ".tds")):
+            os.remove(os.path.join(DIST, junk))
+
+    for f in ("bin/.env.example", "bin/loggerpro.stdio.json"):
+        shutil.copy2(os.path.join(ROOT, f), DIST)
+    shutil.copy2(os.path.join(ROOT, "README.md"), DIST)
+    shutil.copy2(os.path.join(ROOT, "LICENSE"), DIST)
+
+    zip_base = os.path.join(ROOT, "build", f"MCPFirebird-{version}-win64")
+    shutil.make_archive(zip_base, "zip", DIST)
+    print(f"\n{zip_base}.zip  ({os.path.getsize(zip_base + '.zip') / 1e6:.1f} MB)")
+    print("Contents:")
+    for f in sorted(os.listdir(DIST)):
+        print(f"  {f}  ({os.path.getsize(os.path.join(DIST, f)):,} bytes)")
+
+    # Never publish a binary nobody has run. A Release build is not a Debug build with fewer bytes:
+    # different optimisation, assertions compiled out, different RTTI -- and this server leans on
+    # RTTI to publish its tools. The suite that proves the Debug exe proves nothing about this one.
+    #
+    # It runs AFTER the archive is sealed, so the .env it needs can never find its way inside it.
+    print("\nProving the exe that is about to be published, against a real Firebird 5.0.")
+    _fbkit(c, "start", "5.0")
+    try:
+        _pwsh(c, MAKE_SEED, "-Version", "5.0")
+        with open(os.path.join(DIST, ".env"), "w", encoding="utf-8") as f:
+            f.write(
+                f"firebird.host=localhost\n"
+                f"firebird.port={_port(c, '5.0')}\n"
+                f"firebird.database={SEED_DB}\n"
+                f"firebird.user=SYSDBA\n"
+                f"firebird.password=masterkey\n"
+                f"firebird.charset=UTF8\n"
+                f"firebird.client_lib={_client_lib(c, '5.0')}\n"
+                f"logger.config.file=loggerpro.stdio.json\n"
+            )
+        c.run(f'python -m pytest "{PY_SUITE}" "{PY_SUITE_FULL}" -v', pty=False,
+              env={"MCP_FB_EXE": exe})
+    finally:
+        _fbkit(c, "stop", "5.0")
+    print(f"\n{zip_base}.zip is proven and ready to upload.")
+
+
 @task(help={"clean": "Run a Clean;Build (default) — pass --no-clean for incremental."})
 def build_core(c, clean=True):
     """Build the DUnitX core test project (Win64 Debug)."""
