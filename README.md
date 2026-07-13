@@ -46,7 +46,7 @@ Read-only by default: no tool executes DDL or write SQL.
 6. [Build](#build)
 7. [Configuration (`.env`)](#configuration-env)
 8. [Run & verify manually](#run--verify-manually)
-9. [Connect it to an MCP client](#connect-it-to-an-mcp-client) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
+9. [Install it into your AI agent](#install-it-into-your-ai-agent-claude-gemini-cursor-) — Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
 10. [Using it from Claude](#using-it-from-claude) — worked examples
 11. [Tool reference](#tool-reference)
 12. [Testing the project](#testing-the-project)
@@ -257,18 +257,20 @@ repository for the full attribute reference.
 ## Prerequisites
 
 - **Windows x64** (the server is a native Win64 console app).
-- **Delphi 13 Athens** (RAD Studio 37.0) to build, with **FireDAC**.
-- **DMVCFramework** and the **`mcp-server-delphi`** library checked out locally (search paths below).
 - A **Firebird client library** (`fbclient.dll`) matching — or newer than — your target server.
   A 5.0 `fbclient.dll` connects fine to 2.5–5.0 servers.
 - A reachable **Firebird database** to point at.
 
-> For running the **test matrix** you also need the Firebird zip-kits under `fb_versions/` and
-> Python 3 with `pytest`. See [Testing the project](#testing-the-project).
+The download ships no `fbclient.dll` on purpose: the right one is your server's own, and a
+mismatched client is worse than none. Point `firebird.client_lib` at it (see below).
 
 ---
 
 ## Build
+
+To build from source you also need **Delphi 13 Athens** (RAD Studio 37.0) with **FireDAC**, and
+**DMVCFramework** plus the **`mcp-server-delphi`** library checked out locally. For the test matrix,
+the Firebird zip-kits under `fb_versions/` and Python 3 with `pytest`.
 
 Search paths the project expects (set once in `app/MCPFirebird.dproj`):
 
@@ -295,11 +297,15 @@ The executable lands at **`bin\MCPFirebird.exe`**.
 ## Configuration (`.env`)
 
 By default the server reads its configuration from a **`.env` file in the same folder as the
-executable** (`bin\.env`). Copy the template and edit it:
+executable** — so where that is depends on how you got the exe:
 
-```powershell
-Copy-Item bin\.env.example bin\.env
-```
+| | exe | copy the template with |
+|---|---|---|
+| downloaded release | `MCPFirebird.exe` (the folder you unzipped) | `Copy-Item .env.example .env` |
+| built from source | `bin\MCPFirebird.exe` | `Copy-Item bin\.env.example bin\.env` |
+
+Then edit it. (`.env.example` starts with a dot: `ls` and Explorer hide it unless you ask for
+hidden files — it is in the zip.)
 
 ### Choosing a different config folder: `--env <dir>`
 
@@ -480,10 +486,19 @@ pure JSON-RPC.)
 
 ---
 
-## Connect it to an MCP client
+## Install it into your AI agent (Claude, Gemini, Cursor, …)
 
-All clients launch the **same command** — the absolute path to `MCPFirebird.exe` — and the server
-picks up its database connection from `bin\.env`. Adjust the path to where you built it.
+This is how the server gets in front of an AI agent: you **register it** in the agent's
+configuration, and from then on the agent can call its tools while answering you. Nothing runs as a
+service and nothing listens on a port — the agent **starts the executable itself**, as a child
+process, and talks to it over stdin/stdout (this is what MCP calls a *stdio server*). Close the
+agent and the server is gone with it.
+
+So the whole installation is: tell the agent **one command** — the absolute path to
+`MCPFirebird.exe` — in the file or CLI its vendor gives you for the purpose. Recipes for the
+common agents follow; all of them are the same command in different syntax. The database
+connection is not part of it: the server reads that from the `.env` beside the executable (above),
+or from `--env <dir>`.
 
 ### Claude Desktop
 
@@ -493,7 +508,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 {
   "mcpServers": {
     "firebird": {
-      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe"
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe"
     }
   }
 }
@@ -516,7 +531,7 @@ Or commit a project-scoped `.mcp.json` at the repo root so teammates inherit it:
 {
   "mcpServers": {
     "firebird": {
-      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe",
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
       "args": [],
       "env": {}
     }
@@ -534,7 +549,7 @@ Edit `~/.gemini/settings.json` (or a project-level `.gemini/settings.json`):
 {
   "mcpServers": {
     "firebird": {
-      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe",
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe",
       "args": [],
       "cwd": "C:\\DEV\\mcp-firebird\\app\\bin",
       "timeout": 30000,
@@ -558,7 +573,7 @@ Edit `opencode.json` (global `~/.config/opencode/opencode.json` or per-project) 
   "mcp": {
     "firebird": {
       "type": "local",
-      "command": ["C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe"],
+      "command": ["C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe"],
       "enabled": true
     }
   }
@@ -574,7 +589,7 @@ Both use the same shape:
 {
   "mcpServers": {
     "firebird": {
-      "command": "C:\\DEV\\mcp-firebird\\app\\bin\\MCPFirebird.exe"
+      "command": "C:\\DEV\\mcp-firebird\\bin\\MCPFirebird.exe"
     }
   }
 }

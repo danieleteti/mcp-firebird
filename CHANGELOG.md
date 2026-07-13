@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-13
+
+Documentation only — the code is 0.2.1. The 0.2.1 download shipped a README that could not be
+followed, so it is withdrawn and replaced by this one.
+
+### Fixed
+- The README told the reader to `Copy-Item bin\.env.example bin\.env`, a path that exists only in
+  a source checkout. In the download the exe and its `.env.example` sit in the folder you unzipped,
+  with no `bin\` anywhere. Both layouts are now stated, and so is the fact that `.env.example` is a
+  dotfile that Explorer and `ls` hide — it *is* in the zip.
+- Half the MCP client recipes pointed at `...\app\bin\MCPFirebird.exe`. The exe is built to
+  `bin\MCPFirebird.exe`; the `app\bin\` path never existed, so those examples registered a server
+  the client could not start.
+- "Connect it to an MCP client" said nothing about what connecting *is*. It is now "Install it into
+  your AI agent", and explains that the agent spawns the executable itself and speaks to it over
+  stdin/stdout — no service, no port.
+- The download no longer carries the sections that only someone building from source can use (how
+  to compile it, how to run a test suite whose fixtures are not in the zip). One README remains in
+  the repository; the release strips those sections at packaging time.
+
 ## [0.2.1] - 2026-07-13
 
 ### Fixed

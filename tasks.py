@@ -99,6 +99,27 @@ DPROJ_APP = os.path.join(ROOT, "app", "MCPFirebird.dproj")
 DIST = os.path.join(ROOT, "build", "dist")
 
 
+# What someone who downloaded a binary has no use for: how to compile it, and how to run a test
+# suite whose fixtures are not in the zip. Stripping at packaging time keeps ONE README in the
+# repository -- a second, "for the release" copy would drift from it within two commits.
+RELEASE_README_DROP = ("How it uses mcp-server-delphi", "Build", "Testing the project")
+
+
+def _write_release_readme(dest):
+    """Copy README.md into the release, minus the sections that only a builder needs."""
+    lines = open(os.path.join(ROOT, "README.md"), encoding="utf-8").read().splitlines(True)
+    out, drop = [], False
+    for line in lines:
+        if line.startswith("## "):
+            drop = line[3:].strip() in RELEASE_README_DROP
+        # The table of contents links to them too, one numbered item per line.
+        if drop or any(f"[{t}](#" in line for t in RELEASE_README_DROP):
+            continue
+        out.append(line)
+    with open(os.path.join(dest, "README.md"), "w", encoding="utf-8") as f:
+        f.write("".join(out))
+
+
 @task(help={"version": "Tag to build, e.g. 0.2.1. Must already exist as a git tag."})
 def release(c, version):
     """Package a downloadable release: a RELEASE build of the exe, and what it needs to run.
@@ -139,8 +160,8 @@ def release(c, version):
 
     for f in ("bin/.env.example", "bin/loggerpro.stdio.json"):
         shutil.copy2(os.path.join(ROOT, f), DIST)
-    shutil.copy2(os.path.join(ROOT, "README.md"), DIST)
     shutil.copy2(os.path.join(ROOT, "LICENSE"), DIST)
+    _write_release_readme(DIST)
 
     zip_base = os.path.join(ROOT, "build", f"MCPFirebird-{version}-win64")
     shutil.make_archive(zip_base, "zip", DIST)
