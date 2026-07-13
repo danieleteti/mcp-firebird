@@ -48,3 +48,9 @@ CREATE INDEX IDX_CONV_CODE ON CONV_T (CODE);
 CREATE TABLE BIGKEY_T (ID INTEGER NOT NULL PRIMARY KEY, LABEL VARCHAR(800) CHARACTER SET NONE);
 CREATE INDEX IDX_BIGKEY_LABEL ON BIGKEY_T (LABEL);
 COMMIT;
+
+/* (13) A DESCENDING index on the same column as the ascending primary key. It is NOT a
+   duplicate: only it can serve ORDER BY ID DESC / MAX(ID) without a sort, so advising a drop
+   would take a working index away. */
+CREATE DESCENDING INDEX IDX_ORDERS_ID_DESC ON ORDERS (ORDER_ID);
+COMMIT;

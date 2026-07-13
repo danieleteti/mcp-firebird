@@ -136,6 +136,11 @@ begin
         for J := 0 to High(Idx) do
         begin
           if I = J then Continue;
+          // Direction is part of the index's identity: a DESCENDING index over the same columns
+          // is the only one that serves ORDER BY ... DESC and MAX() without a sort, so it
+          // duplicates nothing. Dropping it is the one suggestion here that would make a healthy
+          // database slower.
+          if Idx[I].Descending <> Idx[J].Descending then Continue;
           if SameCols(Idx[I].Columns, Idx[J].Columns) and (Idx[J].IsSystem or (J < I)) then
             Advs.Add(TAdvisory.Make(
               Format('Index %s duplicates %s (same columns %s). Firebird already maintains the other index%s; the duplicate only adds write cost.',

@@ -9,6 +9,9 @@ type
   TIndexInfo = record
     IndexName: string; Columns: TArray<string>;
     Unique, Inactive, IsSystem: Boolean; Selectivity: Double; ConstraintType: string;
+    { RDB$INDEX_TYPE = 1. A descending index is a different index from its ascending twin: only
+      it serves ORDER BY col DESC and MAX(col) without a sort. }
+    Descending: Boolean;
   end;
   TForeignKeyInfo = record
     ConstraintName, RefTable, IndexName: string;
@@ -135,7 +138,7 @@ begin
     Q := FConn.OpenQuery(
       'SELECT TRIM(i.rdb$index_name), COALESCE(i.rdb$unique_flag,0), ' +
       '       COALESCE(i.rdb$index_inactive,0), COALESCE(i.rdb$system_flag,0), ' +
-      '       i.rdb$statistics ' +
+      '       i.rdb$statistics, COALESCE(i.rdb$index_type,0) ' +
       'FROM rdb$indices i WHERE i.rdb$relation_name = ' + QuotedStr(ATable) + ' ORDER BY 1', []);
     try
       while not Q.Eof do begin
@@ -144,6 +147,7 @@ begin
         Rec.Unique    := Q.Fields[1].AsInteger = 1;
         Rec.Inactive  := Q.Fields[2].AsInteger = 1;
         Rec.Selectivity := Q.Fields[4].AsFloat;
+        Rec.Descending := Q.Fields[5].AsInteger = 1;
         Rec.Columns   := IndexColumns(Rec.IndexName);
         CT := FConn.ScalarStr(
           'SELECT TRIM(rc.rdb$constraint_type) FROM rdb$relation_constraints rc ' +
