@@ -68,11 +68,20 @@ begin
   SB := TStringBuilder.Create;
   try
     for X in Advs do
-      SB.AppendLine('### ' + X.Severity).AppendLine('**Finding:** ' + X.Finding)
-        .AppendLine.AppendLine('```sql').AppendLine(X.SQLText).AppendLine('```')
-        .AppendLine('**Verify:** ' + X.Verify).AppendLine;
+    begin
+      SB.AppendLine('### ' + X.Severity).AppendLine('**Finding:** ' + X.Finding).AppendLine;
+      // Not every finding has a runnable remedy. fb_analyze_host's do not: the answer to "your
+      // page cache commits more RAM than this machine has" is a configuration change and a
+      // restart, not a statement. An empty ```sql fence promises a command and delivers a blank
+      // box, which reads as a tool that meant to say something and failed to.
+      if Trim(X.SQLText) <> '' then
+        SB.AppendLine('```sql').AppendLine(X.SQLText).AppendLine('```');
+      SB.AppendLine('**Verify:** ' + X.Verify).AppendLine;
+    end;
     Result := SB.ToString;
-  finally SB.Free; end;
+  finally
+    SB.Free;
+  end;
 end;
 
 end.
