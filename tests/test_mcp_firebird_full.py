@@ -97,6 +97,9 @@ ENTERPRISE_STUBS = {
     "fb_parse_log",
     "fb_capture_trace",
     "fb_analyze_host",
+    "fb_trace_start",
+    "fb_trace_status",
+    "fb_trace_stop",
 }
 
 

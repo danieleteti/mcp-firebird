@@ -38,6 +38,12 @@ type
     function FbCaptureTrace: TMCPToolResult;
     [MCPTool('fb_analyze_host', 'ENTERPRISE — Host sizing: RAM against page buffers, CPU count against parallel workers, storage class')]
     function FbAnalyzeHost: TMCPToolResult;
+    [MCPTool('fb_trace_start', 'ENTERPRISE — Starts a long trace capture (up to two hours) in the background and returns at once, draining to disk. Poll fb_trace_status, finish with fb_trace_stop')]
+    function FbTraceStart: TMCPToolResult;
+    [MCPTool('fb_trace_status', 'ENTERPRISE — Reports the running long trace capture: elapsed against duration, bytes captured, whether the session is watching')]
+    function FbTraceStatus: TMCPToolResult;
+    [MCPTool('fb_trace_stop', 'ENTERPRISE — Stops the running long trace capture (or retrieves a finished one) and returns the ranked report')]
+    function FbTraceStop: TMCPToolResult;
   end;
 
 implementation
@@ -89,6 +95,21 @@ end;
 function TFirebirdEnterpriseStubs.FbAnalyzeHost: TMCPToolResult;
 begin
   Result := Locked('fb_analyze_host');
+end;
+
+function TFirebirdEnterpriseStubs.FbTraceStart: TMCPToolResult;
+begin
+  Result := Locked('fb_trace_start');
+end;
+
+function TFirebirdEnterpriseStubs.FbTraceStatus: TMCPToolResult;
+begin
+  Result := Locked('fb_trace_status');
+end;
+
+function TFirebirdEnterpriseStubs.FbTraceStop: TMCPToolResult;
+begin
+  Result := Locked('fb_trace_stop');
 end;
 
 initialization
