@@ -40,7 +40,7 @@ lo ejecutas tú, cuando y si lo decides.
 > servidor es un ejemplo completo y real de lo que puedes construir con ellos.
 
 - **Transporte:** stdio (JSON-RPC 2.0, protocolo MCP `2025-03-26`)
-- **Identidad del servidor:** `mcp-firebird` v`0.1.0`
+- **Identidad del servidor:** `mcp-firebird` v`0.2.4`
 - **Motores soportados:** Firebird 2.5, 3.0, 4.0, 5.0 (capacidades detectadas en tiempo de ejecución)
 - **Seguridad:** análisis de solo lectura; ninguna herramienta ejecuta DDL ni SQL de escritura
 - **Gratis** para tus propias bases de datos, a cualquier escala, sin clave y sin caducidad. La
@@ -216,10 +216,12 @@ la base de datos.
 |---|---|---|
 | Esquema, documentación, planes, consejo sobre índices, auditoría del esquema | ✅ | ✅ |
 | Salud de transacciones y sweep (`MON$`) | ✅ | ✅ |
+| `fb_diagnose`: el punto de entrada, lo que ya se sabe y la ruta ordenada a seguir | ✗ | ✅ |
 | `fb_analyze_config`: `firebird.conf` / `databases.conf`, leídos contra este motor, esta arquitectura, esta carga | ✗ | ✅ |
 | `fb_analyze_storage`: profundidad de los índices, llenado de las páginas, cadenas de versiones de registro, distribución de páginas | ✗ | ✅ |
 | `fb_parse_log` (`firebird.log`): errores, sweeps, bugchecks, caídas | ✗ | ✅ |
 | `fb_capture_trace` (Trace API): la carga real, y lo que cuesta de verdad | ✗ | ✅ |
+| `fb_trace_start` / `fb_trace_status` / `fb_trace_stop`: la ventana larga, hasta dos horas de trace drenadas en segundo plano | ✗ | ✅ |
 | `fb_analyze_host`: RAM frente a page buffers, CPU frente a workers paralelos, clase de almacenamiento | ✗ | ✅ |
 | Líneas base, distribuciones, comparación antes/después: el experimento | ✗ | ✅ |
 
@@ -239,7 +241,7 @@ base de datos y con tu carga.
 
 Sabrás cuándo la necesitas, porque te lo habrá dicho la edición gratuita.
 
-Las cinco herramientas de arriba ya aparecen en `tools/list` en la edición gratuita, así que tu
+Las nueve herramientas de arriba ya aparecen en `tools/list` en la edición gratuita, así que tu
 asistente las ve y puede contarte qué haría con ellas. Si llamas a una, te explica cómo conseguirla.
 
 **Licencias Enterprise, licencias comerciales y suscripciones de soporte:** d.teti@bittime.it
@@ -825,7 +827,7 @@ detectan las herramientas, el fixture que provoca cada uno y el milestone en el 
 
 ### Herramientas Enterprise
 
-Estas cinco aparecen también en el `tools/list` de aquí, para que tu asistente sepa que existen y
+Estas nueve aparecen también en el `tools/list` de aquí, para que tu asistente sepa que existen y
 pueda decirte qué haría con ellas. Llamarlas en esta edición devuelve un resultado `isError` que
 explica cómo conseguirlas. Están implementadas en la [edición Enterprise](#edición-enterprise), que se
 conecta al Services Manager como administrador y lee la configuración y el hardware del servidor:
@@ -833,10 +835,14 @@ privilegios que esta edición no pide nunca.
 
 | Herramienta | Argumentos | Qué hace |
 |---|---|---|
+| `fb_diagnose` | *(ninguno)* | Empieza aquí cuando algo va mal y no sabes por qué: lo que ya se sabe, qué preguntar, y la ruta a seguir |
 | `fb_analyze_config` | *(ninguno)* | Lee `firebird.conf` y `databases.conf` e informa de todos los ajustes que importan (page buffers, `TempCacheLimit`, `LockHashSlots`, `MaxUnflushedWrites`, `GCPolicy`, workers paralelos) contra *esta* versión del motor y *esta* arquitectura de servidor, porque los valores por defecto, y hasta la existencia misma de un parámetro, cambian con ambas |
 | `fb_analyze_storage` | `table_name?` | La foto física que ningún `SELECT` puede dar: profundidad de los índices, grado de llenado de las páginas, longitud de las cadenas de versiones de registro, distribución de páginas |
 | `fb_parse_log` | *(ninguno)* | Transmite `firebird.log` por la API de Servicios y separa el ruido de lo que importa: bugchecks, corrupción de páginas, errores de E/S, sweeps que se ejecutaron, o que nunca llegaron a hacerlo |
 | `fb_capture_trace` | *(ninguno)* | Abre una sesión acotada de la Trace API, muestrea la carga real y ordena las sentencias que de verdad cuestan, como distribución de latencia y no como media |
+| `fb_trace_start` | `duration_seconds?` | Abre la ventana larga: hasta dos horas de captura por la Trace API, drenadas a disco en segundo plano mientras la llamada vuelve al instante |
+| `fb_trace_status` | *(ninguno)* | Informa de la captura en curso: tiempo transcurrido contra duración, bytes capturados, y si la sesión sigue observando |
+| `fb_trace_stop` | *(ninguno)* | Detiene la captura, o recupera una ya terminada, y devuelve el mismo informe ordenado que `fb_capture_trace`, sobre horas en vez de segundos |
 | `fb_analyze_host` | `config_dir?` | El motor frente a su hardware: la RAM contra la memoria que la configuración compromete de verdad, el número de núcleos contra `MaxParallelWorkers` y `CpuAffinityMask`, el espacio libre contra el tamaño de la base de datos, y si las páginas que falla le cuestan un seek |
 
 Y además lo que las convierte en producto y no en un informe: **líneas base y experimentos.** Toma una

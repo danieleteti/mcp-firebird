@@ -40,7 +40,7 @@ if you decide to.
 > server is a complete, real-world example of what you can build with them.
 
 - **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
-- **Server identity:** `mcp-firebird` v`0.1.0`
+- **Server identity:** `mcp-firebird` v`0.2.4`
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
 - **Safety:** read-only analysis; no tool runs DDL or write SQL
 - **Free** for your own databases, at any scale, with no key and no expiry. A licence is needed only
@@ -219,6 +219,7 @@ The database tells you the number.
 | `fb_analyze_storage`: index depth, page fill ratios, record-version chains, page distribution | ❌ | ✅ |
 | `fb_parse_log` (`firebird.log`): errors, sweeps, bugchecks, crashes | ❌ | ✅ |
 | `fb_capture_trace` (Trace API): the real workload, and what actually costs | ❌ | ✅ |
+| `fb_trace_start` / `fb_trace_status` / `fb_trace_stop`: the long window, up to two hours of trace drained in the background | ❌ | ✅ |
 | `fb_analyze_host`: RAM against page buffers, CPU against parallel workers, storage class | ❌ | ✅ |
 | Baselines, distributions, before/after comparison: the experiment | ❌ | ✅ |
 
@@ -237,7 +238,7 @@ your load.
 
 You will know when you need it, because the free edition will have told you.
 
-The six tools above already appear in `tools/list` in the free edition, so your assistant can see
+The nine tools above already appear in `tools/list` in the free edition, so your assistant can see
 them and say what it would do with them. Call one and it tells you how to get it.
 
 **Enterprise licences, commercial licences and support subscriptions:** d.teti@bittime.it
@@ -811,7 +812,7 @@ tools detect, the fixture that provokes it, and the milestone it lands in.
 
 ### Enterprise tools
 
-These six appear in `tools/list` here too, so your assistant knows they exist and can tell you
+These nine appear in `tools/list` here too, so your assistant knows they exist and can tell you
 what it would do with one. Calling them in this edition returns an `isError` result explaining
 how to get them. They are implemented in the [Enterprise edition](#enterprise-edition), which
 attaches to the Services Manager as an administrator and reads the server's configuration and
@@ -824,6 +825,9 @@ hardware: privileges this edition never asks for.
 | `fb_analyze_storage` | `table_name?` | The physical picture no `SELECT` can show: index depth, page fill ratios, record-version chain length, page distribution |
 | `fb_parse_log` | *(none)* | Streams `firebird.log` back over the Services API and separates the noise from what matters: bugchecks, page corruption, I/O errors, sweeps that ran, or never did |
 | `fb_capture_trace` | *(none)* | Opens a bounded Trace API session, samples the real workload, and ranks the statements that actually cost, as a latency distribution, not an average |
+| `fb_trace_start` | `duration_seconds?` | Opens the long window: up to two hours of Trace API capture, drained to disk in the background while the call returns at once |
+| `fb_trace_status` | *(none)* | Reports the running capture: elapsed against duration, bytes captured, and whether the session is still watching |
+| `fb_trace_stop` | *(none)* | Stops the capture, or retrieves a finished one, and returns the same ranked report as `fb_capture_trace`, over hours instead of seconds |
 | `fb_analyze_host` | `config_dir?` | The engine against its hardware: RAM versus the memory the configuration actually commits, core count versus `MaxParallelWorkers` and `CpuAffinityMask`, free space versus the size of the database, and whether the pages it misses cost a seek |
 
 Plus the part that makes them a product rather than a report: **baselines and experiments.** Take a

@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-17
+
+### Added
+- `fb_diagnose` and the long-window trace trio (`fb_trace_start`, `fb_trace_status`,
+  `fb_trace_stop`) join the Enterprise stubs: nine Enterprise tools now appear in `tools/list`,
+  each answering with how to get it rather than pretending to do nothing. The comparison tables
+  in all four READMEs list all nine.
+
+### Fixed
+- A finding with no runnable remedy shipped an **empty SQL fence**. Not every advisory has a
+  command behind it: the answer to "your page cache commits more RAM than this machine has" is a
+  configuration change and a restart, not a statement. The fence now appears only when there is
+  something runnable inside it.
+- The server identity line at the top of all four READMEs still said **v0.1.0**, stale since
+  0.2.0. It now states the version you actually downloaded.
+- `.env.example` carried the maintainer's own port and file paths; copying it pointed the server
+  at folders that exist on exactly one machine. It now shows the default port 3050 and
+  placeholders that are obviously yours to fill in.
+- The DUnitX core test for `fb_suggest_indexes` still asserted the pre-0.2.3 behaviour
+  (`CREATE INDEX` over a column whose index is merely INACTIVE): it encoded the bug 0.2.3 fixed
+  and failed on every engine. It now asserts the reactivation and that no second index is
+  prescribed.
+
 ## [0.2.3] - 2026-07-13
 
 ### Fixed
