@@ -762,6 +762,32 @@ Du kannst das Ziel auch als Zahl formulieren, etwa *"bring diese Query unter 50 
 
 ---
 
+### 7. "Wird es schlimmer, oder war das immer schon so?"
+
+Manche Probleme stecken in keiner einzelnen Abfrage. Sie sammeln sich an.
+
+> **Du:** Die Auftragsmaske kriecht jeden Nachmittag, und niemand hat etwas geändert. Nutze den
+> Prompt classify_problem.
+
+→ **`classify_problem`** ordnet das Symptom auf sechs Achsen ein, bevor überhaupt ein Tool angefasst
+wird: wächst es über Stunden oder tritt es sofort unter Last auf, folgt es dem Volumen oder der
+Nebenläufigkeit, konzentriert es sich auf wenige Tabellen, vergeht die Zeit mit Arbeiten oder mit
+Warten. Danach benennt es die dominante der sieben Klassen und die Argumentation, die dort
+konvergiert. "Um 9 geht es, um 16 Uhr unbenutzbar, morgen wieder gut" ist zeitliche Anhäufung, und
+keine Plananalyse wird das je erklären.
+
+> **Du:** Miss die Datenbank jetzt 30 Sekunden lang, und nach der Mittagspause noch einmal.
+
+→ **`fb_sample_activity`** liest die MON$-Zähler zweimal über das Fenster und berichtet die
+Differenz: sequenziell und über Index gelesene Datensätze, bewegte Seiten, eingesammelte Versionen,
+gestartete Transaktionen, und ob der Transaktionshorizont überhaupt vorangekommen ist. Ein Horizont,
+der stillsteht, während laufend Transaktionen starten, ist Garbage Collection, die nicht
+vorankommt: in einer einzelnen Momentaufnahme unsichtbar, zwischen zweien offensichtlich.
+
+Jedes Tool schließt außerdem damit, **was es nicht ausgeschlossen hat**. Ein sauberer Plan ist keine
+schnelle Query, und ein ruhiges Fenster ist kein gesundes System: MON$ zählt geleistete Arbeit, nie
+die Zeit, die auf die Erlaubnis dazu gewartet wurde.
+
 ## Durchgespielte Sitzung: eine Query auf `employee.fdb` optimieren
 
 Ein kompletter Durchlauf gegen die Beispieldatenbank **`employee`**, die Firebird mitliefert
@@ -830,6 +856,9 @@ Ein paar Aufrufbeispiele (MCP `tools/call`, Feld `arguments`):
 
 // Schema-health audit
 { "name": "fb_audit_table", "arguments": { "table_name": "NOPK_LOG" } }
+
+// Was sich in den letzten 10 Sekunden geändert hat (ein Fenster, kein Augenblick)
+{ "name": "fb_sample_activity", "arguments": { "seconds": 10 } }
 
 // Goal check: "this query must no longer do a NATURAL scan"
 { "name": "fb_evaluate_goal",

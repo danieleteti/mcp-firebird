@@ -742,6 +742,31 @@ You can also state the goal numerically, e.g. *"get this query under 50 ms"*
 
 ---
 
+### 7. "Is it getting worse, or was it always like this?"
+
+Some problems are not in any one query. They build up.
+
+> **You:** The order screen crawls every afternoon and nobody changed anything. Use the
+> classify_problem prompt.
+
+→ **`classify_problem`** places the symptom on six axes before touching a tool — does it grow over
+hours or appear instantly under load, does it track volume or concurrency, is it concentrated on a
+few tables, is time spent working or waiting — then names the dominant class of the seven and the
+reasoning that converges on it. "Fine at 9am, unusable at 4pm, fine again tomorrow" is temporal
+accumulation, and no plan analysis will ever explain it.
+
+> **You:** Sample the database for 30 seconds now, and again after lunch.
+
+→ **`fb_sample_activity`** reads the MON$ counters twice across the window and reports the
+difference: records read sequentially and by index, pages moved, versions collected, transactions
+started, and whether the transaction horizon advanced at all. A horizon that never moves while
+transactions keep starting is garbage collection getting nowhere — invisible in any single
+snapshot, obvious across two.
+
+Each tool also closes with **what it does not rule out**. A clean plan is not a fast query, and a
+quiet window is not a healthy system: MON$ counts work performed, never time spent waiting for
+permission to perform it.
+
 ## Worked session: optimizing a query on `employee.fdb`
 
 A full round-trip against the stock **`employee`** sample database that ships with Firebird
@@ -807,6 +832,9 @@ A few call examples (MCP `tools/call` `arguments`):
 
 // Schema-health audit
 { "name": "fb_audit_table", "arguments": { "table_name": "NOPK_LOG" } }
+
+// What changed over the last 10 seconds (a window, not an instant)
+{ "name": "fb_sample_activity", "arguments": { "seconds": 10 } }
 
 // Goal check: "this query must no longer do a NATURAL scan"
 { "name": "fb_evaluate_goal",

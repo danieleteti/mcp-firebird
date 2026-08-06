@@ -755,6 +755,31 @@ También puedes fijar el objetivo con un número, por ejemplo *"baja esta query 
 
 ---
 
+### 7. "¿Está empeorando, o siempre fue así?"
+
+Hay problemas que no están en ninguna consulta. Se acumulan.
+
+> **Tú:** La pantalla de pedidos se arrastra cada tarde y nadie ha tocado nada. Usa el prompt
+> classify_problem.
+
+→ **`classify_problem`** sitúa el síntoma en seis ejes antes de tocar una herramienta: si crece a lo
+largo de horas o aparece al instante bajo carga, si sigue al volumen o a la concurrencia, si se
+concentra en unas pocas tablas, si el tiempo se va trabajando o esperando. Después nombra la clase
+dominante de las siete y el razonamiento que converge en ella. "A las 9 va, a las 16 es inusable,
+mañana va otra vez" es acumulación temporal, y ningún análisis de plan lo explicará.
+
+> **Tú:** Muestrea la base de datos 30 segundos ahora, y otra vez después de comer.
+
+→ **`fb_sample_activity`** lee los contadores MON$ dos veces a lo largo de la ventana e informa la
+diferencia: registros leídos en secuencia y por índice, páginas movidas, versiones recogidas,
+transacciones iniciadas, y si el horizonte de transacciones avanzó. Un horizonte que no se mueve
+mientras las transacciones siguen empezando es recolección de basura que no llega a ninguna parte:
+invisible en una sola instantánea, evidente entre dos.
+
+Cada herramienta termina además declarando **qué no ha descartado**. Un plan limpio no es una
+consulta rápida, y una ventana tranquila no es un sistema sano: MON$ cuenta el trabajo realizado,
+nunca el tiempo esperando permiso para realizarlo.
+
 ## Sesión real: optimizar una query sobre `employee.fdb`
 
 Un recorrido completo sobre la base de datos de ejemplo **`employee`** que viene con Firebird
@@ -822,6 +847,9 @@ Unos cuantos ejemplos de llamada (los `arguments` de un `tools/call` MCP):
 
 // Schema-health audit
 { "name": "fb_audit_table", "arguments": { "table_name": "NOPK_LOG" } }
+
+// Qué cambió en los últimos 10 segundos (una ventana, no un instante)
+{ "name": "fb_sample_activity", "arguments": { "seconds": 10 } }
 
 // Goal check: "this query must no longer do a NATURAL scan"
 { "name": "fb_evaluate_goal",

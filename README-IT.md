@@ -747,6 +747,31 @@ L'obiettivo puoi anche darlo in numeri, per esempio *"portami questa query sotto
 
 ---
 
+### 7. "Sta peggiorando, o è sempre stato così?"
+
+Certi problemi non stanno in nessuna query. Si accumulano.
+
+> **Tu:** La schermata degli ordini rallenta ogni pomeriggio e nessuno ha toccato niente. Usa il
+> prompt classify_problem.
+
+→ **`classify_problem`** colloca il sintomo su sei assi prima di toccare un tool: cresce nell'arco
+di ore o compare all'istante sotto carico, segue il volume o la concorrenza, si concentra su poche
+tabelle, il tempo se ne va lavorando o aspettando. Poi nomina la classe dominante fra le sette e il
+ragionamento che converge. "Alle 9 va, alle 16 è inusabile, domani va di nuovo" è accumulo
+temporale, e nessuna analisi di piano lo spiegherà mai.
+
+> **Tu:** Campiona il database per 30 secondi adesso, e di nuovo dopo pranzo.
+
+→ **`fb_sample_activity`** legge i contatori MON$ due volte lungo la finestra e riporta la
+differenza: record letti in sequenza e per indice, pagine movimentate, versioni raccolte,
+transazioni avviate, e se l'orizzonte delle transazioni si è mosso. Un orizzonte fermo mentre le
+transazioni continuano a partire è la garbage collection che non va da nessuna parte: invisibile in
+un singolo snapshot, evidente fra due.
+
+Ogni tool chiude anche dichiarando **che cosa non ha escluso**. Un piano pulito non è una query
+veloce, e una finestra tranquilla non è un sistema sano: MON$ conta il lavoro fatto, mai il tempo
+passato ad aspettare il permesso di farlo.
+
 ## Una sessione vera: ottimizzare una query su `employee.fdb`
 
 Un giro completo sul database di esempio **`employee`** che Firebird si porta dietro
@@ -815,6 +840,9 @@ Qualche esempio di chiamata (gli `arguments` di `tools/call` MCP):
 
 // Schema-health audit
 { "name": "fb_audit_table", "arguments": { "table_name": "NOPK_LOG" } }
+
+// Che cosa è cambiato negli ultimi 10 secondi (una finestra, non un istante)
+{ "name": "fb_sample_activity", "arguments": { "seconds": 10 } }
 
 // Goal check: "this query must no longer do a NATURAL scan"
 { "name": "fb_evaluate_goal",
