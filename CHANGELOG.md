@@ -51,6 +51,12 @@ attach, no file on the server.
   `query_time_ms` ran whatever SQL text it was handed in order to time it — including a `DELETE`.
   Read-only was a property of the tools, not of the SQL arriving from the caller. Both this goal
   and the new measurement in `fb_analyze_query` now refuse anything that is not a plain SELECT.
+- **The server now attaches read-only, so the promise is Firebird's and not ours.** Inspecting the
+  SQL before running it is a guess about what the engine will do with that text; every transaction
+  the server opens carries the read-only TPB, and a write is refused by the engine no matter what
+  got past the inspection. It also stops the server's own connection from standing in the way of
+  garbage collection while it holds a sampling window open. The tools' own refusal stays, because
+  a clear "this was not measured, and why" beats an engine error relayed to the user.
 - **Every em dash this server writes reached you as `â€"`.** The `.pas` sources are UTF-8 without
   a byte order mark, and the Delphi compiler reads such a file in the machine's ANSI code page:
   the em dash was already three garbage characters at compile time, before anything was sent. It

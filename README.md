@@ -42,7 +42,7 @@ if you decide to.
 - **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
 - **Server identity:** `mcp-firebird` v`0.3.0`
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
-- **Safety:** read-only analysis; no tool runs DDL or write SQL
+- **Safety:** read-only analysis, enforced by the engine — the server attaches with a read-only transaction, so a write is refused by Firebird itself
 - **Free** for your own databases, at any scale, with no key and no expiry. A licence is needed only
   to hand the software to somebody else: resell it inside a product of yours, leave it installed at
   a client's, expose it as a service ([licence details](#editions--licensing))
@@ -943,9 +943,14 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 ## Safety & compatibility
 
-- **Read-only.** No tool runs DDL or write SQL. The SQL an advisory hands you is yours to run, when
-  and if you decide to. Tools that apply a change themselves are planned, and when they arrive they
-  will be off unless you turn them on.
+- **Read-only, and not on the honour system.** The server opens its transactions read-only, so
+  an INSERT, UPDATE, DELETE or DDL is refused by Firebird, not by a check of ours that could
+  be wrong about what a statement does. It matters because two tools execute SQL that arrives
+  as text from the caller — `fb_analyze_query` measures the SELECT it analyzes, and
+  `fb_evaluate_goal` times one. Both also refuse anything that is not a plain SELECT before
+  running it; the read-only transaction is what holds if that refusal is ever wrong. The SQL
+  an advisory hands you is yours to run, when and if you decide to. Tools that apply a change
+  themselves are planned, and when they arrive they will be off unless you turn them on.
 - **Cross-version.** Capability detection adapts feature use (MON$ tables, explained plans,
   BOOLEAN, INT128, timezones, parallel workers) to the connected engine; validated on FB
   2.5 / 3.0 / 4.0 / 5.0.

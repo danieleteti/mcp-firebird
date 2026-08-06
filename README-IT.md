@@ -42,7 +42,7 @@ propone lo esegui tu, quando e se vuoi.
 - **Trasporto:** stdio (JSON-RPC 2.0, protocollo MCP `2025-03-26`)
 - **Identità del server:** `mcp-firebird` v`0.3.0`
 - **Motori supportati:** Firebird 2.5, 3.0, 4.0, 5.0 (funzionalità rilevate a runtime)
-- **Innocuo per il database:** analisi in sola lettura; nessun tool esegue DDL o SQL di scrittura
+- **Innocuo per il database:** analisi in sola lettura, garantita dal motore — il server apre transazioni read-only, quindi è Firebird a rifiutare una scrittura
 - **Gratuito** sui tuoi database, a qualunque scala, senza chiave e senza scadenza. Serve una
   licenza solo se dai il software a qualcun altro: lo rivendi dentro un tuo prodotto, lo lasci
   installato dal cliente, lo esponi come servizio ([dettagli sulla licenza](#edizioni-e-licenze))
@@ -952,9 +952,14 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 ## Innocuo per il database, e compatibile
 
-- **Sola lettura.** Nessun tool esegue DDL o SQL di scrittura. L'SQL che ti propone un'indicazione
-  lo lanci tu, quando e se decidi di farlo. I tool che applicano da soli una modifica sono in
-  programma: quando arriveranno, saranno spenti finché non li accendi tu.
+- **Sola lettura, e non sulla fiducia.** Il server apre le sue transazioni in sola lettura:
+  INSERT, UPDATE, DELETE e DDL li rifiuta Firebird, non un nostro controllo che potrebbe
+  sbagliarsi su cosa fa uno statement. Conta perché due tool eseguono SQL che arriva come
+  testo da chi chiama: `fb_analyze_query` misura la SELECT che analizza e `fb_evaluate_goal`
+  ne cronometra una. Entrambi rifiutano già tutto ciò che non è una SELECT semplice prima di
+  eseguirlo; la transazione read-only è quello che regge se quel rifiuto sbaglia. L'SQL che ti
+  propone un'indicazione lo lanci tu, quando e se decidi di farlo. I tool che applicano da soli
+  una modifica sono in programma: quando arriveranno, saranno spenti finché non li accendi tu.
 - **Tutte le versioni.** Il rilevamento delle funzionalità adatta al motore connesso quello che il
   server usa (tabelle MON$, piani con explain, BOOLEAN, INT128, fusi orari, worker paralleli).
   Validato su FB 2.5 / 3.0 / 4.0 / 5.0.

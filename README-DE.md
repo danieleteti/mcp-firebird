@@ -44,7 +44,7 @@ das er dir gibt, führst du selbst aus, wann und ob du willst.
 - **Transport:** stdio (JSON-RPC 2.0, MCP-Protokoll `2025-03-26`)
 - **Server-Identität:** `mcp-firebird` v`0.3.0`
 - **Unterstützte Engines:** Firebird 2.5, 3.0, 4.0, 5.0 (Fähigkeiten werden zur Laufzeit erkannt)
-- **Sicherheit:** rein lesende Analyse; kein Tool führt DDL oder schreibendes SQL aus
+- **Sicherheit:** rein lesende Analyse, von der Engine durchgesetzt — der Server öffnet nur lesende Transaktionen, eine Schreiboperation weist also Firebird selbst ab
 - **Kostenlos** für deine eigenen Datenbanken, in jeder Größenordnung, ohne Key und ohne Ablaufdatum.
   Eine Lizenz brauchst du erst, wenn du die Software aus der Hand gibst: sie in einem eigenen Produkt
   weiterverkaufen, sie beim Kunden installiert zurücklassen, sie als Dienst anbieten
@@ -967,9 +967,15 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 ## Sicherheit & Kompatibilität
 
-- **Nur lesend.** Kein Tool führt DDL oder schreibendes SQL aus. Das SQL, das ein Befund dir gibt,
-  führst du selbst aus, wann und ob du willst. Tools, die eine Änderung selbst anwenden, sind geplant;
-  wenn sie kommen, sind sie aus, bis du sie einschaltest.
+- **Nur lesend, und nicht auf Treu und Glauben.** Der Server öffnet seine Transaktionen nur
+  lesend: ein INSERT, UPDATE, DELETE oder DDL weist Firebird ab, nicht eine Prüfung von uns,
+  die sich darüber irren könnte, was ein Statement tut. Das zählt, weil zwei Tools SQL
+  ausführen, das als Text vom Aufrufer kommt: `fb_analyze_query` misst das SELECT, das es
+  analysiert, und `fb_evaluate_goal` stoppt eines. Beide weisen alles zurück, was kein reines
+  SELECT ist, bevor sie es ausführen; die nur lesende Transaktion ist das, was hält, falls
+  diese Zurückweisung einmal danebenliegt. Das SQL, das ein Befund dir gibt, führst du selbst
+  aus, wann und ob du willst. Tools, die eine Änderung selbst anwenden, sind geplant; wenn sie
+  kommen, sind sie aus, bis du sie einschaltest.
 - **Versionsübergreifend.** Die Fähigkeitserkennung passt die Nutzung der Features (MON$-Tabellen,
   erklärte Pläne, BOOLEAN, INT128, Zeitzonen, parallele Worker) an die verbundene Engine an; validiert
   auf FB 2.5 / 3.0 / 4.0 / 5.0.

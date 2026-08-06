@@ -177,9 +177,14 @@ the MCP transport itself.
 
 - Every advisory-producing function returns `TAdvisory` (Severity/Finding/SQLText/Verify) — new
   detectors should follow this shape so `AdvisoriesToText` can render them without special-casing.
-- Read-only: no tool executes DDL/write SQL. The first one that needs to must introduce an
-  explicit opt-in setting and enforce it, consistent with the M1-M2 read-only scope described in
-  README's Safety section.
+- Read-only, and enforced by the engine: `FirebirdConfigU.LoadFirebirdConfig` sets
+  `TFirebirdConnectionConfig.ReadOnly`, so every transaction the server opens carries the
+  read-only TPB and Firebird refuses a write whatever SQL reaches it. `IsReadOnlySelect` in front
+  of the two tools that execute caller-supplied SQL (`fb_analyze_query`'s measurement and
+  `fb_evaluate_goal`'s `query_time_ms`) is the polite refusal, not the guarantee. The test
+  connections deliberately leave `ReadOnly` false — the suite creates and drops indexes. The first
+  write tool must introduce an explicit opt-in setting, enforce it, and only then relax the TPB,
+  consistent with the M1-M2 read-only scope described in README's Safety section.
 - `docs/firebird-problem-catalog.md` is the source of truth mapping each detected problem to its
   seed fixture and milestone (M1/M2/M3) — check it before adding a new detector or fixture.
 - **Editions.** This repo is source-available (PolyForm Internal Use 1.0.0), not open source; new

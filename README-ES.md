@@ -42,7 +42,7 @@ lo ejecutas tú, cuando y si lo decides.
 - **Transporte:** stdio (JSON-RPC 2.0, protocolo MCP `2025-03-26`)
 - **Identidad del servidor:** `mcp-firebird` v`0.3.0`
 - **Motores soportados:** Firebird 2.5, 3.0, 4.0, 5.0 (capacidades detectadas en tiempo de ejecución)
-- **Seguridad:** análisis de solo lectura; ninguna herramienta ejecuta DDL ni SQL de escritura
+- **Seguridad:** análisis de solo lectura, garantizado por el motor — el servidor abre transacciones de solo lectura, así que es Firebird quien rechaza una escritura
 - **Gratis** para tus propias bases de datos, a cualquier escala, sin clave y sin caducidad. La
   licencia solo hace falta para poner el software en manos de otro: revenderlo dentro de un producto
   tuyo, dejarlo instalado en casa de un cliente, exponerlo como servicio
@@ -959,9 +959,15 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 ## Seguridad y compatibilidad
 
-- **Solo lectura.** Ninguna herramienta ejecuta DDL ni SQL de escritura. El SQL que te entrega una
-  recomendación lo ejecutas tú, cuando y si lo decides. Están previstas herramientas que apliquen el
-  cambio por su cuenta y, cuando lleguen, vendrán desactivadas hasta que tú las actives.
+- **Solo lectura, y no por confianza.** El servidor abre sus transacciones en solo lectura: un
+  INSERT, UPDATE, DELETE o DDL lo rechaza Firebird, no una comprobación nuestra que podría
+  equivocarse sobre lo que hace una sentencia. Importa porque dos herramientas ejecutan SQL que
+  llega como texto de quien llama: `fb_analyze_query` mide el SELECT que analiza y
+  `fb_evaluate_goal` cronometra uno. Ambas rechazan ya todo lo que no sea un SELECT simple antes
+  de ejecutarlo; la transacción de solo lectura es lo que aguanta si ese rechazo falla. El SQL
+  que te entrega una recomendación lo ejecutas tú, cuando y si lo decides. Están previstas
+  herramientas que apliquen el cambio por su cuenta y, cuando lleguen, vendrán desactivadas
+  hasta que tú las actives.
 - **Multiversión.** La detección de capacidades adapta el uso de las funciones (tablas MON$, planes
   explicados, BOOLEAN, INT128, zonas horarias, workers paralelos) al motor conectado; validado en FB
   2.5 / 3.0 / 4.0 / 5.0.

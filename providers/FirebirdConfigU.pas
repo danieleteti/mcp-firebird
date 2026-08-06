@@ -25,6 +25,12 @@ begin
   Result.Password  := dotEnv.Env('firebird.password', 'masterkey');
   Result.Charset   := dotEnv.Env('firebird.charset', 'UTF8');
   Result.ClientLib := dotEnv.Env('firebird.client_lib', '');
+  { Not a setting. Every tool in this edition reads, and the engine is a better keeper of that
+    promise than we are: the tools take SQL as text from whoever is talking to the server, and a
+    string check on that text is a guess about what Firebird will do with it. With the read-only
+    TPB it is Firebird that refuses. When the M3 write tools arrive they will bring their own
+    opt-in and their own connection; this one stays read-only. }
+  Result.ReadOnly := True;
 end;
 
 { Fail fast with a message that points at the real problem, before FireDAC turns

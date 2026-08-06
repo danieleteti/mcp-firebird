@@ -15,6 +15,11 @@ type
     Password: string;
     Charset: string;
     ClientLib: string;
+    { Opens every transaction on this connection with the read-only TPB, so the engine itself
+      refuses an INSERT/UPDATE/DELETE/DDL instead of trusting us to never send one. Off by
+      default because the test suite creates and drops indexes through this same class; the
+      server sets it (see FirebirdConfigU.NewConfiguredConnection) and nothing turns it back off. }
+    ReadOnly: Boolean;
   end;
 
   TFirebirdConnection = class
@@ -74,6 +79,10 @@ begin
   FConn.Params.Values['Password']     := AConfig.Password;
   FConn.Params.Values['CharacterSet'] := AConfig.Charset;
   FConn.Params.Values['Protocol']     := 'TCPIP';
+  { A read-only transaction is also cheaper to leave open: under read committed the engine does
+    not have to keep it in the way of garbage collection, which matters for a server that holds
+    a connection open across a sampling window. }
+  FConn.TxOptions.ReadOnly := AConfig.ReadOnly;
 end;
 
 destructor TFirebirdConnection.Destroy;
