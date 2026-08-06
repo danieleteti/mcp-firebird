@@ -46,6 +46,11 @@ var SW: TStopwatch; Q: TFDQuery;
 begin
   Result := Default(TGoalResult);
   Result.GoalType := 'query_time_ms'; Result.Target := ASQL; Result.Threshold := AThreshold; Result.EngineVersion := FEngineVersion;
+  // This goal is the one place in the server that runs the caller's SQL to time it. Timing a
+  // DELETE would execute it, and the tool advertises itself as read-only.
+  if not IsReadOnlySelect(ASQL) then
+    raise Exception.Create('query_time_ms times a plain SELECT; this statement is not one, and ' +
+      'this server does not execute statements that could write.');
   SW := TStopwatch.StartNew;
   Q := FConn.OpenQuery(ASQL);
   try while not Q.Eof do Q.Next; finally Q.Free; end;

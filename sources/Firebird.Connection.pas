@@ -30,11 +30,32 @@ type
     function OpenQuery(const ASQL: string; const AParams: array of Variant): TFDQuery; overload;
     function ExecSQL(const ASQL: string): Integer;
     function ScalarStr(const ASQL: string): string;
+    { The MON$ tables are a snapshot, frozen when the current transaction first reads them, so
+      the same transaction asked twice answers twice with the same numbers. Anything measuring
+      change over time has to end the transaction between readings. }
+    procedure NewMonitoringSnapshot;
     property Config: TFirebirdConnectionConfig read FConfig;
     property FDConnection: TFDConnection read FConn;
   end;
+
+{ True only for a statement that reads. This server is read-only, but "read-only" is a property
+  of the tools, not of the SQL a caller hands them: a tool that executes whatever text it is
+  given to measure it would run a DELETE just as willingly as a SELECT. Everything that executes
+  user-supplied SQL goes through here first. }
+function IsReadOnlySelect(const ASQL: string): Boolean;
+
 implementation
 uses System.SysUtils;
+
+function IsReadOnlySelect(const ASQL: string): Boolean;
+var S: string;
+begin
+  // Deliberately narrow: SELECT and WITH, nothing else. EXECUTE BLOCK and EXECUTE PROCEDURE can
+  // write; a leading comment is not unwrapped here, so a commented query is refused rather than
+  // parsed — the wrong answer in that direction costs a measurement, not a table.
+  S := ASQL.Trim.ToUpper;
+  Result := S.StartsWith('SELECT') or S.StartsWith('WITH');
+end;
 
 constructor TFirebirdConnection.Create(const AConfig: TFirebirdConnectionConfig);
 begin
@@ -92,6 +113,11 @@ end;
 function TFirebirdConnection.ExecSQL(const ASQL: string): Integer;
 begin
   Result := FConn.ExecSQL(ASQL);
+end;
+
+procedure TFirebirdConnection.NewMonitoringSnapshot;
+begin
+  if FConn.InTransaction then FConn.Commit;
 end;
 
 function TFirebirdConnection.ScalarStr(const ASQL: string): string;

@@ -1,7 +1,7 @@
 """
 Comprehensive end-to-end suite for the MCP Firebird stdio server.
 
-Exercises every JSON-RPC method, all 9 fb_ tools, both prompts, the schema
+Exercises every JSON-RPC method, all 10 fb_ tools, all three prompts, the schema
 resource, and the error/recovery paths against a real Firebird 5.0 seeded with
 tests/seed/seed.sql + problems.sql. Assertions are tied to the guaranteed seed
 fixtures and use substring/upper() checks rather than brittle exact equality.
@@ -13,6 +13,8 @@ import os
 import re
 
 import pytest
+
+from conftest import EXE, StdioClient
 
 # The Enterprise edition runs this suite verbatim against its own executable, and identifies
 # itself differently on purpose: an MCP client must be able to tell the two servers apart.
@@ -52,7 +54,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.2.5"
+    assert res["serverInfo"]["version"] == "0.3.0"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -61,7 +63,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.2.5"
+    assert res["serverInfo"]["version"] == "0.3.0"
     assert res["protocolVersion"] == "2025-03-26"
 
 
@@ -87,6 +89,7 @@ FREE_TOOLS = {
     "fb_audit_table",
     "fb_evaluate_goal",
     "fb_monitor_transactions",
+    "fb_sample_activity",
 }
 
 # Announced in tools/list, implemented only in the Enterprise edition.
@@ -451,6 +454,7 @@ def test_prompts_list(client):
     prompts = {p["name"]: p for p in r["result"]["prompts"]}
     assert "optimization_goal" in prompts
     assert "health_check" in prompts
+    assert "classify_problem" in prompts
     arg_names = {a["name"] for a in prompts["optimization_goal"]["arguments"]}
     assert "goal_type" in arg_names
     assert "target" in arg_names
@@ -482,6 +486,19 @@ def test_prompts_get_health_check(client):
     assert "fb_list_tables" in blob
 
 
+def test_prompts_get_classify_problem(client):
+    r = client.call("prompts/get", {"name": "classify_problem", "arguments": {
+        "symptom": "the order screen crawls every afternoon"}})
+    blob = json.dumps(r["result"])
+    assert r["result"]["messages"]
+    assert "the order screen crawls every afternoon" in blob
+    # It must classify before reaching for a tool, and it must admit where an SQL
+    # connection cannot settle the question.
+    for expected in ("local inefficiency", "coordination and contention",
+                     "temporal accumulation", "locality collapse", "fb_sample_activity"):
+        assert expected in blob, f"{expected} missing from the classification prompt"
+
+
 # --------------------------------------------------------------------------- #
 # 24-25. resources
 # --------------------------------------------------------------------------- #
@@ -502,6 +519,101 @@ def test_resources_read_schema(client):
     text = first["text"].upper()
     assert "CUSTOMERS" in text
     assert "ORDERS" in text
+
+
+# --------------------------------------------------------------------------- #
+# 25b. what a check cannot see, and evidence that is measured rather than read
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "name,arguments",
+    [
+        ("fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}),
+        ("fb_suggest_indexes", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}),
+        ("fb_suggest_index_drops", {"table_name": "ORDERS"}),
+        ("fb_audit_table", {"table_name": "NOPK_LOG"}),
+        ("fb_monitor_transactions", {}),
+    ],
+)
+def test_tools_state_what_they_do_not_rule_out(client, name, arguments):
+    # A clean answer to a narrow question reads as a clean bill of health to whoever relays it.
+    # Every advisory tool has to say where it is blind, whether or not it found anything.
+    assert "Not ruled out by this check:" in _tool_text(client, name, arguments)
+
+
+def test_fb_analyze_query_measures_the_query_it_analyzed(client):
+    # A plan names the access path; only execution says how many records that path touched.
+    # The seed holds 5000 customers and this query keeps all of them.
+    text = _tool_text(client, "fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS"})
+    assert "**Measured:**" in text
+    assert "5000 row(s)" in text
+    assert re.search(r"records read: [1-9]\d*\s+sequential", text), text
+
+
+def test_fb_analyze_query_does_not_execute_a_statement_that_could_write(client):
+    # The tool executes what it is given in order to measure it. It is given whatever the
+    # caller typed, so the plan is still analyzed but the statement must not run.
+    text = _tool_text(client, "fb_analyze_query", {"sql": "DELETE FROM CUSTOMERS WHERE 1 = 0"})
+    assert "**PLAN:**" in text, "the plan is still worth having"
+    assert "**Not measured:**" in text
+
+
+def test_fb_evaluate_goal_refuses_to_time_a_write(client):
+    r = client.call("tools/call", {"name": "fb_evaluate_goal", "arguments": {
+        "goal_type": "query_time_ms", "target": "DELETE FROM CUSTOMERS", "threshold": 1000}})
+    assert r["result"]["isError"] is True
+    assert "SELECT" in r["result"]["content"][0]["text"]
+    # and the rows are still there
+    assert "5000" in _tool_text(client, "fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS"})
+
+
+# --------------------------------------------------------------------------- #
+# 25c. fb_sample_activity — a window, not an instant
+# --------------------------------------------------------------------------- #
+def test_fb_sample_activity_reports_a_window_of_deltas(client):
+    text = _tool_text(client, "fb_sample_activity", {"seconds": 1})
+    assert "**Window:**" in text
+    for row in ("records read sequentially", "records read by index",
+                "transactions started", "horizon moved"):
+        assert row in text, f"{row} missing from the sample table"
+    assert "Not ruled out by this check:" in text
+
+
+def test_fb_sample_activity_rates_are_locale_independent(client):
+    # Same trap as the selectivity figures in fb_audit_table: under an Italian locale %.1f
+    # renders one point zero as "1,0", and the client parsing this table will not ask.
+    text = _tool_text(client, "fb_sample_activity", {"seconds": 1})
+    rates = re.findall(r"\| records read (?:sequentially|by index) \| -?\d+ \| (\S+) \|", text)
+    assert rates, f"no per-second column found:\n{text}"
+    for rate in rates:
+        assert "," not in rate, f"locale-formatted rate {rate!r} in the sample table"
+        assert re.fullmatch(r"-?\d+\.\d+", rate), rate
+
+
+def test_fb_sample_activity_sees_work_done_inside_the_window(client):
+    # Two clients: this one holds the window open while the other scans. MON$ freezes its
+    # snapshot per transaction, so a sampler that fails to start a new one reports zero here.
+    import subprocess as sp
+    import threading
+
+    def scan():
+        c = StdioClient(sp.Popen([EXE], stdin=sp.PIPE, stdout=sp.PIPE))  # noqa: S603
+        c.call("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
+                              "clientInfo": {"name": "load", "version": "1"}})
+        for _ in range(6):
+            c.call("tools/call", {"name": "fb_evaluate_goal", "arguments": {
+                "goal_type": "query_time_ms",
+                "target": "SELECT COUNT(*) FROM CUSTOMERS", "threshold": 60000}})
+        c.proc.stdin.close()
+        c.proc.terminate()
+
+    t = threading.Thread(target=scan)
+    t.start()
+    try:
+        text = _tool_text(client, "fb_sample_activity", {"seconds": 3})
+    finally:
+        t.join()
+    seq = int(re.search(r"\| records read sequentially \| (-?\d+) \|", text).group(1))
+    assert seq > 0, f"a scan ran throughout the window and the sample saw nothing:\n{text}"
 
 
 # --------------------------------------------------------------------------- #

@@ -13,7 +13,7 @@ type
     function FbListTables: TMCPToolResult;
     [MCPTool('fb_generate_documentation', 'Markdown documentation — columns, primary key, indexes — for one table, or for the whole database when table_name is empty')]
     function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
-    [MCPTool('fb_analyze_query', 'Returns and analyzes the access plan of a SQL query (flags NATURAL scans and external sorts)')]
+    [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported')]
     function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
     [MCPTool('fb_suggest_indexes', 'Suggests new indexes for the NATURAL-scanned columns of a query (ready-to-run DDL)')]
     function FbSuggestIndexes([MCPParam('The SQL query to optimize')] const sql: string): TMCPToolResult;
@@ -26,19 +26,23 @@ type
       [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes')] const goal_type: string;
       [MCPParam('Target: a SQL query or a table name')] const target: string;
       [MCPParam('Threshold (ms for query_time_ms; ignored otherwise)', TMCPParamPresence.Optional)] const threshold: Double): TMCPToolResult;
-    [MCPTool('fb_monitor_transactions', 'Transaction/sweep health: OIT/OAT/Next gap and any blocking long-running transaction')]
+    [MCPTool('fb_monitor_transactions', 'Transaction/sweep health at this instant: OIT/OAT/Next gap and any blocking long-running transaction')]
     function FbMonitorTransactions(
       [MCPParam('Minutes an active transaction must run before being flagged as blocking (default 5)', TMCPParamPresence.Optional)] const stale_minutes: Integer): TMCPToolResult;
+    [MCPTool('fb_sample_activity', 'Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, record versions collected, and whether the transaction horizon advanced. Use this when the question is what is changing over time rather than what is true right now')]
+    function FbSampleActivity(
+      [MCPParam('Length of the observation window in seconds (default 5, 1-60)', TMCPParamPresence.Optional)] const seconds: Integer): TMCPToolResult;
   end;
 implementation
 uses
   System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
-  Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, FirebirdToolRuntimeU,
-  MVCFramework.MCP.Server, MVCFramework.Logger;
+  Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, Firebird.Activity,
+  FirebirdToolRuntimeU, MVCFramework.MCP.Server, MVCFramework.Logger;
 
 const DEFAULT_STALE_MINUTES = 5;
+const DEFAULT_SAMPLE_SECONDS = 5;
 
 function EngineVersion(AConn: TFirebirdConnection): string;
 begin
@@ -102,8 +106,10 @@ begin
   Result := Guard('fb_analyze_query', 'sql=' + LSql,
     function(Conn: TFirebirdConnection): TMCPToolResult
     var PA: TFirebirdPlanAnalyzer; R: TPlanResult; SB: TStringBuilder;
+        Caps: TFirebirdCapabilities; Act: TFirebirdActivity; Cost: TStatementCost;
     begin
-      PA := TFirebirdPlanAnalyzer.Create(Conn, EngineVersion(Conn)); SB := TStringBuilder.Create;
+      Caps := TFirebirdCapabilities.Detect(Conn);
+      PA := TFirebirdPlanAnalyzer.Create(Conn, Caps.EngineVersion); SB := TStringBuilder.Create;
       try
         R := PA.Analyze(LSql);
         SB.AppendLine('**Engine:** ' + R.EngineVersion).AppendLine;
@@ -114,7 +120,29 @@ begin
           SB.AppendLine('No NATURAL scan: every table is accessed via an index.');
         if R.HasExternalSort then
           SB.AppendLine('External SORT in the plan (ORDER BY / GROUP BY / DISTINCT without a usable index). Consider an index on the sort columns.');
-        Result := TMCPToolResult.Text(SB.ToString);
+
+        { The plan is what the optimizer decided; this is what the decision cost. Without it,
+          "the plan uses an index" and "the query reads 400 000 records through that index" are
+          the same report. }
+        Act := TFirebirdActivity.Create(Conn, Caps);
+        try Cost := Act.Measure(LSql); finally Act.Free; end;
+        SB.AppendLine;
+        if Cost.Executed then
+        begin
+          SB.AppendLine(Format('**Measured:** %d row(s) in %d ms.', [Cost.Rows, Cost.ElapsedMs]));
+          SB.AppendLine(Format('- records read: %d sequential, %d by index', [Cost.Delta.SeqReads, Cost.Delta.IdxReads]));
+          SB.AppendLine(Format('- pages: %d read, %d fetched', [Cost.Delta.PageReads, Cost.Delta.PageFetches]));
+          if Cost.Delta.BackversionReads > 0 then
+            SB.AppendLine(Format('- back-version reads: %d (old row versions walked to reach the current one)',
+              [Cost.Delta.BackversionReads]));
+          if (Cost.Rows > 0) and (Cost.Delta.RecordReads > Cost.Rows * 10) then
+            SB.AppendLine(Format('- the engine read %d records to return %d: the access path is ' +
+              'reading far more than the query keeps.', [Cost.Delta.RecordReads, Cost.Rows]));
+        end
+        else
+          SB.AppendLine('**Not measured:** ' + Cost.SkipReason + '.');
+
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_analyze_query'));
       finally SB.Free; PA.Free; end;
     end);
 end;
@@ -128,7 +156,9 @@ begin
     var A: TFirebirdIndexAdvisor;
     begin
       A := TFirebirdIndexAdvisor.Create(Conn, EngineVersion(Conn));
-      try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestForQuery(LSql), 'No new index suggested: the query has no NATURAL scan.'));
+      try Result := TMCPToolResult.Text(WithLimits(
+        AdvisoriesToText(A.SuggestForQuery(LSql), 'No new index suggested: the query has no NATURAL scan.'),
+        'fb_suggest_indexes'));
       finally A.Free; end;
     end);
 end;
@@ -142,7 +172,9 @@ begin
     var A: TFirebirdIndexAdvisor;
     begin
       A := TFirebirdIndexAdvisor.Create(Conn, EngineVersion(Conn));
-      try Result := TMCPToolResult.Text(AdvisoriesToText(A.SuggestDropsForTable(LTable.ToUpper), 'No droppable indexes found on ' + LTable + '.'));
+      try Result := TMCPToolResult.Text(WithLimits(
+        AdvisoriesToText(A.SuggestDropsForTable(LTable.ToUpper), 'No droppable indexes found on ' + LTable + '.'),
+        'fb_suggest_index_drops'));
       finally A.Free; end;
     end);
 end;
@@ -156,8 +188,8 @@ begin
     var A: TFirebirdSchemaAudit;
     begin
       A := TFirebirdSchemaAudit.Create(Conn);
-      try Result := TMCPToolResult.Text(AdvisoriesToText(A.AuditTable(LTable.ToUpper),
-        'No schema-health issues found on ' + LTable + '.'));
+      try Result := TMCPToolResult.Text(WithLimits(AdvisoriesToText(A.AuditTable(LTable.ToUpper),
+        'No schema-health issues found on ' + LTable + '.'), 'fb_audit_table'));
       finally A.Free; end;
     end);
 end;
@@ -205,8 +237,49 @@ begin
         SB.AppendLine(Format('**OIT:** %d  **OAT:** %d  **OST:** %d  **Next:** %d  **Gap:** %d',
           [S.OIT, S.OAT, S.OST, S.NextTransaction, S.Gap])).AppendLine;
         SB.Append(AdvisoriesToText(M.Analyze(LStaleMinutes), 'No transaction/sweep issues found.'));
-        Result := TMCPToolResult.Text(SB.ToString);
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_monitor_transactions'));
       finally SB.Free; M.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbSampleActivity(const seconds: Integer): TMCPToolResult;
+var LSeconds: Integer;
+begin
+  // Same optional-Integer caveat as fb_monitor_transactions: 0 means "not passed" here.
+  LSeconds := seconds;
+  if LSeconds <= 0 then LSeconds := DEFAULT_SAMPLE_SECONDS;
+  Result := Guard('fb_sample_activity', Format('seconds=%d', [LSeconds]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var A: TFirebirdActivity; S: TActivitySample; D: TActivityCounters; SB: TStringBuilder;
+    begin
+      A := TFirebirdActivity.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+      SB := TStringBuilder.Create;
+      try
+        S := A.Sample(LSeconds);
+        D := S.Delta;
+        SB.AppendLine(Format('**Window:** %d ms, database-wide.', [S.ElapsedMs])).AppendLine;
+        SB.AppendLine('| Counter | Change over the window | Per second |');
+        SB.AppendLine('|---|---:|---:|');
+        // Invariant format settings for every rate below: under an Italian locale %.1f renders
+        // one point zero as "1,0", and this table is read by a machine that will not ask.
+        SB.AppendLine(Format('| records read sequentially | %d | %.1f |', [D.SeqReads, S.PerSecond(D.SeqReads)], TFormatSettings.Invariant));
+        SB.AppendLine(Format('| records read by index | %d | %.1f |', [D.IdxReads, S.PerSecond(D.IdxReads)], TFormatSettings.Invariant));
+        SB.AppendLine(Format('| records inserted/updated/deleted | %d / %d / %d | |', [D.Inserts, D.Updates, D.Deletes]));
+        SB.AppendLine(Format('| versions backed out/purged/expunged | %d / %d / %d | |', [D.Backouts, D.Purges, D.Expunges]));
+        if D.BackversionReads >= 0 then
+          SB.AppendLine(Format('| back-version reads | %d | %.1f |', [D.BackversionReads, S.PerSecond(D.BackversionReads)], TFormatSettings.Invariant));
+        SB.AppendLine(Format('| pages read/written | %d / %d | |', [D.PageReads, D.PageWrites]));
+        SB.AppendLine(Format('| pages fetched/marked | %d / %d | |', [D.PageFetches, D.PageMarks]));
+        SB.AppendLine(Format('| transactions started (Next) | %d | %.1f |', [D.NextTransaction, S.PerSecond(D.NextTransaction)], TFormatSettings.Invariant));
+        SB.AppendLine(Format('| horizon moved (OIT / OAT) | %d / %d | |', [D.OIT, D.OAT]));
+        SB.AppendLine(Format('| attachments | %d → %d | |', [S.Before.Attachments, S.After.Attachments]));
+        SB.AppendLine;
+        SB.Append(AdvisoriesToText(A.Analyze(S),
+          'Nothing in this window crossed a reporting threshold. That is a statement about these ' +
+          'seconds and this database, not about the workload: if the problem is intermittent, ' +
+          'sample again while it is happening.'));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_sample_activity'));
+      finally SB.Free; A.Free; end;
     end);
 end;
 

@@ -17,6 +17,7 @@ uses
   Firebird.Goal in '..\..\sources\Firebird.Goal.pas',
   Firebird.SchemaAudit in '..\..\sources\Firebird.SchemaAudit.pas',
   Firebird.TransactionMonitor in '..\..\sources\Firebird.TransactionMonitor.pas',
+  Firebird.Activity in '..\..\sources\Firebird.Activity.pas',
   Test.Firebird.Connection in 'Test.Firebird.Connection.pas',
   Test.Firebird.Capabilities in 'Test.Firebird.Capabilities.pas',
   Test.Firebird.Introspection in 'Test.Firebird.Introspection.pas',
@@ -27,7 +28,8 @@ uses
   Test.Firebird.IndexDrops in 'Test.Firebird.IndexDrops.pas',
   Test.Firebird.Goal in 'Test.Firebird.Goal.pas',
   Test.Firebird.SchemaAudit in 'Test.Firebird.SchemaAudit.pas',
-  Test.Firebird.TransactionMonitor in 'Test.Firebird.TransactionMonitor.pas';
+  Test.Firebird.TransactionMonitor in 'Test.Firebird.TransactionMonitor.pas',
+  Test.Firebird.Activity in 'Test.Firebird.Activity.pas';
 var
   LRunner: ITestRunner;
   LResults: IRunResults;
@@ -43,6 +45,7 @@ begin
   TDUnitX.RegisterTestFixture(Test.Firebird.Goal.TGoalTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.SchemaAudit.TSchemaAuditTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.TransactionMonitor.TTransactionMonitorTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.Activity.TActivityTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));
   LRunner.AddLogger(TDUnitXXMLNUnitFileLogger.Create(

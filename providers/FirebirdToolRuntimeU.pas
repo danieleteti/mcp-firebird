@@ -34,6 +34,19 @@ function Guard(const AToolName, AArgs: string;
   shape need no special-casing here. }
 function AdvisoriesToText(const Advs: TArray<TAdvisory>; const AEmptyMsg: string): string;
 
+{ Appends what the tool that produced ABody cannot see.
+
+  A checking tool answers the question it was built to answer, and a clean answer to a narrow
+  question reads, to whoever receives it, like a clean bill of health. "No NATURAL scan" comes
+  back from a query that is slow in production for reasons a plan cannot express; "no blocking
+  transaction" comes back from a database that accumulates all afternoon. Neither tool is wrong.
+  Both are silent about their own blind spot, and an LLM relaying the answer has no way to know
+  there is one.
+
+  So each tool states it. Unknown tool names get nothing appended, which is what lets the
+  Enterprise edition add its own without touching this list. }
+function WithLimits(const ABody, AToolName: string): string;
+
 implementation
 
 uses System.Classes, System.Diagnostics, System.StrUtils,
@@ -59,6 +72,36 @@ begin
       Result := TMCPToolResult.Error('Firebird error (' + E.ClassName + '): ' + E.Message);
     end;
   end;
+end;
+
+function WithLimits(const ABody, AToolName: string): string;
+var LLimit: string;
+begin
+  if SameText(AToolName, 'fb_analyze_query') then
+    LLimit := 'A plan is structural evidence. It names the access path the optimizer chose; it ' +
+      'cannot show what the query costs while other work is running, where activity concentrates ' +
+      'physically, or a degradation that only appears above a certain concurrency. A clean plan ' +
+      'is not a fast query.'
+  else if SameText(AToolName, 'fb_suggest_indexes') or SameText(AToolName, 'fb_suggest_index_drops') then
+    LLimit := 'Index advice is derived from the schema and one plan, not from the running ' +
+      'workload. It cannot tell you whether this table is where the system actually spends its ' +
+      'time, and an index that helps one query costs every INSERT into that table.'
+  else if SameText(AToolName, 'fb_audit_table') then
+    LLimit := 'This audit reads structure only. A table can pass every check here and still be ' +
+      'the hot spot: nothing in the schema records how much concurrent work converges on it.'
+  else if SameText(AToolName, 'fb_monitor_transactions') then
+    LLimit := 'This is one instant. A gap that is fine right now can be the middle of a climb, ' +
+      'and a transaction that pins the horizon may have started since you looked. Use ' +
+      'fb_sample_activity to see whether the horizon is moving at all.'
+  else if SameText(AToolName, 'fb_sample_activity') then
+    LLimit := 'MON$ counts work performed. It does not count time spent waiting for permission ' +
+      'to perform it, so coordination costs — the ones that collapse throughput while every ' +
+      'counter stays calm — do not appear here at all. A quiet window is not a healthy system, ' +
+      'and a window is not the workload: sample again while the problem is happening.'
+  else
+    Exit(ABody);
+  Result := ABody + sLineBreak + '---' + sLineBreak +
+    '**Not ruled out by this check:** ' + LLimit + sLineBreak;
 end;
 
 function AdvisoriesToText(const Advs: TArray<TAdvisory>; const AEmptyMsg: string): string;

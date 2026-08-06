@@ -16,6 +16,10 @@ type
 
     [MCPPrompt('health_check', 'Run a read-only health review of the configured Firebird database')]
     function HealthCheck(const Arguments: TJDOJsonObject): TMCPPromptResult;
+
+    [MCPPrompt('classify_problem', 'Classify a performance symptom before investigating it: which kind of problem this is, which reasoning converges on it, and which of these tools can and cannot answer it')]
+    [MCPPromptArg('symptom', 'What the users actually observe, in their words', TMCPParamPresence.Required)]
+    function ClassifyProblem(const Arguments: TJDOJsonObject): TMCPPromptResult;
   end;
 implementation
 uses System.SysUtils, MVCFramework.MCP.Server;
@@ -63,6 +67,89 @@ begin
         '2. Call fb_list_tables.' + sLineBreak +
         '3. For each table, call fb_suggest_index_drops and collect the findings.' + sLineBreak +
         '4. Summarize: redundant/duplicate/inactive indexes, with the ready-to-run SQL grouped by table.')
+    ]);
+end;
+
+{ Every other entry point here starts from a tool. This one starts from the symptom, because
+  reaching for a tool first is how an investigation ends up with a stack of correct answers to
+  questions nobody asked. The taxonomy is the one in Cisar & Reeves, "Practical Firebird
+  Performance Diagnostics" (IBPhoenix, 2026): classify, then choose the reasoning, then choose
+  the instrument.
+
+  The uncomfortable half of this prompt is the last section. Four of the seven classes cannot be
+  settled with an ordinary SQL connection, and this server has nothing but an ordinary SQL
+  connection. Saying so is worth more than a confident answer built out of the evidence that
+  happened to be reachable. }
+function TFirebirdPrompts.ClassifyProblem(const Arguments: TJDOJsonObject): TMCPPromptResult;
+var Symptom: string;
+begin
+  Symptom := Arguments.S['symptom'];
+  Result := TMCPPromptResult.Create(
+    'Classify a Firebird performance problem',
+    [
+      PromptMessage('user',
+        'A Firebird system is behaving badly. Reported symptom:' + sLineBreak +
+        '  ' + Symptom + sLineBreak + sLineBreak +
+        'Classify the problem BEFORE running any tool. A check answers the question it was ' +
+        'built for; it does not explain a symptom, and a pile of correct checks does not become ' +
+        'an explanation. Work in this order and do not skip ahead.' + sLineBreak + sLineBreak +
+
+        'STEP 1 — Place the symptom on these six axes. Ask the user only what you cannot infer, ' +
+        'and say explicitly which answers you are missing.' + sLineBreak +
+        '1. Temporal shape: instant under load, or growing over hours/days? Does a restart or an ' +
+        'idle period reset it?' + sLineBreak +
+        '2. Load sensitivity: does it track the AMOUNT of work (volume) or the NUMBER of things ' +
+        'happening at once (concurrency)? These fail by different mechanisms.' + sLineBreak +
+        '3. Locality: is the pain spread across the schema, or does it converge on a few tables, ' +
+        'indexes or rows?' + sLineBreak +
+        '4. Coordination vs execution: is time spent working, or waiting for permission to work? ' +
+        'Idle CPU with collapsed throughput is the signature of the second.' + sLineBreak +
+        '5. Stability under observation: does the symptom change or vanish when monitoring or ' +
+        'tracing is switched on?' + sLineBreak +
+        '6. Environment: did the same logic behave differently after a migration, a hardware ' +
+        'change or a move to a VM?' + sLineBreak + sLineBreak +
+
+        'STEP 2 — Name the ONE dominant class. Classes overlap; pick the shape that decides how ' +
+        'to proceed.' + sLineBreak +
+        '- local inefficiency: degrades in proportion to work; a unit of work costs too much.' + sLineBreak +
+        '- capacity exhaustion: efficient work, but a resource is the ceiling.' + sLineBreak +
+        '- coordination and contention: collapses with concurrency while nothing looks saturated.' + sLineBreak +
+        '- locality collapse: logically balanced, physically concentrated on a hot structure.' + sLineBreak +
+        '- temporal accumulation: fine at first, worse over time, resets on restart.' + sLineBreak +
+        '- observation-sensitive: the act of measuring changes the behaviour.' + sLineBreak +
+        '- environment-amplified: identical logic, different environment, different behaviour.' + sLineBreak + sLineBreak +
+
+        'STEP 3 — Apply the strategy that class demands, using the tools this server has:' + sLineBreak +
+        '- local inefficiency → REDUCTION. Narrow until the expensive unit is unmistakable: ' +
+        'fb_analyze_query (plan AND measured cost), fb_suggest_indexes, fb_audit_table, then ' +
+        'fb_evaluate_goal to prove the change. This server converges here.' + sLineBreak +
+        '- temporal accumulation → LIFECYCLE. Snapshots lie; compare windows. fb_sample_activity ' +
+        'repeatedly over the working day, plus fb_monitor_transactions to name what pins the ' +
+        'transaction horizon. This server can carry the investigation, not close it.' + sLineBreak +
+        '- capacity exhaustion → CONFIRMATION. fb_sample_activity gives page and record rates, ' +
+        'but CPU, storage latency and memory pressure live outside the database connection and ' +
+        'this server cannot see them. Confirm from the host.' + sLineBreak +
+        '- coordination and contention → INTERACTION-FOCUSED EXPANSION. Do not narrow. MON$ ' +
+        'counts work performed, never time spent waiting for permission, so calm counters here ' +
+        'are NOT evidence of absence. Vary concurrency deliberately and watch the inflection.' + sLineBreak +
+        '- locality collapse → CONCENTRATION DISCOVERY. Needs the physical picture (page fill, ' +
+        'index depth, version chains) that only gstat gives. Repeated fb_sample_activity plus ' +
+        'per-table fb_analyze_query is a proxy, and a weak one.' + sLineBreak +
+        '- observation-sensitive → MINIMAL DISTURBANCE. Note that fb_analyze_query executes the ' +
+        'SELECT it measures and fb_sample_activity holds a window open; keep both short and ' +
+        'compare observed against unobserved behaviour.' + sLineBreak +
+        '- environment-amplified → CONTROLLED COMPARISON. Run fb_info and the same measured ' +
+        'query on both environments and contrast; introspection alone will not show it.' + sLineBreak + sLineBreak +
+
+        'RULES. State the class and the reasoning that led to it before touching a tool. Report ' +
+        'a clean result as what it is — one question answered — and repeat what it does not rule ' +
+        'out. If tools keep coming back clean while the symptom persists, that is evidence the ' +
+        'class is wrong: reclassify instead of checking harder. If the dominant class is one ' +
+        'this server cannot settle, say so plainly and name what would settle it.'),
+      PromptMessage('assistant',
+        'Understood. I will classify along the six axes first, name the dominant class and my ' +
+        'reasoning, and only then choose tools — reporting for each what it cannot rule out, and ' +
+        'saying so if the class is beyond what an SQL connection can settle.')
     ]);
 end;
 
