@@ -40,7 +40,7 @@ if you decide to.
 > server is a complete, real-world example of what you can build with them.
 
 - **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
-- **Server identity:** `mcp-firebird` v`0.2.4`
+- **Server identity:** `mcp-firebird` v`0.3.0`
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
 - **Safety:** read-only analysis; no tool runs DDL or write SQL
 - **Free** for your own databases, at any scale, with no key and no expiry. A licence is needed only
@@ -72,28 +72,38 @@ if you decide to.
 
 ## What it does
 
-### Tools (9 free, plus 5 Enterprise announced in `tools/list`)
+### Tools (10 free, plus 9 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
 | `fb_info` | *(none)* | Engine version + detected capabilities (JSON) |
 | `fb_list_tables` | *(none)* | List user tables |
 | `fb_generate_documentation` | `table_name?` | Markdown docs (columns, PK, indexes) for one table, or the whole database |
-| `fb_analyze_query` | `sql` | Access-plan analysis: NATURAL-scan + external-SORT detection |
+| `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
 | `fb_suggest_indexes` | `sql` | New-index suggestions from NATURAL-scanned predicates (ready-to-run DDL) |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
-| `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
+| `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
+| `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
 
-Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step.
+Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step. Every
+analysis tool also closes with **what it does not rule out**: a plan cannot see contention, a
+snapshot cannot see accumulation, and a clean answer to a narrow question is not a clean bill
+of health.
 
-### Prompts (2)
+### Prompts (3)
 
 - **`optimization_goal`**, the goal-driven loop: set an objective, the assistant iterates the
   `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
   max-iterations / no-progress safety stop).
 - **`health_check`**: guided whole-database health review.
+- **`classify_problem`**: starts from the symptom, not from a tool. Places the problem on six
+  axes (temporal shape, volume vs concurrency, locality, coordination vs execution,
+  sensitivity to observation, environment), names the dominant class of the seven, and says
+  which reasoning converges on it — including when the answer is that an SQL connection
+  cannot settle it. Follows the taxonomy in Cisar & Reeves, *Practical Firebird Performance
+  Diagnostics* (IBPhoenix, 2026).
 
 ### Resources (1)
 
@@ -533,7 +543,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. The `fb_*` tools, the `optimization_goal` / `health_check` prompts, and
+Restart Claude Desktop. The `fb_*` tools, the `optimization_goal` / `health_check` / `classify_problem` prompts, and
 the `firebird://schema` resource appear in the client.
 
 ### Claude Code (CLI)

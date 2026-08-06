@@ -139,18 +139,24 @@ Key `sources/` units and what they own:
 - `Firebird.DocGen` — Markdown doc generation for one table or the whole DB.
 - `Firebird.TransactionMonitor` — OIT/OAT/OST/Next gap from `MON$DATABASE` + the oldest active
   transaction from `MON$TRANSACTIONS`/`MON$ATTACHMENTS`; flags one pinning garbage collection.
+- `Firebird.Activity` — the only unit that measures *change* rather than state: reads
+  `MON$IO_STATS`/`MON$RECORD_STATS` twice across a window (`Sample`) or across one statement's
+  execution (`Measure`) and reports the delta. `MON$` freezes its snapshot per transaction, so
+  both call `TFirebirdConnection.NewMonitoringSnapshot` between readings — without it every delta
+  is zero and the database looks idle under any load. `Measure` executes the SQL it is given, so
+  it goes through `IsReadOnlySelect` first (as does `Firebird.Goal`'s `query_time_ms`).
 - `Firebird.Advisory` — the shared `TAdvisory` record (Severity/Finding/SQLText/Verify) that every
   advisory-producing unit returns, rendered uniformly by `providers/FirebirdToolsU.AdvisoriesToText`.
 
 `providers/` layer:
 - `FirebirdConfigU` — reads `firebird.*` keys from dotEnv into `TFirebirdConnectionConfig`
   (`LoadFirebirdConfig`), validates them with speaking errors (`NewConfiguredConnection`).
-- `FirebirdToolsU` — the 9 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
+- `FirebirdToolsU` — the 10 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
   `Guard()`, which opens/frees the configured connection and hands it to the body, logs
   `>> tool args` / `<< tool ok|isError Nms` to the `mcp` log tag and converts
   any exception into an `isError` `TMCPToolResult` instead of an opaque JSON-RPC -32603 — keep new
   tools inside `Guard` so failures surface to the MCP client instead of just crashing the request.
-- `FirebirdPromptsU` — the `optimization_goal` and `health_check` prompts.
+- `FirebirdPromptsU` — the `optimization_goal`, `health_check` and `classify_problem` prompts.
 - `FirebirdResourcesU` — the `firebird://schema` resource.
 
 `app/` layer:

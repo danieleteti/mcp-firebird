@@ -6,6 +6,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-06
+
+Until this release every tool here answered a structural question: what the schema says, what
+index exists, which access path the optimizer picked. That evidence constrains an explanation and
+rarely confirms one, and a server that only ever answers structurally will answer confidently
+about a problem that is not structural at all. The taxonomy behind this release is the one in
+Cisar & Reeves, *Practical Firebird Performance Diagnostics* (IBPhoenix, 2026): classify the
+problem first, then choose the reasoning, then choose the instrument.
+
+Everything below stays inside the free edition's line — ordinary SQL over `MON$`, no service
+attach, no file on the server.
+
+### Added
+- **`fb_sample_activity`** reads the `MON$` counters twice across a window and reports the
+  difference: records read sequentially and by index, pages read/written/fetched/marked, record
+  versions backed out, purged and expunged, back-version reads (3.0+), transactions started, and
+  whether the transaction horizon moved at all. A snapshot cannot show accumulation, drift or
+  workload phase; those live in the difference between two readings. Findings it can support and
+  only those: a horizon that never moves while transactions keep starting, a window dominated by
+  sequential reads, and version churn. An idle window says so instead of implying health.
+- **`classify_problem`** prompt: starts from the symptom rather than from a tool. Places the
+  problem on six axes (temporal shape, volume vs concurrency, locality, coordination vs execution,
+  sensitivity to observation, environment), names the dominant class of the seven, maps it to the
+  reasoning that converges on it, and says plainly when the dominant class is one an SQL
+  connection cannot settle.
+- **`fb_analyze_query` now measures what it analyzed.** A plain SELECT is executed once and the
+  report adds the records the engine actually read (sequential and indexed), the pages it moved,
+  its back-version reads, and a note when it read far more records than the query returned. "The
+  plan uses an index" and "the query reads 400 000 records through that index" used to be the
+  same report.
+- **Every advisory tool now states what it does not rule out.** A clean answer to a narrow
+  question reads as a clean bill of health to whoever relays it, and an assistant relaying it has
+  no way to know the tool was blind. A plan cannot see contention; a schema audit cannot see where
+  the concurrent work converges; one snapshot cannot see accumulation; `MON$` counts work
+  performed and never time spent waiting for permission to perform it.
+
+- Two regression tests for the encoding fixes below, since both defects were invisible to an
+  all-ASCII suite: one round-trips an em dash out and `CITTÀ_UTENTI_€_日本` in, the other fails if
+  any tool description ever shows the `â€` signature of a mis-decoded source again.
+
+### Fixed
+- **A statement that could write is no longer executed to measure it.** `fb_evaluate_goal`'s
+  `query_time_ms` ran whatever SQL text it was handed in order to time it — including a `DELETE`.
+  Read-only was a property of the tools, not of the SQL arriving from the caller. Both this goal
+  and the new measurement in `fb_analyze_query` now refuse anything that is not a plain SELECT.
+- **Every em dash this server writes reached you as `â€"`.** The `.pas` sources are UTF-8 without
+  a byte order mark, and the Delphi compiler reads such a file in the machine's ANSI code page:
+  the em dash was already three garbage characters at compile time, before anything was sent. It
+  was in the description of all nine Enterprise tools and of `fb_generate_documentation` — the
+  first thing an LLM reads about this server — in the `optimization_goal` prompt, in the
+  transaction-monitor advisories, and beside every INACTIVE index in generated documentation.
+  The sixteen affected sources now carry a BOM. Nothing else about them changed.
+- Rebuilt against **mcp-server-delphi 0.8.2**, which forces UTF-8 on stdin/stdout and frames each
+  message with a single LF. Before it, the transport wrote stdout in the console code page, so
+  even a correctly compiled non-ASCII byte left as Windows-1252 and the client's UTF-8 decode
+  rejected it. Accented table names, identifiers and comments now survive the wire intact.
+
+### Changed
+- The tool tables in all four READMEs said five Enterprise tools; there have been nine since
+  0.2.4.
+
 ## [0.2.4] - 2026-07-17
 
 ### Added

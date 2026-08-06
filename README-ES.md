@@ -40,7 +40,7 @@ lo ejecutas tú, cuando y si lo decides.
 > servidor es un ejemplo completo y real de lo que puedes construir con ellos.
 
 - **Transporte:** stdio (JSON-RPC 2.0, protocolo MCP `2025-03-26`)
-- **Identidad del servidor:** `mcp-firebird` v`0.2.4`
+- **Identidad del servidor:** `mcp-firebird` v`0.3.0`
 - **Motores soportados:** Firebird 2.5, 3.0, 4.0, 5.0 (capacidades detectadas en tiempo de ejecución)
 - **Seguridad:** análisis de solo lectura; ninguna herramienta ejecuta DDL ni SQL de escritura
 - **Gratis** para tus propias bases de datos, a cualquier escala, sin clave y sin caducidad. La
@@ -73,28 +73,38 @@ lo ejecutas tú, cuando y si lo decides.
 
 ## Qué hace
 
-### Herramientas (9 gratuitas, más 5 Enterprise anunciadas en `tools/list`)
+### Herramientas (10 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
 
 | Herramienta | Argumentos | Para qué sirve |
 |---|---|---|
 | `fb_info` | *(ninguno)* | Versión del motor y capacidades detectadas (JSON) |
 | `fb_list_tables` | *(ninguno)* | Lista las tablas de usuario |
 | `fb_generate_documentation` | `table_name?` | Documentación Markdown (columnas, PK, índices) de una tabla, o de toda la base de datos |
-| `fb_analyze_query` | `sql` | Análisis del plan de acceso: detecta escaneos NATURAL y SORT externos |
+| `fb_analyze_query` | `sql` | Análisis del plan de acceso (escaneos NATURAL y SORT externos) **y coste medido**: un SELECT simple se ejecuta una vez y se informan los registros y las páginas que realmente tocó |
 | `fb_suggest_indexes` | `sql` | Propone índices nuevos a partir de los predicados escaneados en NATURAL (DDL listo para ejecutar) |
 | `fb_suggest_index_drops` | `table_name` | Señala índices duplicados, con prefijo redundante, inactivos o de baja selectividad |
 | `fb_audit_table` | `table_name` | Auditoría de salud del esquema: PK ausente, exceso de índices, estadísticas obsoletas |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Comprobación determinista del objetivo (es lo que mueve el bucle de optimización) |
-| `fb_monitor_transactions` | `stale_minutes?` | Salud de transacciones y sweep: distancia OIT/OAT/Next, transacciones largas que bloquean (con su última sentencia SQL) |
+| `fb_monitor_transactions` | `stale_minutes?` | Salud de transacciones y sweep **en este instante**: distancia OIT/OAT/Next, transacciones largas que bloquean (con su última sentencia SQL) |
+| `fb_sample_activity` | `seconds?` | Lee los contadores MON$ dos veces a lo largo de una ventana e informa la diferencia: registros leídos en secuencia y por índice, páginas movidas, versiones recogidas, y si el horizonte de transacciones avanzó |
 
-Cada recomendación viene con un **Finding**, el **SQL** listo para ejecutar y un paso de **Verify**.
+Cada recomendación viene con un **Finding**, el **SQL** listo para ejecutar y un paso de
+**Verify**. Cada herramienta de análisis termina además declarando **qué no ha descartado**:
+un plan no ve la contención, una instantánea no ve la acumulación, y una respuesta limpia a
+una pregunta estrecha no es un certificado de buena salud.
 
-### Prompts (2)
+### Prompts (3)
 
 - **`optimization_goal`**, el bucle guiado por objetivos: fija una meta y el asistente itera sobre
   las herramientas `fb_*` y vuelve a comprobar `fb_evaluate_goal` hasta que devuelve `met: true`
   (con una parada de seguridad por máximo de iteraciones o por falta de progreso).
 - **`health_check`**: revisión guiada de la salud de toda la base de datos.
+- **`classify_problem`**: parte del síntoma, no de una herramienta. Sitúa el problema en seis
+  ejes (forma temporal, volumen frente a concurrencia, localidad, coordinación frente a
+  ejecución, sensibilidad a la observación, entorno), nombra la clase dominante de las siete
+  y dice qué razonamiento converge — incluso cuando la respuesta es que una conexión SQL no
+  puede zanjarlo. Sigue la taxonomía de Cisar y Reeves, *Practical Firebird Performance
+  Diagnostics* (IBPhoenix, 2026).
 
 ### Recursos (1)
 
@@ -540,7 +550,7 @@ Edita `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
-Reinicia Claude Desktop. Las herramientas `fb_*`, los prompts `optimization_goal` / `health_check` y
+Reinicia Claude Desktop. Las herramientas `fb_*`, los prompts `optimization_goal` / `health_check` / `classify_problem` y
 el recurso `firebird://schema` aparecen en el cliente.
 
 ### Claude Code (CLI)
