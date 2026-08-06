@@ -52,7 +52,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.2.4"
+    assert res["serverInfo"]["version"] == "0.2.5"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -61,7 +61,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.2.4"
+    assert res["serverInfo"]["version"] == "0.2.5"
     assert res["protocolVersion"] == "2025-03-26"
 
 
@@ -181,6 +181,37 @@ def test_fb_generate_documentation_whole_db(client):
     text = _tool_text(client, "fb_generate_documentation", {"table_name": ""}).upper()
     assert "CUSTOMERS" in text
     assert "ORDERS" in text
+
+
+# --------------------------------------------------------------------------- #
+# 7b. non-ASCII survives the stdio wire, in both directions
+# --------------------------------------------------------------------------- #
+# Two ways an em dash used to reach the client as garbage, and both were silent:
+# the transport wrote stdout in the console/ANSI code page, and the compiler read the
+# .pas sources — UTF-8 but without a BOM — as ANSI, so the literal was already mojibake
+# before it was written. All-ASCII payloads worked either way, which is why neither was
+# noticed. "â€" is what a UTF-8 multi-byte sequence looks like after a Windows-1252
+# misread; it must never appear in anything we hand the client.
+MOJIBAKE = "â€"
+
+
+def test_non_ascii_round_trips_over_stdio(client):
+    # Outbound: the server's own text. The seed leaves IDX_CUST_CITY inactive, and the
+    # generator marks it with an em dash (U+2014) — server-generated, not echoed input.
+    doc = _tool_text(client, "fb_generate_documentation", {"table_name": "CUSTOMERS"})
+    assert "— INACTIVE" in doc, ascii(doc)
+
+    # Inbound: an accented, non-Latin-1 name reaches the server intact and comes back
+    # unchanged in the heading, even though no such table exists.
+    name = "CITTÀ_UTENTI_€_日本"
+    assert name in _tool_text(client, "fb_generate_documentation", {"table_name": name})
+
+
+def test_tool_descriptions_are_not_mojibake(client):
+    # The tool descriptions are the first thing an LLM reads about this server, and most
+    # of them carry an em dash. A misread source ships that garbage into every tools/list.
+    for t in client.call("tools/list")["result"]["tools"]:
+        assert MOJIBAKE not in t["description"], f"{t['name']}: {ascii(t['description'])}"
 
 
 # --------------------------------------------------------------------------- #
