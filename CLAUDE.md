@@ -130,12 +130,27 @@ Key `sources/` units and what they own:
   INT128, timezones, parallel workers) keyed off engine version, so behavior adapts across 2.5-5.0
   instead of hardcoding one engine's SQL dialect.
 - `Firebird.Introspection` — schema reads: tables, columns, PK, indexes, FKs.
-- `Firebird.PlanAnalyzer` — parses/explains access plans; flags `NATURAL` scans and external `SORT`.
-- `Firebird.IndexAdvisor` — turns NATURAL-scanned predicates into `CREATE INDEX` suggestions, and
-  flags droppable indexes (duplicate / redundant-prefix / inactive / low-selectivity).
-- `Firebird.SchemaAudit` — table-level health audit (missing PK, over-indexing, stale statistics).
+- `Firebird.PlanAnalyzer` — drives a local `isql` for the plan. One script, two prepares: the
+  legacy `PLAN` line under `SET PLANONLY ON`, then (3.0+ only, `SET EXPLAIN ON`) the explained
+  tree, parsed for index names, per-index segment match quality, join strategy and the engine's
+  own alias→table map. 2.5 never sees the `SET EXPLAIN` line — an unknown `SET` aborts the script
+  carrying the statement.
+- `Firebird.IndexAdvisor` — the remedy ladder: `SET STATISTICS` (refresh, leaves nothing behind)
+  → `ALTER INDEX ACTIVE` (an index that already exists) → `CREATE INDEX` (paid for on every
+  write, forever), always the lowest rung that explains the plan. Executes the query once through
+  `Firebird.Activity.Measure` to compare records read with rows returned, and stays **silent with
+  the numbers** when the scan is the right plan. Shapes: plain B-tree, `COMPUTED BY` expression,
+  partial (`HasPartialIndexes`, 5.0+), and an index for the `ORDER BY` in its own direction. The
+  text-level extraction (`ExtractPredicates` / `ExtractOrderBy`) is exported so it can be tested
+  without a database. Also flags droppable indexes (duplicate / redundant-prefix / inactive /
+  low-selectivity — the last one only after comparing stored selectivity with actual).
+- `Firebird.SchemaAudit` — table-level health audit (missing PK, over-indexing, stale statistics),
+  plus the shared statistics primitives the advisor uses: `ColumnStats` (rows / non-null /
+  distinct in one scan), `StoredSelectivity` (per-segment, from `RDB$INDEX_SEGMENTS`) and
+  `StaleIndexes`. `STALE_FACTOR` lives here — one threshold, one meaning, two callers.
 - `Firebird.Goal` — deterministic goal evaluation (`query_no_natural_scan`, `query_time_ms`,
-  `no_redundant_indexes`) that backs the `optimization_goal` iterate-until-met prompt loop.
+  `no_redundant_indexes`, `no_stale_index_statistics`) that backs the `optimization_goal`
+  iterate-until-met prompt loop.
 - `Firebird.DocGen` — Markdown doc generation for one table or the whole DB.
 - `Firebird.TransactionMonitor` — OIT/OAT/OST/Next gap from `MON$DATABASE` + the oldest active
   transaction from `MON$TRANSACTIONS`/`MON$ATTACHMENTS`; flags one pinning garbage collection.
@@ -180,8 +195,11 @@ the MCP transport itself.
 - Read-only, and enforced by the engine: `FirebirdConfigU.LoadFirebirdConfig` sets
   `TFirebirdConnectionConfig.ReadOnly`, so every transaction the server opens carries the
   read-only TPB and Firebird refuses a write whatever SQL reaches it. `IsReadOnlySelect` in front
-  of the two tools that execute caller-supplied SQL (`fb_analyze_query`'s measurement and
-  `fb_evaluate_goal`'s `query_time_ms`) is the polite refusal, not the guarantee. The test
+  of the three tools that execute caller-supplied SQL (`fb_analyze_query`'s measurement,
+  `fb_suggest_indexes`'s measurement and `fb_evaluate_goal`'s `query_time_ms`) is the polite
+  refusal, not the guarantee; `HasParameters` beside it refuses to *measure* a statement whose
+  placeholders nobody bound, because FireDAC binds them as NULL and the number would describe a
+  query nobody runs. The test
   connections deliberately leave `ReadOnly` false — the suite creates and drops indexes. The first
   write tool must introduce an explicit opt-in setting, enforce it, and only then relax the TPB,
   consistent with the M1-M2 read-only scope described in README's Safety section.

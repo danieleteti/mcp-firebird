@@ -54,3 +54,65 @@ COMMIT;
    would take a working index away. */
 CREATE DESCENDING INDEX IDX_ORDERS_ID_DESC ON ORDERS (ORDER_ID);
 COMMIT;
+
+/* (14) The index advisor's own table: every column unindexed, and skewed on purpose so that
+   each rule has a positive and a negative case in the same table.
+     STATE  - 90% 'CLOSED', 10% 'ACTIVE'. Filtering on 'CLOSED' returns most of what it reads:
+              the scan is the right plan and no index should be suggested. Filtering on
+              'ACTIVE' alongside another predicate is the partial-index shape.
+     TAG    - 200 distinct values, ~0.5% each: an index pays here.
+     LABEL  - queried through UPPER(), which no plain index can serve.
+   20 000 rows, comfortably above the 5 000-record floor below which an index changes nothing
+   measurable, on every engine in the matrix. */
+CREATE TABLE SKEWED (
+  ID     INTEGER NOT NULL PRIMARY KEY,
+  STATE  VARCHAR(10),
+  TAG    VARCHAR(20),
+  LABEL  VARCHAR(40)
+);
+COMMIT;
+
+SET TERM ^ ;
+EXECUTE BLOCK AS DECLARE I INTEGER = 0; BEGIN
+  WHILE (I < 20000) DO BEGIN
+    INSERT INTO SKEWED (ID, STATE, TAG, LABEL) VALUES (
+      :I,
+      CASE WHEN MOD(:I,10) = 0 THEN 'ACTIVE' ELSE 'CLOSED' END,
+      'T' || MOD(:I,200),
+      'label_' || :I);
+    I = I + 1;
+  END
+END^
+SET TERM ; ^
+COMMIT;
+
+/* (15) An index the optimizer refuses to use because it is costing it against numbers that
+   were true once. Built and analyzed while K held two distinct values, then loaded with 19 000
+   unique ones and never analyzed again: stored selectivity says 0.5 (one value in two), the
+   column really holds one value in twenty thousand. The advisor must answer SET STATISTICS,
+   not CREATE INDEX — the index the query wants is already there. */
+CREATE TABLE STALEIDX (ID INTEGER NOT NULL PRIMARY KEY, K INTEGER);
+CREATE INDEX IDX_STALEIDX_K ON STALEIDX (K);
+COMMIT;
+
+SET TERM ^ ;
+EXECUTE BLOCK AS DECLARE I INTEGER = 0; BEGIN
+  WHILE (I < 1000) DO BEGIN
+    INSERT INTO STALEIDX (ID, K) VALUES (:I, MOD(:I,2));
+    I = I + 1;
+  END
+END^
+SET TERM ; ^
+COMMIT;
+SET STATISTICS INDEX IDX_STALEIDX_K;
+COMMIT;
+
+SET TERM ^ ;
+EXECUTE BLOCK AS DECLARE I INTEGER = 1000; BEGIN
+  WHILE (I < 20000) DO BEGIN
+    INSERT INTO STALEIDX (ID, K) VALUES (:I, :I);
+    I = I + 1;
+  END
+END^
+SET TERM ; ^
+COMMIT;

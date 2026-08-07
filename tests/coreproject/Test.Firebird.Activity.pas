@@ -1,4 +1,4 @@
-unit Test.Firebird.Activity;
+﻿unit Test.Firebird.Activity;
 interface
 uses DUnitX.TestFramework;
 type
@@ -9,6 +9,7 @@ type
     [Test] procedure Sample_On_A_Quiet_Database_Reports_Nothing_And_Does_Not_Crash;
     [Test] procedure Measure_Reports_The_Records_The_Query_Actually_Read;
     [Test] procedure Measure_Refuses_To_Execute_Anything_But_A_Select;
+    [Test] procedure Measure_Refuses_A_Statement_Whose_Parameters_Nobody_Bound;
     [Test] procedure IsReadOnlySelect_Accepts_Select_And_With_Only;
   end;
 implementation
@@ -111,6 +112,29 @@ begin
     Q := Conn.OpenQuery('SELECT COUNT(*) FROM CUSTOMERS');
     try Rows := Q.Fields[0].AsLargeInt; finally Q.Free; end;
     Assert.AreEqual(Int64(5000), Rows, 'the refused statement must have changed nothing');
+  finally Conn.Free; end;
+end;
+
+procedure TActivityTests.Measure_Refuses_A_Statement_Whose_Parameters_Nobody_Bound;
+var Conn: TFirebirdConnection; A: TFirebirdActivity; C: TStatementCost;
+begin
+  { Shipped in 0.3.0: fb_analyze_query on `WHERE CITY = ?` printed "0 row(s)" over five
+    thousand sequential reads. FireDAC binds an unset parameter as NULL, CITY = NULL matches
+    nothing, and a yield of 0/5004 reads as the strongest possible case for an index — about a
+    query nobody runs. The plan is still worth reporting; the measurement is not. }
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdActivity.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+    try
+      C := A.Measure('SELECT * FROM CUSTOMERS WHERE CITY = ?');
+      Assert.IsFalse(C.Executed, 'a statement with unbound parameters is not executed');
+      Assert.IsTrue(C.SkipReason.Contains('parameter'), 'and says why: ' + C.SkipReason);
+      Assert.IsTrue(C.Rows = 0, 'no row count is invented');
+
+      // A question mark inside a literal is text, not a placeholder.
+      C := A.Measure('SELECT * FROM CUSTOMERS WHERE CITY = ''Rome?''');
+      Assert.IsTrue(C.Executed, 'a literal containing ? is still a measurable statement: ' + C.SkipReason);
+    finally A.Free; end;
   finally Conn.Free; end;
 end;
 

@@ -54,7 +54,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.3.0"
+    assert res["serverInfo"]["version"] == "0.4.0"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -63,7 +63,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.3.0"
+    assert res["serverInfo"]["version"] == "0.4.0"
     assert res["protocolVersion"] == "2025-03-26"
 
 
@@ -284,9 +284,14 @@ def test_fb_suggest_indexes_reactivates_a_dormant_index_instead_of_duplicating_i
 
 def test_fb_suggest_indexes_still_creates_one_when_no_index_covers_the_column(client):
     """The reactivation path must not swallow the ordinary case: ORDERS.TOTAL has no index at
-    all, dormant or otherwise, and there CREATE INDEX is the right answer."""
+    all, dormant or otherwise, and there CREATE INDEX is the right answer.
+
+    TOTAL is ORDER_ID * 1.5 over 5000 rows, so `> 7000` keeps a few hundred of them. The
+    threshold is part of the test: a predicate that keeps most of the table is a scan the
+    optimizer is right about, and the advisor is expected to say so instead of prescribing an
+    index that would be written on every INSERT and read by nobody."""
     text = _tool_text(
-        client, "fb_suggest_indexes", {"sql": "SELECT * FROM ORDERS WHERE TOTAL > 1000"}
+        client, "fb_suggest_indexes", {"sql": "SELECT * FROM ORDERS WHERE TOTAL > 7000"}
     ).upper()
     assert "CREATE INDEX" in text
     assert "ON ORDERS (TOTAL)" in text
@@ -305,7 +310,7 @@ def test_fb_suggest_indexes_resolves_the_alias_to_the_table(client):
     """Firebird prints the ALIAS in the plan ("O NATURAL"). CREATE INDEX ... ON O (TOTAL) does
     not run: there is no table O."""
     text = _tool_text(
-        client, "fb_suggest_indexes", {"sql": "SELECT * FROM ORDERS o WHERE o.TOTAL > 1000"}
+        client, "fb_suggest_indexes", {"sql": "SELECT * FROM ORDERS o WHERE o.TOTAL > 7000"}
     ).upper()
     assert "ON ORDERS (TOTAL)" in text, "the DDL must name the table, not the alias"
     assert "ON O (" not in text

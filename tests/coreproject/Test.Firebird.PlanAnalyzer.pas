@@ -1,4 +1,4 @@
-unit Test.Firebird.PlanAnalyzer;
+﻿unit Test.Firebird.PlanAnalyzer;
 interface
 uses DUnitX.TestFramework;
 type
@@ -7,6 +7,7 @@ type
   public
     [Test] procedure NaturalScan_On_City_Filter_IsDetected;
     [Test] procedure Pk_Lookup_HasNoNaturalScan;
+    [Test] procedure ExplainedPlan_Names_The_Table_The_Alias_And_The_Index;
   end;
 implementation
 uses System.SysUtils, Firebird.Connection, Firebird.Capabilities, Firebird.PlanAnalyzer, TestFixtureU;
@@ -34,6 +35,38 @@ begin
     try
       R := PA.Analyze('SELECT * FROM CUSTOMERS WHERE CUSTOMER_ID = 1');
       Assert.IsFalse(R.HasNaturalScan, 'PK lookup uses the primary index. Got plan: ' + R.RawPlan);
+    finally PA.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TPlanAnalyzerTests.ExplainedPlan_Names_The_Table_The_Alias_And_The_Index;
+var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer; R: TPlanResult;
+    Caps: TFirebirdCapabilities; A: TPlanAlias; Found: Boolean;
+begin
+  { The legacy PLAN line prints the alias and no index detail; the explained tree prints the
+    real table name, the pairing, the index and how much of it the query agreed with. It exists
+    from 3.0, and SET EXPLAIN ON does not exist in 2.5's isql at all — where an unknown SET
+    would abort the script carrying the statement we came for. }
+  Conn := NewTestConnection;
+  try
+    Caps := TFirebirdCapabilities.Detect(Conn);
+    PA := TFirebirdPlanAnalyzer.Create(Conn, Caps.EngineVersion);
+    try
+      R := PA.Analyze('SELECT C.NAME, O.TOTAL FROM CUSTOMERS C JOIN ORDERS O ' +
+                      'ON O.CUSTOMER_ID = C.CUSTOMER_ID WHERE C.STATUS = ''A''');
+      if not Caps.HasExplainedPlan then
+      begin
+        Assert.AreEqual('', R.ExplainedPlan, '2.5 is never asked for an explained plan');
+        Assert.IsTrue(R.RawPlan <> '', 'and still returns the legacy plan it always did');
+        Exit;
+      end;
+      Assert.IsTrue(R.ExplainedPlan <> '', 'the tree is captured. RawPlan=' + R.RawPlan);
+      Found := False;
+      for A in R.Aliases do
+        if (A.Alias = 'O') and (A.Table = 'ORDERS') then Found := True;
+      Assert.IsTrue(Found, 'the engine states which table an alias is: ' + R.ExplainedPlan);
+      Assert.IsTrue(R.FullScans >= 1, 'ORDERS is scanned: ' + R.ExplainedPlan);
+      Assert.IsTrue(R.HasJoin, 'and the tree says it is a join: ' + R.ExplainedPlan);
     finally PA.Free; end;
   finally Conn.Free; end;
 end;

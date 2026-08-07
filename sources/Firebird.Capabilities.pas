@@ -10,6 +10,12 @@ type
     Major, Minor, Ordinal: Integer;
     HasMonTables, HasExplainedPlan, HasBooleanType, HasIdentityCols: Boolean;
     HasInt128, HasTimezones, HasParallelWorkers, HasRdbConfig: Boolean;
+    { Index shapes the advisor is allowed to prescribe. An expression index (COMPUTED BY) has
+      existed since 2.0, so the flag is always true across the supported matrix and is declared
+      only so the advisor asks the same question of both shapes. A partial index (CREATE INDEX
+      ... WHERE) arrived in 5.0; below it the advice is the plain B-tree plus a line saying what
+      5.0 would allow. }
+    HasExpressionIndexes, HasPartialIndexes: Boolean;
     class function Parse(const AVersion: string): TFirebirdCapabilities; static;
     class function Detect(AConn: TFirebirdConnection): TFirebirdCapabilities; static;
   end;
@@ -33,6 +39,8 @@ begin
   Result.HasTimezones       := Result.Ordinal >= 400;
   Result.HasRdbConfig       := Result.Ordinal >= 400;
   Result.HasParallelWorkers := Result.Ordinal >= 500;
+  Result.HasExpressionIndexes := Result.Ordinal >= 200;
+  Result.HasPartialIndexes    := Result.Ordinal >= 500;
 end;
 
 class function TFirebirdCapabilities.Detect(AConn: TFirebirdConnection): TFirebirdCapabilities;

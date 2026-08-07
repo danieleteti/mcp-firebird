@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
+﻿// SPDX-License-Identifier: LicenseRef-PolyForm-Internal-Use-1.0.0
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.Activity;
@@ -246,6 +246,16 @@ begin
   if not IsReadOnlySelect(ASQL) then
   begin
     Result.SkipReason := 'only a plain SELECT is executed; this statement was analyzed, not run';
+    Exit;
+  end;
+  { Nobody bound these placeholders, and an unbound parameter is NULL: the statement would run,
+    compare everything against NULL, match nothing, and hand back a row count of zero over a
+    full table's worth of reads. The plan above is still the plan; the measurement would be of
+    a query that does not exist. }
+  if HasParameters(ASQL) then
+  begin
+    Result.SkipReason := 'the statement carries unbound parameters, which execute as NULL and ' +
+      'match nothing; substitute representative literal values to have it measured';
     Exit;
   end;
 

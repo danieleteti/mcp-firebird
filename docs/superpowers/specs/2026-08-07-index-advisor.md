@@ -1,7 +1,10 @@
 # Index Advisor — Design Spec (0.4.0)
 
 - **Date:** 2026-08-07
-- **Status:** Draft for approval
+- **Status:** **Implemented in 0.4.0.** Slices 0–5 all shipped in one release rather than
+  separately. Three things were measured during implementation and came out differently from
+  what this document assumed — they are recorded in §12 rather than edited into the text above,
+  so the reasoning and the correction stay legible side by side.
 - **Author:** Daniele Teti (with Claude)
 - **Scope:** free edition only — ordinary SQL over an ordinary connection, no Services Manager, no file on the server
 - **Touches:** `Firebird.IndexAdvisor`, `Firebird.PlanAnalyzer`, `Firebird.SchemaAudit`, `Firebird.Goal`, `Firebird.Capabilities`, `providers/FirebirdToolsU`
@@ -382,3 +385,36 @@ one query we re-plan. Both are stated in the advisories rather than tested.
 - The advisor still answers about the query it was handed, and a DBA rarely has just one. The
   honest framing in every Finding stays the one 0.3.0 introduced: this is what the check saw, and
   this is what it could not see.
+
+## 12. What the implementation measured, and where this document was wrong
+
+Three corrections, all found by running the thing against real engines rather than by re-reading
+the plan.
+
+**Firebird prints match quality in three dialects, not one.** §2 quotes `partial match: 1/2`.
+Measured on 5.0.4, the same tree also prints `full match`, `lower bound: 1/1` and
+`lower bound: 2/2, upper bound: 1/2` — a range scan quotes one fraction per bound, and reading
+only the first one reports a fully used index as half used. The parser therefore takes the
+**widest** fraction printed for an index and compares it with the total, which makes all three
+dialects agree.
+
+**The optimizer almost never declines an available index on a single table.** §5's branch for "an
+index covers the column, ACTIVE but unused" was expected to be the common stale-statistics case.
+It is not: with a sargable equality and stored selectivity forced to 1.0 (every row identical, the
+worst possible figure), 5.0 still chose `PLAN (PROBE1 INDEX (IDX_PROBE1_K))` over the scan. The
+branch is reachable and correct — a leading-wildcard `LIKE` or a hash join gets there, and that is
+what the core suite exercises — but the statistics check earns its place mainly through
+`fb_audit_table` and the new goal, not through this branch. Worth knowing before anyone tunes the
+thresholds around it.
+
+**`AliasMap`'s regex could not be deleted.** Slice 4's acceptance says the hand-maintained alias
+regex goes away, replaced by the engine's own pairing. On 2.5 there is no explained plan and the
+legacy `PLAN` line prints aliases with nothing to resolve them against, so the regex is the only
+alias map that engine has. It stays as the 2.5 path and is **overridden** by the engine's map from
+3.0 up. The acceptance criterion was written without checking what deleting it would cost the
+oldest supported engine.
+
+One deliberate deviation, decided rather than discovered: §3 says `fb_suggest_indexes` executes
+the query it is asked about. It does — **but only when the plan actually shows a scan or a sort**.
+A query whose every table is already reached through an index costs what it always cost: one
+prepare and some metadata reads. There is no advice to give, so there is nothing to measure.

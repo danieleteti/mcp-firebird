@@ -15,7 +15,7 @@ type
     function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
     [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported')]
     function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
-    [MCPTool('fb_suggest_indexes', 'Suggests new indexes for the NATURAL-scanned columns of a query (ready-to-run DDL)')]
+    [MCPTool('fb_suggest_indexes', 'Index advice for one query, as ready-to-run DDL: plain B-tree, expression (COMPUTED BY) or partial (5.0+), whichever the predicate calls for — and no index at all when the scan is the correct plan. Refreshes stale statistics before proposing anything structural. Executes the query once to measure what the scan reads against what it returns, so on a large table this costs a full scan')]
     function FbSuggestIndexes([MCPParam('The SQL query to optimize')] const sql: string): TMCPToolResult;
     [MCPTool('fb_suggest_index_drops', 'Suggests droppable indexes for a table (duplicate/redundant/inactive/low-selectivity)')]
     function FbSuggestIndexDrops([MCPParam('Table name')] const table_name: string): TMCPToolResult;
@@ -23,7 +23,7 @@ type
     function FbAuditTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
     [MCPTool('fb_evaluate_goal', 'Deterministically measures an optimization goal and returns whether it is met')]
     function FbEvaluateGoal(
-      [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes')] const goal_type: string;
+      [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes | no_stale_index_statistics')] const goal_type: string;
       [MCPParam('Target: a SQL query or a table name')] const target: string;
       [MCPParam('Threshold (ms for query_time_ms; ignored otherwise)', TMCPParamPresence.Optional)] const threshold: Double): TMCPToolResult;
     [MCPTool('fb_monitor_transactions', 'Transaction/sweep health at this instant: OIT/OAT/Next gap and any blocking long-running transaction')]
@@ -114,6 +114,11 @@ begin
         R := PA.Analyze(LSql);
         SB.AppendLine('**Engine:** ' + R.EngineVersion).AppendLine;
         SB.AppendLine('**PLAN:**').AppendLine('```').AppendLine(R.RawPlan).AppendLine('```');
+        { The legacy line says which access path; the tree says how much of each index the query
+          agreed with, which join strategy was chosen and which alias is which table. Firebird
+          prints it from 3.0 on. }
+        if R.ExplainedPlan <> '' then
+          SB.AppendLine('**Explained plan:**').AppendLine('```').AppendLine(R.ExplainedPlan).AppendLine('```');
         if R.HasNaturalScan then
           SB.AppendLine('NATURAL scan on: ' + string.Join(', ', R.NaturalTables) + '. Run fb_suggest_indexes on this query for ready-to-run DDL.')
         else
@@ -157,7 +162,10 @@ begin
     begin
       A := TFirebirdIndexAdvisor.Create(Conn, EngineVersion(Conn));
       try Result := TMCPToolResult.Text(WithLimits(
-        AdvisoriesToText(A.SuggestForQuery(LSql), 'No new index suggested: the query has no NATURAL scan.'),
+        AdvisoriesToText(A.SuggestForQuery(LSql),
+          'No index suggested: the plan contains neither a NATURAL scan nor an external sort, so ' +
+          'every table in this query is already reached through an index and nothing is ordered ' +
+          'after the fact.'),
         'fb_suggest_indexes'));
       finally A.Free; end;
     end);

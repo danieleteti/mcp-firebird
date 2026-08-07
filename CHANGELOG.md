@@ -6,6 +6,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-07
+
+`fb_suggest_indexes` used to find `NATURAL` in a plan, pull the predicate columns out of the SQL
+with a regex, and propose `CREATE INDEX` for every one of them that had no index. It was right
+often enough to be useful and wrong in four ways a DBA notices immediately: it treated every scan
+as a defect, it never questioned the statistics the optimizer had decided on, it knew exactly one
+shape of index, and it said what to do without ever saying why *that* shape.
+
+This release is that tool rewritten around one idea: **an index is not free — it is written on
+every INSERT, UPDATE and DELETE for as long as it exists — so propose the cheapest remedy that
+explains what the plan did, and be willing to propose nothing.** The design, the measurements it
+rests on and the thresholds with their reasoning are in
+[`docs/superpowers/specs/2026-08-07-index-advisor.md`](docs/superpowers/specs/2026-08-07-index-advisor.md).
+
+Still inside the free edition's line: ordinary SQL over an ordinary connection, no service
+attach, no file on the server.
+
+### Added
+- **The scan that is the right plan.** The query is executed once and what it read is compared
+  with what it returned. A scan that keeps most of what it reads *is* the correct plan, and so is
+  a scan of a table small enough to be a handful of pages: both come back as a finding carrying
+  the numbers and **no SQL to run**. An index there would be maintained on every write and save
+  nothing.
+- **Statistics before structure.** Firebird stores an index's selectivity when the index is built
+  and never recalculates it, so an index that exists and is ignored may be ignored because the
+  optimizer is costing it against last year's data. The advisor now answers that with
+  `SET STATISTICS INDEX` — which reads the index, is safe under concurrent load and leaves
+  nothing behind — instead of a second index the database pays for forever. **No advisory says
+  "the index is not used, and that is correct" until the stored figure has been compared with the
+  real one**, and both figures are printed.
+- **Expression indexes.** `UPPER(NAME) = ?` cannot use a plain index at all: the index stores the
+  column, the query asks for the result of the function. It now gets `COMPUTED BY (UPPER(NAME))`,
+  with the expression emitted **exactly as written** — Firebird matches an expression index only
+  on an exact match, and `UPPER(NAME)` is not `UPPER(TRIM(NAME))`. The extractor knows which side
+  the function was on: `NAME = UPPER('x')` still gets a plain index. `SUBSTRING(NAME FROM 1 FOR 3)`
+  is captured whole, by balanced parentheses, or refused.
+- **Partial indexes on 5.0+.** `STATE = 'ACTIVE' AND TAG = ?` gets an index on what it seeks by,
+  plus the partial form that indexes only the population the query looks at. The column that
+  merely narrows the population no longer gets an index of its own. Below 5.0 the same query gets
+  the plain B-tree plus one line saying what 5.0 would allow. The advisory states the trap: the
+  optimizer uses a partial index only when the statement carries the same boolean expression —
+  implication is not enough.
+- **An index for the sort.** `fb_analyze_query` has flagged external `SORT`s since M1 and
+  `fb_suggest_indexes` had never once suggested an index for one — its extractor only ever looked
+  at comparison operators, so `ORDER BY` was invisible to it. It now proposes an index whose
+  segments match the ordering **in its own direction** (Firebird cannot walk an ascending index
+  backwards), says plainly that no single index serves `ORDER BY a ASC, b DESC`, names `FIRST n`
+  as the case where the win is largest, and warns when reading most of a table through an index
+  would cost more than the sort it removes.
+- **The engine's explained plan** (3.0+) is captured and shown by `fb_analyze_query`: index names,
+  how much of each index the query agreed with, the join strategy, and which alias is which table
+  — stated by Firebird instead of inferred from the FROM clause with a regex. Two findings come
+  from it that could not be written before: an index whose trailing segments this query never
+  reaches, and a join whose two sides are both scanned. On 2.5, where `SET EXPLAIN ON` does not
+  exist and an unknown `SET` would abort the script carrying the statement, nothing changed.
+- **`no_stale_index_statistics`**, a fourth `fb_evaluate_goal` goal type: the number of indexes on
+  a table whose stored selectivity no longer describes the data, met when zero. Every other goal
+  asks the optimization loop to change the schema; this one gives it a first move that writes
+  nothing structural.
+
+### Fixed
+- **A measurement of a query nobody runs.** `fb_analyze_query` on
+  `SELECT * FROM CUSTOMERS WHERE CITY = ?` reported `Measured: 0 row(s)` over 5004 sequential
+  reads. FireDAC binds an unset parameter as NULL, `CITY = NULL` matches nothing, and the number
+  was real — about a statement that never executes in production. Worse, a yield of 0 out of 5004
+  reads as the strongest possible case for an index. A statement carrying unbound parameters is
+  now **not executed at all**, by `fb_analyze_query`, by `fb_suggest_indexes` and by
+  `fb_evaluate_goal`'s `query_time_ms`, and the report says why instead of quoting a zero.
+- **`A <> 5` was read as a range predicate.** The operator alternation stopped at `<`, so a
+  comparison no index can serve came back as an index to create. `<>`, `!=`, `NOT IN` and
+  `NOT LIKE` are now recognised in order to be discarded.
+- **Stale statistics were only ever checked on single-column indexes**, and against the wrong
+  number if they had been checked at all: `RDB$INDICES.RDB$STATISTICS` is the selectivity of the
+  whole key, which is not comparable with the distinct count of one column. The comparison now
+  reads the per-segment figure from `RDB$INDEX_SEGMENTS`, so composite indexes are covered, and a
+  column that is mostly NULL is reported as **not comparable** rather than as stale —
+  `COUNT(DISTINCT)` ignores NULLs and the index does not.
+- **`fb_suggest_index_drops` called an index unselective on a number nobody had checked.** It read
+  the stored selectivity, found it poor, and proposed a drop; if that figure was simply out of
+  date the advice was to delete a working index. It now compares stored against actual first and
+  answers `SET STATISTICS` when the two disagree.
+- Reading a column's statistics no longer costs three scans: row count, non-null count and
+  distinct count come from one pass, and the whole check is skipped with an honest "not verified,
+  and here is what it would cost" on a table large enough for it to matter.
+
+### Changed
+- **`fb_suggest_indexes` now executes the query it is asked about** — once, inside the read-only
+  transaction, and only when the plan actually shows a scan or a sort. It used to prepare the
+  statement and read metadata. On a large table this turns a metadata call into a full scan, and
+  it may additionally run one `COUNT(DISTINCT)` for a candidate column. Anyone calling it in a
+  script will feel the difference; it is what the "the scan is the right plan" verdict rests on.
+- Generated index names are sanitised and capped at 31 characters, so a long table and a long
+  column no longer produce DDL Firebird refuses.
+
 ## [0.3.0] - 2026-08-06
 
 Until this release every tool here answered a structural question: what the schema says, what

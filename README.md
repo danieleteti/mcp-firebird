@@ -40,7 +40,7 @@ if you decide to.
 > server is a complete, real-world example of what you can build with them.
 
 - **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
-- **Server identity:** `mcp-firebird` v`0.3.0`
+- **Server identity:** `mcp-firebird` v`0.4.0`
 - **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
 - **Safety:** read-only analysis, enforced by the engine — the server attaches with a read-only transaction, so a write is refused by Firebird itself
 - **Free** for your own databases, at any scale, with no key and no expiry. A licence is needed only
@@ -79,8 +79,8 @@ if you decide to.
 | `fb_info` | *(none)* | Engine version + detected capabilities (JSON) |
 | `fb_list_tables` | *(none)* | List user tables |
 | `fb_generate_documentation` | `table_name?` | Markdown docs (columns, PK, indexes) for one table, or the whole database |
-| `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
-| `fb_suggest_indexes` | `sql` | New-index suggestions from NATURAL-scanned predicates (ready-to-run DDL) |
+| `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection), the engine's **explained plan** on 3.0+ (index names, match quality, join strategy) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
+| `fb_suggest_indexes` | `sql` | Index advice for one query: plain B-tree, **expression** (`COMPUTED BY`), **partial** (5.0+) or an index for the **sort** — and **no index at all** when the scan is the correct plan. Refreshes stale statistics before proposing anything structural |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
@@ -91,6 +91,43 @@ Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** 
 analysis tool also closes with **what it does not rule out**: a plan cannot see contention, a
 snapshot cannot see accumulation, and a clean answer to a narrow question is not a clean bill
 of health.
+
+### What `fb_suggest_indexes` decides, and in what order
+
+An index is not free: it is written on every INSERT, UPDATE and DELETE into that table, for as
+long as it exists. So the advisor proposes the **cheapest remedy that explains what the plan
+did**, and it is willing to propose nothing at all.
+
+1. **Refresh, don't build.** Firebird stores an index's selectivity when the index is created
+   and never recalculates it. An index that exists and is ignored may be ignored because the
+   optimizer is costing it against last year's data — and answering that with a second index
+   leaves the database paying for writes forever because a number needed refreshing. Nothing
+   here says *"the index is not used, and that is correct"* until the stored figure has been
+   compared with the real one.
+2. **Wake, don't duplicate.** An `INACTIVE` index over the column the query filters by is
+   `ALTER INDEX … ACTIVE`, never a second index beside the sleeping one.
+3. **Say when the scan is right.** The query is executed once and the records it read are
+   compared with the rows it returned. A scan that keeps most of what it reads *is* the correct
+   plan, and so is a scan of a table small enough to be a handful of pages: both come back as a
+   finding with the numbers and **no SQL to run**.
+4. **Then, the right shape.** `UPPER(NAME) = ?` cannot use a plain index at all and gets an
+   expression index, with the expression emitted exactly as written — Firebird matches it only
+   on an exact match. `STATE = 'ACTIVE' AND TAG = ?` gets an index on what it seeks by, plus the
+   partial form on 5.0+, which indexes only the population the query looks at. `ORDER BY` on an
+   unindexed column gets an index whose segments match it **in its own direction** — and a plain
+   statement that no single index serves `ORDER BY a ASC, b DESC`, rather than one that would
+   never be used.
+
+Every finding carries the numbers the rule was applied to, so a DBA who disagrees with a
+threshold can disagree with the threshold rather than with the tool. The design and the
+measurements behind it are in
+[`docs/superpowers/specs/2026-08-07-index-advisor.md`](docs/superpowers/specs/2026-08-07-index-advisor.md).
+
+> **Note:** to measure, this tool **executes the query** it is asked about — once, inside the
+> read-only transaction, and only when the plan actually shows a scan or a sort. On a large
+> table that is a full scan. It never executes anything that is not a plain SELECT, and it does
+> not execute a statement with unbound parameters at all: those bind as NULL, match nothing, and
+> would produce a measurement of a query nobody runs.
 
 ### Prompts (3)
 
@@ -693,9 +730,28 @@ CREATE INDEX IDX_CUSTOMERS_CITY ON CUSTOMERS (CITY);
 -- Verify: re-run fb_analyze_query; the NATURAL scan on CUSTOMERS should be gone.
 ```
 
+> **You:** And this one? `SELECT * FROM ORDERS WHERE TOTAL > 100`
+
+→ **`fb_suggest_indexes`** → *"Table ORDERS is scanned when filtered by TOTAL, and that is the
+right plan: the scan returns 93% of what it reads (4650 of 5004 records)."* No SQL, because
+there is nothing worth running: an index here would be maintained on every INSERT and would
+save nothing.
+
+> **You:** And this one? `SELECT * FROM CUSTOMERS WHERE UPPER(NAME) = 'ACME'`
+
+→ **`fb_suggest_indexes`** → *"a plain index on `NAME` can never serve it: the index stores the
+column, the query asks for the result of the function"*, and
+
+```sql
+CREATE INDEX IDX_CUSTOMERS_UPPER_NAME ON CUSTOMERS COMPUTED BY (UPPER(NAME));
+```
+
 > **You:** And this one? `SELECT * FROM CUSTOMERS ORDER BY CITY`
 
-→ **`fb_analyze_query`** flags an **external SORT** (no usable index for the ordering).
+→ **`fb_analyze_query`** flags an **external SORT** (no usable index for the ordering), and
+**`fb_suggest_indexes`** now answers it: an index on `(CITY)` in the direction the query asks
+for, with a warning when reading most of a table through an index would cost more than the sort
+it removes.
 
 ### 4. Clean up redundant indexes
 
@@ -843,8 +899,11 @@ A few call examples (MCP `tools/call` `arguments`):
                  "threshold": 0 } }
 ```
 
-`fb_evaluate_goal` `goal_type` values supported in M1: `query_no_natural_scan`,
-`query_time_ms`, `no_redundant_indexes`. See
+`fb_evaluate_goal` `goal_type` values: `query_no_natural_scan`, `query_time_ms`,
+`no_redundant_indexes`, and `no_stale_index_statistics` — the one whose first move writes
+nothing structural: it counts the indexes on a table whose stored selectivity no longer
+describes the data, so the loop can tell the optimizer the truth before it asks the database to
+carry another index. See
 [`docs/firebird-problem-catalog.md`](docs/firebird-problem-catalog.md) for every problem the
 tools detect, the fixture that provokes it, and the milestone it lands in.
 
@@ -973,10 +1032,12 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 - **Read-only, and not on the honour system.** The server opens its transactions read-only, so
   an INSERT, UPDATE, DELETE or DDL is refused by Firebird, not by a check of ours that could
-  be wrong about what a statement does. It matters because two tools execute SQL that arrives
-  as text from the caller — `fb_analyze_query` measures the SELECT it analyzes, and
-  `fb_evaluate_goal` times one. Both also refuse anything that is not a plain SELECT before
-  running it; the read-only transaction is what holds if that refusal is ever wrong. The SQL
+  be wrong about what a statement does. It matters because three tools execute SQL that arrives
+  as text from the caller — `fb_analyze_query` measures the SELECT it analyzes,
+  `fb_suggest_indexes` measures the one it advises on, and `fb_evaluate_goal` times one. All
+  three also refuse anything that is not a plain SELECT before running it, and refuse to execute
+  a statement whose parameters nobody bound; the read-only transaction is what holds if a
+  refusal is ever wrong. The SQL
   an advisory hands you is yours to run, when and if you decide to. Tools that apply a change
   themselves are planned, and when they arrive they will be off unless you turn them on.
 - **Cross-version.** Capability detection adapts feature use (MON$ tables, explained plans,

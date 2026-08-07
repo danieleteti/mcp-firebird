@@ -83,9 +83,10 @@ begin
       'physically, or a degradation that only appears above a certain concurrency. A clean plan ' +
       'is not a fast query.'
   else if SameText(AToolName, 'fb_suggest_indexes') or SameText(AToolName, 'fb_suggest_index_drops') then
-    LLimit := 'Index advice is derived from the schema and one plan, not from the running ' +
-      'workload. It cannot tell you whether this table is where the system actually spends its ' +
-      'time, and an index that helps one query costs every INSERT into that table.'
+    LLimit := 'Index advice is derived from the schema, one plan and one execution of one query, ' +
+      'not from the running workload. It cannot tell you whether this table is where the system ' +
+      'actually spends its time, and an index that helps this query may hurt three others that ' +
+      'were not asked about — every index costs every INSERT into that table.'
   else if SameText(AToolName, 'fb_audit_table') then
     LLimit := 'This audit reads structure only. A table can pass every check here and still be ' +
       'the hot spot: nothing in the schema records how much concurrent work converges on it.'

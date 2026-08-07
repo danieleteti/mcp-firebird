@@ -40,7 +40,7 @@ propone lo esegui tu, quando e se vuoi.
 > Questo server è un esempio completo, e reale, di cosa ci si può costruire.
 
 - **Trasporto:** stdio (JSON-RPC 2.0, protocollo MCP `2025-03-26`)
-- **Identità del server:** `mcp-firebird` v`0.3.0`
+- **Identità del server:** `mcp-firebird` v`0.4.0`
 - **Motori supportati:** Firebird 2.5, 3.0, 4.0, 5.0 (funzionalità rilevate a runtime)
 - **Innocuo per il database:** analisi in sola lettura, garantita dal motore — il server apre transazioni read-only, quindi è Firebird a rifiutare una scrittura
 - **Gratuito** sui tuoi database, a qualunque scala, senza chiave e senza scadenza. Serve una
@@ -79,8 +79,8 @@ propone lo esegui tu, quando e se vuoi.
 | `fb_info` | *(nessuno)* | Versione del motore e funzionalità rilevate (JSON) |
 | `fb_list_tables` | *(nessuno)* | Elenca le tabelle utente |
 | `fb_generate_documentation` | `table_name?` | Documentazione Markdown (colonne, PK, indici) di una tabella o dell'intero database |
-| `fb_analyze_query` | `sql` | Analisi del piano di accesso (scansioni NATURAL e SORT esterni) **e costo misurato**: una SELECT viene eseguita una volta e si riportano i record e le pagine che ha davvero toccato |
-| `fb_suggest_indexes` | `sql` | Propone nuovi indici a partire dai predicati risolti con scansione NATURAL (DDL già pronto) |
+| `fb_analyze_query` | `sql` | Analisi del piano di accesso (scansioni NATURAL e SORT esterni), il **piano esteso** del motore su 3.0+ (nomi degli indici, quanta parte dell'indice la query ha usato, strategia di join) **e costo misurato**: una SELECT viene eseguita una volta e si riportano i record e le pagine che ha davvero toccato |
+| `fb_suggest_indexes` | `sql` | Consiglia l'indice per una query: B-tree normale, **su espressione** (`COMPUTED BY`), **parziale** (5.0+) oppure un indice per l'**ordinamento** — e **nessun indice** quando la scansione è il piano giusto. Prima di proporre qualcosa di strutturale aggiorna le statistiche vecchie |
 | `fb_suggest_index_drops` | `table_name` | Segnala indici duplicati, con prefisso ridondante, inattivi o poco selettivi |
 | `fb_audit_table` | `table_name` | Stato di salute dello schema: PK assente, troppi indici, statistiche vecchie |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Verifica deterministica dell'obiettivo (è il motore del ciclo di ottimizzazione) |
@@ -91,6 +91,44 @@ Ogni indicazione arriva con un **Finding**, l'**SQL** già pronto e una **Verify
 di analisi chiude anche dichiarando **che cosa non ha escluso**: un piano non vede la contesa,
 uno snapshot non vede l'accumulo, e una risposta pulita a una domanda stretta non è un
 certificato di buona salute.
+
+### Come decide `fb_suggest_indexes`, e in che ordine
+
+Un indice non è gratis: viene scritto a ogni INSERT, UPDATE e DELETE su quella tabella, per
+tutto il tempo in cui esiste. Per questo il consigliere propone **il rimedio più economico che
+spiega ciò che il piano ha fatto**, ed è disposto a non proporre nulla.
+
+1. **Aggiorna, non costruire.** Firebird memorizza la selettività di un indice quando l'indice
+   viene creato e non la ricalcola mai. Un indice che esiste e viene ignorato può esserlo perché
+   l'ottimizzatore lo sta valutando sui dati dell'anno scorso — e rispondere con un secondo
+   indice lascia il database a pagare scritture per sempre solo perché un numero andava
+   rinfrescato. Qui nessuno dice *"l'indice non viene usato, ed è giusto così"* finché il valore
+   memorizzato non è stato confrontato con quello reale.
+2. **Risveglia, non duplicare.** Un indice `INACTIVE` sulla colonna filtrata è
+   `ALTER INDEX … ACTIVE`, mai un secondo indice accanto a quello che dorme.
+3. **Dì quando la scansione è giusta.** La query viene eseguita una volta e i record letti
+   vengono confrontati con le righe restituite. Una scansione che tiene quasi tutto quello che
+   legge *è* il piano corretto, e lo è anche la scansione di una tabella grande quanto una
+   manciata di pagine: entrambe tornano come Finding con i numeri e **senza SQL da eseguire**.
+4. **Poi, la forma giusta.** `UPPER(NOME) = ?` non può usare nessun indice normale e ottiene un
+   indice su espressione, con l'espressione riportata esattamente com'era scritta — Firebird lo
+   usa solo su corrispondenza esatta. `STATO = 'ATTIVO' AND TAG = ?` ottiene l'indice sulla
+   colonna con cui si cerca, più la forma parziale su 5.0+, che indicizza solo la popolazione che
+   la query guarda davvero. Un `ORDER BY` su colonna non indicizzata ottiene un indice i cui
+   segmenti corrispondono all'ordinamento **nella sua direzione** — e la constatazione, invece di
+   un indice inutilizzabile, che nessun indice singolo serve `ORDER BY a ASC, b DESC`.
+
+Ogni Finding porta con sé i numeri su cui la regola è stata applicata, così un DBA che non è
+d'accordo con una soglia può discutere della soglia e non dello strumento. Il progetto e le
+misure su cui si basa sono in
+[`docs/superpowers/specs/2026-08-07-index-advisor.md`](docs/superpowers/specs/2026-08-07-index-advisor.md).
+
+> **Nota:** per misurare, questo tool **esegue la query** su cui viene interrogato — una volta,
+> dentro la transazione read-only, e soltanto quando il piano mostra davvero una scansione o un
+> ordinamento. Su una tabella grande è una scansione completa. Non esegue mai nulla che non sia
+> una SELECT semplice, e non esegue affatto uno statement con parametri non valorizzati: quelli
+> arrivano al motore come NULL, non corrispondono a niente e produrrebbero la misura di una query
+> che nessuno esegue.
 
 ### Prompt (3)
 
@@ -851,8 +889,11 @@ Qualche esempio di chiamata (gli `arguments` di `tools/call` MCP):
                  "threshold": 0 } }
 ```
 
-I `goal_type` che `fb_evaluate_goal` accetta in M1: `query_no_natural_scan`, `query_time_ms`,
-`no_redundant_indexes`. In
+I `goal_type` che `fb_evaluate_goal` accetta: `query_no_natural_scan`, `query_time_ms`,
+`no_redundant_indexes` e `no_stale_index_statistics` — l'unico la cui prima mossa non scrive
+niente di strutturale: conta gli indici di una tabella la cui selettività memorizzata non descrive
+più i dati, così il ciclo può dire la verità all'ottimizzatore prima di chiedere al database di
+portarsi dietro un altro indice. In
 [`docs/firebird-problem-catalog.md`](docs/firebird-problem-catalog.md) trovi ogni problema che i
 tool sanno rilevare, la fixture che lo provoca e la milestone in cui arriva.
 
@@ -982,10 +1023,12 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 - **Sola lettura, e non sulla fiducia.** Il server apre le sue transazioni in sola lettura:
   INSERT, UPDATE, DELETE e DDL li rifiuta Firebird, non un nostro controllo che potrebbe
-  sbagliarsi su cosa fa uno statement. Conta perché due tool eseguono SQL che arriva come
-  testo da chi chiama: `fb_analyze_query` misura la SELECT che analizza e `fb_evaluate_goal`
-  ne cronometra una. Entrambi rifiutano già tutto ciò che non è una SELECT semplice prima di
-  eseguirlo; la transazione read-only è quello che regge se quel rifiuto sbaglia. L'SQL che ti
+  sbagliarsi su cosa fa uno statement. Conta perché tre tool eseguono SQL che arriva come
+  testo da chi chiama: `fb_analyze_query` misura la SELECT che analizza, `fb_suggest_indexes`
+  misura quella su cui dà consigli e `fb_evaluate_goal` ne cronometra una. Tutti e tre rifiutano
+  già tutto ciò che non è una SELECT semplice prima di eseguirlo, e rifiutano di eseguire uno
+  statement con parametri che nessuno ha valorizzato; la transazione read-only è quello che regge
+  se un rifiuto sbaglia. L'SQL che ti
   propone un'indicazione lo lanci tu, quando e se decidi di farlo. I tool che applicano da soli
   una modifica sono in programma: quando arriveranno, saranno spenti finché non li accendi tu.
 - **Tutte le versioni.** Il rilevamento delle funzionalità adatta al motore connesso quello che il

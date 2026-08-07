@@ -49,8 +49,22 @@ type
   user-supplied SQL goes through here first. }
 function IsReadOnlySelect(const ASQL: string): Boolean;
 
+{ True when the statement carries placeholders nobody has bound.
+
+  A prepare needs no values, so the plan for `WHERE CITY = ?` is honest. An execution is not:
+  FireDAC binds an unset parameter as NULL, `CITY = NULL` matches nothing, and the measurement
+  comes back as "0 rows out of 5004 records read" — which reads as the strongest possible case
+  for an index, about a query nobody runs. Everything that executes caller-supplied SQL to
+  measure it asks this first and reports why it did not measure. }
+function HasParameters(const ASQL: string): Boolean;
+
+{ The statement with every quoted literal replaced by one blank, so that a scan for operators,
+  keywords or placeholders cannot trip over their contents. Handles the doubled quote that
+  escapes a quote inside a literal. }
+function StripLiterals(const ASQL: string): string;
+
 implementation
-uses System.SysUtils;
+uses System.SysUtils, System.Classes, System.RegularExpressions;
 
 function IsReadOnlySelect(const ASQL: string): Boolean;
 var S: string;
@@ -60,6 +74,42 @@ begin
   // parsed — the wrong answer in that direction costs a measurement, not a table.
   S := ASQL.Trim.ToUpper;
   Result := S.StartsWith('SELECT') or S.StartsWith('WITH');
+end;
+
+function StripLiterals(const ASQL: string): string;
+var SB: TStringBuilder; I: Integer; Quote: Char;
+begin
+  SB := TStringBuilder.Create;
+  try
+    I := 1;
+    while I <= Length(ASQL) do
+      if CharInSet(ASQL[I], ['''', '"']) then
+      begin
+        Quote := ASQL[I];
+        Inc(I);
+        while I <= Length(ASQL) do
+          if ASQL[I] <> Quote then Inc(I)
+          else if (I < Length(ASQL)) and (ASQL[I + 1] = Quote) then Inc(I, 2)  // '' is a quote, not the end
+          else Break;
+        Inc(I);
+        // One blank, not nothing: 'a' 'b' must not be spliced into a single token.
+        SB.Append(' ');
+      end
+      else
+      begin
+        SB.Append(ASQL[I]);
+        Inc(I);
+      end;
+    Result := SB.ToString;
+  finally SB.Free; end;
+end;
+
+function HasParameters(const ASQL: string): Boolean;
+var S: string;
+begin
+  // Literals first: a question mark inside a string is text, not a placeholder.
+  S := StripLiterals(ASQL);
+  Result := S.Contains('?') or TRegEx.IsMatch(S, ':\w');
 end;
 
 constructor TFirebirdConnection.Create(const AConfig: TFirebirdConnectionConfig);
