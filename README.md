@@ -509,6 +509,7 @@ its own database.
 | `firebird.password` | `masterkey` | Login password |
 | `firebird.charset` | `UTF8` | Connection character set |
 | `firebird.client_lib` | *(empty)* | Full path to `fbclient.dll` to load |
+| `firebird.backup_dir` | *(empty)* | Folder `fb_backup_database` may write backups into. Never accepted from the caller — required only when that tool runs |
 | `logger.config.file` | `loggerpro.stdio.json` | File-logger config (logs go to file only; stdout stays pure JSON-RPC) |
 
 Example `.env`:

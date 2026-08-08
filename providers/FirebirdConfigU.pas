@@ -12,6 +12,7 @@ type
   EFirebirdConfig = class(Exception);
 function LoadFirebirdConfig: TFirebirdConnectionConfig;
 function NewConfiguredConnection: TFirebirdConnection;
+function LoadBackupDir: string;
 implementation
 uses System.IOUtils, MVCFramework.DotEnv, MVCFramework.Commons, BootConfigU;
 
@@ -67,4 +68,22 @@ begin
   Result := TFirebirdConnection.Create(lConfig);
   Result.Connect;
 end;
+
+{ The backup destination is declared once, in the .env, and never comes from the
+  caller: the tools take instructions from whatever is talking to the server, and
+  a path taken from there is a path this process would write to on its word. }
+function LoadBackupDir: string;
+begin
+  Result := Trim(dotEnv.Env('firebird.backup_dir', ''));
+  if Result = '' then
+    raise EFirebirdConfig.CreateFmt(
+      'No backup destination is configured. Set "firebird.backup_dir" in %s to a folder ' +
+      'this server may write backups into.', [EnvFile]);
+  if not TDirectory.Exists(Result) then
+    raise EFirebirdConfig.CreateFmt(
+      'Backup destination "%s" does not exist or is not a folder (firebird.backup_dir in %s).',
+      [Result, EnvFile]);
+  Result := IncludeTrailingPathDelimiter(Result);
+end;
+
 end.
