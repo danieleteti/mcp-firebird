@@ -43,7 +43,6 @@ type
     FuncName: string;
     PackageName: string;
     ReturnType: string;
-    Params: TArray<TRoutineParam>;
   end;
 
   TPackageInfo = record

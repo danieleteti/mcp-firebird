@@ -78,7 +78,7 @@ if you decide to.
 |---|---|---|
 | `fb_info` | *(none)* | Engine version + detected capabilities (JSON) |
 | `fb_list_tables` | *(none)* | List user tables |
-| `fb_generate_documentation` | `table_name?` | Markdown docs (columns, PK, indexes) for one table, or the whole database |
+| `fb_generate_documentation` | `table_name?` | Markdown docs (columns, PK, indexes, triggers) for one table, or the whole database — which also lists stored procedures with their parameters, functions and packages (3.0+) |
 | `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection), the engine's **explained plan** on 3.0+ (index names, match quality, join strategy) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
 | `fb_suggest_indexes` | `sql` | Index advice for one query: plain B-tree, **expression** (`COMPUTED BY`), **partial** (5.0+) or an index for the **sort** — and **no index at all** when the scan is the correct plan. Refreshes stale statistics before proposing anything structural |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
