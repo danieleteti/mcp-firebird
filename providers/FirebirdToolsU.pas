@@ -11,7 +11,7 @@ type
     function FbInfo: TMCPToolResult;
     [MCPTool('fb_list_tables', 'Lists user tables (and views) in the configured database')]
     function FbListTables: TMCPToolResult;
-    [MCPTool('fb_generate_documentation', 'Markdown documentation — columns, primary key, indexes — for one table, or for the whole database when table_name is empty')]
+    [MCPTool('fb_generate_documentation', 'Markdown documentation for one table (columns, primary key, indexes, triggers with the event they fire on), or for the whole database when table_name is empty — which also lists stored procedures with their parameters, functions and packages (3.0+)')]
     function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
     [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported')]
     function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
