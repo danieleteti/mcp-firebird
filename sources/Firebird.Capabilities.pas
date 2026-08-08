@@ -10,6 +10,9 @@ type
     Major, Minor, Ordinal: Integer;
     HasMonTables, HasExplainedPlan, HasBooleanType, HasIdentityCols: Boolean;
     HasInt128, HasTimezones, HasParallelWorkers, HasRdbConfig: Boolean;
+    { RDB$PACKAGE_NAME (RDB$PROCEDURE_PARAMETERS/RDB$PROCEDURES/RDB$FUNCTIONS) does not exist
+      before 3.0 — selecting it on 2.5 fails with "Column unknown". }
+    HasPackages: Boolean;
     { Index shapes the advisor is allowed to prescribe. An expression index (COMPUTED BY) has
       existed since 2.0, so the flag is always true across the supported matrix and is declared
       only so the advisor asks the same question of both shapes. A partial index (CREATE INDEX
@@ -35,6 +38,7 @@ begin
   Result.HasExplainedPlan   := Result.Ordinal >= 300;
   Result.HasBooleanType     := Result.Ordinal >= 300;
   Result.HasIdentityCols    := Result.Ordinal >= 300;
+  Result.HasPackages        := Result.Ordinal >= 300;
   Result.HasInt128          := Result.Ordinal >= 400;
   Result.HasTimezones       := Result.Ordinal >= 400;
   Result.HasRdbConfig       := Result.Ordinal >= 400;
