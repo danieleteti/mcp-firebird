@@ -12,9 +12,12 @@ $db   = "localhost/$port`:C:\DEV\mcp-firebird\tests\seed\TESTDB.FDB"
 $seed = Join-Path $PSScriptRoot 'seed.sql'
 $problems = Join-Path $PSScriptRoot 'problems.sql'
 if (Test-Path 'C:\DEV\mcp-firebird\tests\seed\TESTDB.FDB') { Remove-Item 'C:\DEV\mcp-firebird\tests\seed\TESTDB.FDB' -Force }
+$seedFb3 = Join-Path $PSScriptRoot 'seed_fb3.sql'
+$fb3Line = if ($Version -eq '2.5') { '' } else { "INPUT '$seedFb3';" }
 @"
 CREATE DATABASE '$db' USER 'SYSDBA' PASSWORD 'masterkey' DEFAULT CHARACTER SET UTF8;
 INPUT '$seed';
 INPUT '$problems';
+$fb3Line
 "@ | & $isql -q
 Write-Host "Seed DB created for FB $Version at $db"

@@ -12,9 +12,11 @@ type
     [Test] procedure ListProcedures_Finds_The_Seeded_Procedure;
     [Test] procedure ListProcedures_Reports_In_And_Out_Parameters;
     [Test] procedure ListTriggers_Decodes_Before_Insert;
+    [Test] procedure ListFunctions_Is_Empty_Below_Three_And_Finds_It_Above;
+    [Test] procedure ListPackages_Is_Empty_Below_Three_And_Finds_It_Above;
   end;
 implementation
-uses System.SysUtils, Firebird.Connection, Firebird.Introspection, TestFixtureU;
+uses System.SysUtils, Firebird.Connection, Firebird.Introspection, Firebird.Capabilities, TestFixtureU;
 
 function Has(const A: TArray<string>; const S: string): Boolean;
 var X: string; begin Result := False; for X in A do if SameText(X, S) then Exit(True); end;
@@ -129,6 +131,71 @@ begin
         if T.TriggerName = 'TR_ORDERS_BI' then
           lEvent := T.Event;
       Assert.AreEqual('BEFORE INSERT', lEvent);
+    finally
+      I.Free;
+    end;
+  finally
+    Conn.Free;
+  end;
+end;
+
+procedure TIntrospectionTests.ListFunctions_Is_Empty_Below_Three_And_Finds_It_Above;
+var
+  Conn: TFirebirdConnection;
+  I: TFirebirdIntrospection;
+  C: TFirebirdCapabilities;
+  F: TFunctionInfo;
+  lFound: Boolean;
+begin
+  Conn := NewTestConnection;
+  try
+    C := TFirebirdCapabilities.Detect(Conn);
+    I := TFirebirdIntrospection.Create(Conn);
+    try
+      lFound := False;
+      for F in I.ListFunctions do
+        if F.FuncName = 'FN_ORDER_NET' then
+          lFound := True;
+      if C.HasPackages then
+        Assert.IsTrue(lFound, 'FN_ORDER_NET not listed on ' + C.EngineVersion)
+      else
+        Assert.AreEqual(0, Integer(Length(I.ListFunctions)), 'functions must be empty on ' + C.EngineVersion);
+    finally
+      I.Free;
+    end;
+  finally
+    Conn.Free;
+  end;
+end;
+
+procedure TIntrospectionTests.ListPackages_Is_Empty_Below_Three_And_Finds_It_Above;
+var
+  Conn: TFirebirdConnection;
+  I: TFirebirdIntrospection;
+  C: TFirebirdCapabilities;
+  P: TPackageInfo;
+  lFound, lHasBody: Boolean;
+begin
+  Conn := NewTestConnection;
+  try
+    C := TFirebirdCapabilities.Detect(Conn);
+    I := TFirebirdIntrospection.Create(Conn);
+    try
+      lFound := False;
+      lHasBody := False;
+      for P in I.ListPackages do
+        if P.PackageName = 'PKG_ORDERS' then
+        begin
+          lFound := True;
+          lHasBody := P.HasBody;
+        end;
+      if C.HasPackages then
+      begin
+        Assert.IsTrue(lFound, 'PKG_ORDERS not listed on ' + C.EngineVersion);
+        Assert.IsTrue(lHasBody, 'PKG_ORDERS body not detected');
+      end
+      else
+        Assert.AreEqual(0, Integer(Length(I.ListPackages)), 'packages must be empty on ' + C.EngineVersion);
     finally
       I.Free;
     end;

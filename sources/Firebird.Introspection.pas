@@ -39,6 +39,18 @@ type
     Inactive: Boolean;
   end;
 
+  TFunctionInfo = record
+    FuncName: string;
+    PackageName: string;
+    ReturnType: string;
+    Params: TArray<TRoutineParam>;
+  end;
+
+  TPackageInfo = record
+    PackageName: string;
+    HasBody: Boolean;
+  end;
+
   TFirebirdIntrospection = class
   private
     FConn: TFirebirdConnection;
@@ -54,6 +66,10 @@ type
     function GetForeignKeys(const ATable: string): TArray<TForeignKeyInfo>;
     function ListProcedures: TArray<TProcedureInfo>;
     function ListTriggers(const ATable: string = ''): TArray<TTriggerInfo>;
+    { Empty below Firebird 3.0: PSQL functions and packages do not exist there,
+      and the 2.5 RDB$FUNCTIONS holds external UDF declarations only. }
+    function ListFunctions: TArray<TFunctionInfo>;
+    function ListPackages: TArray<TPackageInfo>;
   end;
 
 { Wraps an identifier in double quotes for use in SQL text. }
@@ -361,6 +377,85 @@ begin
         T.Position := Q.FieldByName('TSEQ').AsInteger;
         T.Inactive := Q.FieldByName('TINACT').AsInteger <> 0;
         L.Add(T);
+        Q.Next;
+      end;
+    finally
+      Q.Free;
+    end;
+    Result := L.ToArray;
+  finally
+    L.Free;
+  end;
+end;
+
+function TFirebirdIntrospection.ListFunctions: TArray<TFunctionInfo>;
+var
+  Q: TFDQuery;
+  L: TList<TFunctionInfo>;
+  F: TFunctionInfo;
+begin
+  Result := [];
+  if not FCaps.HasPackages then
+    Exit;
+  L := TList<TFunctionInfo>.Create;
+  try
+    Q := FConn.OpenQuery(
+      'SELECT TRIM(f.RDB$FUNCTION_NAME) AS FNAME, ' +
+      '       COALESCE(TRIM(f.RDB$PACKAGE_NAME), '''') AS PKG, ' +
+      '       fl.RDB$FIELD_TYPE AS FTYPE, fl.RDB$FIELD_LENGTH AS FLEN, ' +
+      '       fl.RDB$FIELD_SCALE AS FSCALE ' +
+      'FROM RDB$FUNCTIONS f ' +
+      'LEFT JOIN RDB$FUNCTION_ARGUMENTS a ' +
+      '  ON a.RDB$FUNCTION_NAME = f.RDB$FUNCTION_NAME ' +
+      ' AND a.RDB$ARGUMENT_POSITION = f.RDB$RETURN_ARGUMENT ' +
+      ' AND COALESCE(a.RDB$PACKAGE_NAME, '''') = COALESCE(f.RDB$PACKAGE_NAME, '''') ' +
+      'LEFT JOIN RDB$FIELDS fl ON fl.RDB$FIELD_NAME = a.RDB$FIELD_SOURCE ' +
+      'WHERE COALESCE(f.RDB$SYSTEM_FLAG, 0) = 0 ORDER BY 2, 1');
+    try
+      while not Q.Eof do
+      begin
+        F := Default(TFunctionInfo);
+        F.FuncName := Q.FieldByName('FNAME').AsString;
+        F.PackageName := Q.FieldByName('PKG').AsString;
+        if Q.FieldByName('FTYPE').IsNull then
+          F.ReturnType := 'UNKNOWN'
+        else
+          F.ReturnType := MapFieldType(Q.FieldByName('FTYPE').AsInteger,
+            Q.FieldByName('FLEN').AsInteger, Q.FieldByName('FSCALE').AsInteger);
+        L.Add(F);
+        Q.Next;
+      end;
+    finally
+      Q.Free;
+    end;
+    Result := L.ToArray;
+  finally
+    L.Free;
+  end;
+end;
+
+function TFirebirdIntrospection.ListPackages: TArray<TPackageInfo>;
+var
+  Q: TFDQuery;
+  L: TList<TPackageInfo>;
+  P: TPackageInfo;
+begin
+  Result := [];
+  if not FCaps.HasPackages then
+    Exit;
+  L := TList<TPackageInfo>.Create;
+  try
+    Q := FConn.OpenQuery(
+      'SELECT TRIM(RDB$PACKAGE_NAME) AS PKG, ' +
+      '       IIF(RDB$PACKAGE_BODY_SOURCE IS NULL, 0, 1) AS HAS_BODY ' +
+      'FROM RDB$PACKAGES WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 ORDER BY 1');
+    try
+      while not Q.Eof do
+      begin
+        P := Default(TPackageInfo);
+        P.PackageName := Q.FieldByName('PKG').AsString;
+        P.HasBody := Q.FieldByName('HAS_BODY').AsInteger = 1;
+        L.Add(P);
         Q.Next;
       end;
     finally
