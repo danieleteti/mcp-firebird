@@ -413,10 +413,14 @@ begin
           SB.AppendLine('**Failed.** ' + S.Detail);
           if S.BackupFile <> '' then
             SB.AppendLine(Format('The backup file itself is at `%s`.', [S.BackupFile]));
+          { gbak -v narrates every table it writes. On the way out that is a wall of
+            "writing privilege for user SYSDBA" around the one line that matters, and
+            the size and the two timings above already say what went right. It earns
+            its space only when something went wrong. }
+          if S.GbakLog <> '' then
+            SB.AppendLine.AppendLine('```').AppendLine(S.GbakLog.Trim).AppendLine('```');
         end;
     end;
-    if S.GbakLog <> '' then
-      SB.AppendLine.AppendLine('```').AppendLine(S.GbakLog.Trim).AppendLine('```');
     Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_backup_status'));
   finally
     SB.Free;

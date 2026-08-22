@@ -11,6 +11,7 @@ type
     [Test] procedure Backup_Writes_A_File;
     [Test] procedure VerifyRestore_Accepts_A_Backup_It_Just_Made;
     [Test] procedure Backup_Rejects_A_Destination_That_Does_Not_Exist;
+    [Test] procedure A_Failed_Backup_Carries_Gbaks_Own_Words;
   end;
 
 implementation
@@ -81,6 +82,42 @@ begin
       end, Exception, 'a backup into a folder that does not exist must be refused');
   finally
     B.Free;
+  end;
+end;
+
+procedure TBackupTests.A_Failed_Backup_Carries_Gbaks_Own_Words;
+var
+  B: TFirebirdBackup;
+  lConfig: TFirebirdConnectionConfig;
+  lDir, lMessage: string;
+begin
+  { "gbak exit code 1" is not a diagnosis, and gbak writes the diagnosis into a log
+    file this unit deletes on its way out. Point it at a database that is not there
+    and the exception must carry what gbak said, not just that it said no. }
+  lDir := NewTempDir;
+  try
+    lConfig := TestConfig;
+    lConfig.Database := 'C:\no\such\database\NOPE.FDB';
+    B := TFirebirdBackup.Create(lConfig);
+    try
+      lMessage := '';
+      try
+        B.Backup(TFirebirdBackup.ProposeBackupFile(lConfig.Database, lDir));
+      except
+        on E: Exception do
+          lMessage := E.Message;
+      end;
+      Assert.IsNotEmpty(lMessage, 'backing up a database that does not exist must raise');
+      { "gbak:" with the colon is the prefix gbak puts on its own log lines, and it is
+        exactly what "Backup failed (gbak exit code 1)" does NOT contain. Asserting on
+        it is asserting that the log survived. }
+      Assert.IsTrue(lMessage.ToLower.Contains('gbak:'),
+        'the failure must carry gbak''s own output, not only an exit code: ' + lMessage);
+    finally
+      B.Free;
+    end;
+  finally
+    TDirectory.Delete(lDir, True);
   end;
 end;
 

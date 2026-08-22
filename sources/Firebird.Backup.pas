@@ -59,6 +59,16 @@ const
   BACKUP_TIMEOUT_MS = 30 * 60 * 1000;   // half an hour; a real database is not an isql plan
   LOG_TAIL_CHARS = 2000;
 
+{ The end of gbak's own output. gbak -v narrates every table it writes, so the useful
+  part -- the summary, or the error it stopped on -- is always at the bottom. }
+function Tail(const AText: string): string;
+begin
+  if AText.Length > LOG_TAIL_CHARS then
+    Result := '...' + AText.Substring(AText.Length - LOG_TAIL_CHARS)
+  else
+    Result := AText;
+end;
+
 { gbak -y refuses a file that already exists, and GetTempFileName creates the one it
   names. So we keep the unique name and hand gbak the empty slot, not the empty file. }
 function NewGbakLogName: string;
@@ -146,18 +156,27 @@ begin
   lLogFile := NewGbakLogName;
   try
     SW := TStopwatch.StartNew;
-    RunAndWait(Format('"%s" -b -v -y "%s" -user %s -password %s "%s" "%s"',
-      [GbakPath, lLogFile, FConfig.User, FConfig.Password,
-       ConnectString, Result.BackupFile]), BACKUP_TIMEOUT_MS, 'Backup');
+    try
+      RunAndWait(Format('"%s" -b -v -y "%s" -user %s -password %s "%s" "%s"',
+        [GbakPath, lLogFile, FConfig.User, FConfig.Password,
+         ConnectString, Result.BackupFile]), BACKUP_TIMEOUT_MS, 'Backup');
+    except
+      on E: Exception do
+      begin
+        { "gbak exit code 1" is not a diagnosis. gbak wrote why in the log we are
+          about to delete, so it leaves with the exception rather than with the file. }
+        if TFile.Exists(lLogFile) then
+          E.Message := E.Message + sLineBreak + Tail(TFile.ReadAllText(lLogFile));
+        raise;
+      end;
+    end;
     Result.BackupSeconds := SW.Elapsed.TotalSeconds;
 
     if not TFile.Exists(Result.BackupFile) then
       raise Exception.CreateFmt('gbak reported success but wrote no file: %s', [Result.BackupFile]);
     Result.BackupBytes := TFile.GetSize(Result.BackupFile);
     if TFile.Exists(lLogFile) then
-      Result.GbakLog := TFile.ReadAllText(lLogFile);
-    if Result.GbakLog.Length > LOG_TAIL_CHARS then
-      Result.GbakLog := '...' + Result.GbakLog.Substring(Result.GbakLog.Length - LOG_TAIL_CHARS);
+      Result.GbakLog := Tail(TFile.ReadAllText(lLogFile));
   finally
     if TFile.Exists(lLogFile) then
       TFile.Delete(lLogFile);
@@ -190,7 +209,7 @@ begin
         Result.Restored := False;
         Result.Detail := E.Message;
         if TFile.Exists(lLogFile) then
-          Result.Detail := Result.Detail + sLineBreak + TFile.ReadAllText(lLogFile);
+          Result.Detail := Result.Detail + sLineBreak + Tail(TFile.ReadAllText(lLogFile));
       end;
     end;
     Result.Seconds := SW.Elapsed.TotalSeconds;
