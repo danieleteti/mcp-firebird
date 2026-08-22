@@ -42,7 +42,7 @@ das er dir gibt, führst du selbst aus, wann und ob du willst.
 > bauen lässt.
 
 - **Transport:** stdio (JSON-RPC 2.0, MCP-Protokoll `2025-03-26`)
-- **Server-Identität:** `mcp-firebird` v`0.4.0`
+- **Server-Identität:** `mcp-firebird` v`0.5.0`
 - **Unterstützte Engines:** Firebird 2.5, 3.0, 4.0, 5.0 (Fähigkeiten werden zur Laufzeit erkannt)
 - **Sicherheit:** rein lesende Analyse, von der Engine durchgesetzt — der Server öffnet nur lesende Transaktionen, eine Schreiboperation weist also Firebird selbst ab
 - **Kostenlos** für deine eigenen Datenbanken, in jeder Größenordnung, ohne Key und ohne Ablaufdatum.

@@ -40,7 +40,7 @@ propone lo esegui tu, quando e se vuoi.
 > Questo server è un esempio completo, e reale, di cosa ci si può costruire.
 
 - **Trasporto:** stdio (JSON-RPC 2.0, protocollo MCP `2025-03-26`)
-- **Identità del server:** `mcp-firebird` v`0.4.0`
+- **Identità del server:** `mcp-firebird` v`0.5.0`
 - **Motori supportati:** Firebird 2.5, 3.0, 4.0, 5.0 (funzionalità rilevate a runtime)
 - **Innocuo per il database:** analisi in sola lettura, garantita dal motore — il server apre transazioni read-only, quindi è Firebird a rifiutare una scrittura
 - **Gratuito** sui tuoi database, a qualunque scala, senza chiave e senza scadenza. Serve una

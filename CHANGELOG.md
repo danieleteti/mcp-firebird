@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-22
+
 ### Added
 
 - **PSQL objects in the generated documentation.** `fb_generate_documentation` stops pretending

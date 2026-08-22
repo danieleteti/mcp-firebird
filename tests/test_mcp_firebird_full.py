@@ -1,7 +1,7 @@
 """
 Comprehensive end-to-end suite for the MCP Firebird stdio server.
 
-Exercises every JSON-RPC method, all 12 fb_ tools, all three prompts, the schema
+Exercises every JSON-RPC method, all 13 fb_ tools, all three prompts, the schema
 resource, and the error/recovery paths against a real Firebird 5.0 seeded with
 tests/seed/seed.sql + problems.sql. Assertions are tied to the guaranteed seed
 fixtures and use substring/upper() checks rather than brittle exact equality.
@@ -55,7 +55,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.4.0"
+    assert res["serverInfo"]["version"] == "0.5.0"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -64,7 +64,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.4.0"
+    assert res["serverInfo"]["version"] == "0.5.0"
     assert res["protocolVersion"] == "2025-03-26"
 
 

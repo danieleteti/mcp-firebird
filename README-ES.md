@@ -40,7 +40,7 @@ lo ejecutas tú, cuando y si lo decides.
 > servidor es un ejemplo completo y real de lo que puedes construir con ellos.
 
 - **Transporte:** stdio (JSON-RPC 2.0, protocolo MCP `2025-03-26`)
-- **Identidad del servidor:** `mcp-firebird` v`0.4.0`
+- **Identidad del servidor:** `mcp-firebird` v`0.5.0`
 - **Motores soportados:** Firebird 2.5, 3.0, 4.0, 5.0 (capacidades detectadas en tiempo de ejecución)
 - **Seguridad:** análisis de solo lectura, garantizado por el motor — el servidor abre transacciones de solo lectura, así que es Firebird quien rechaza una escritura
 - **Gratis** para tus propias bases de datos, a cualquier escala, sin clave y sin caducidad. La
