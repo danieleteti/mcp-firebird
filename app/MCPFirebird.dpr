@@ -16,7 +16,8 @@ uses
   FirebirdToolsU in '..\providers\FirebirdToolsU.pas',
   FirebirdPromptsU in '..\providers\FirebirdPromptsU.pas',
   FirebirdResourcesU in '..\providers\FirebirdResourcesU.pas',
-  FirebirdStubsU in '..\providers\FirebirdStubsU.pas';
+  FirebirdStubsU in '..\providers\FirebirdStubsU.pas',
+  FirebirdBackupJobU in '..\providers\FirebirdBackupJobU.pas';
 
 var
   LTransport: TMCPStdioTransport;

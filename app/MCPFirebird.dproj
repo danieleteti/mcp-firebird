@@ -113,6 +113,7 @@
         <DCCReference Include="..\providers\FirebirdPromptsU.pas"/>
         <DCCReference Include="..\providers\FirebirdResourcesU.pas"/>
         <DCCReference Include="..\providers\FirebirdStubsU.pas"/>
+        <DCCReference Include="..\providers\FirebirdBackupJobU.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
