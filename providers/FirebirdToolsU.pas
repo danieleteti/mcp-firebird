@@ -32,6 +32,10 @@ type
     [MCPTool('fb_sample_activity', 'Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, record versions collected, and whether the transaction horizon advanced. Use this when the question is what is changing over time rather than what is true right now')]
     function FbSampleActivity(
       [MCPParam('Length of the observation window in seconds (default 5, 1-60)', TMCPParamPresence.Optional)] const seconds: Integer): TMCPToolResult;
+    [MCPTool('fb_monitor_attachments', 'Who is attached right now, from where, and what each attachment is running: idle connections and long-running statements')]
+    function FbMonitorAttachments(
+      [MCPParam('Minutes an attachment must be idle before it is counted as stale (default 30)', TMCPParamPresence.Optional)] const idle_minutes: Integer;
+      [MCPParam('Seconds a statement must run before being flagged (default 60)', TMCPParamPresence.Optional)] const long_statement_seconds: Integer): TMCPToolResult;
     [MCPTool('fb_backup_start', 'Starts a gbak backup of the configured database into firebird.backup_dir and returns at once. The backup is then restored into a scratch database to prove it can be restored. Poll fb_backup_status')]
     function FbBackupStart: TMCPToolResult;
     [MCPTool('fb_backup_status', 'Reports the running or last backup: phase, size, how long each stage took, and whether the backup was proved restorable')]
@@ -44,11 +48,14 @@ uses
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
   Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, Firebird.Activity,
+  Firebird.Attachments,
   FirebirdToolRuntimeU, FirebirdConfigU, FirebirdBackupJobU,
   MVCFramework.MCP.Server, MVCFramework.Logger;
 
 const DEFAULT_STALE_MINUTES = 5;
 const DEFAULT_SAMPLE_SECONDS = 5;
+const DEFAULT_IDLE_MINUTES = 30;
+const DEFAULT_LONG_STATEMENT_SECONDS = 60;
 
 function EngineVersion(AConn: TFirebirdConnection): string;
 begin
@@ -294,6 +301,52 @@ begin
           'sample again while it is happening.'));
         Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_sample_activity'));
       finally SB.Free; A.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbMonitorAttachments(const idle_minutes, long_statement_seconds: Integer): TMCPToolResult;
+var
+  LIdle, LLong: Integer;
+begin
+  LIdle := idle_minutes;
+  if LIdle <= 0 then
+    LIdle := DEFAULT_IDLE_MINUTES;
+  LLong := long_statement_seconds;
+  if LLong <= 0 then
+    LLong := DEFAULT_LONG_STATEMENT_SECONDS;
+  Result := Guard('fb_monitor_attachments',
+    Format('idle_minutes=%d long_statement_seconds=%d', [LIdle, LLong]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      A: TFirebirdAttachments;
+      T: TAttachmentInfo;
+      lAll: TArray<TAttachmentInfo>;
+      SB: TStringBuilder;
+    begin
+      A := TFirebirdAttachments.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+      SB := TStringBuilder.Create;
+      try
+        lAll := A.List;
+        SB.AppendLine(Format('**%d attachment(s) connected.**', [Length(lAll)])).AppendLine;
+        for T in lAll do
+        begin
+          SB.AppendLine(Format('- **%d** %s from %s%s — connected %ds, %s',
+            [T.AttachmentID, T.UserName,
+             IfThen(T.RemoteAddress = '', 'local', T.RemoteAddress),
+             IfThen(T.RemoteProcess = '', '', ' (' + T.RemoteProcess + ')'),
+             T.ConnectedSeconds,
+             IfThen(T.Active, 'active', 'idle')]));
+          if T.CurrentSQL <> '' then
+            SB.AppendLine(Format('  running %ds: `%s`', [T.StatementSeconds, T.CurrentSQL]));
+        end;
+        SB.AppendLine;
+        SB.Append(AdvisoriesToText(A.Analyze(LIdle, LLong),
+          'No idle-connection or long-statement issues found.'));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_monitor_attachments'));
+      finally
+        SB.Free;
+        A.Free;
+      end;
     end);
 end;
 

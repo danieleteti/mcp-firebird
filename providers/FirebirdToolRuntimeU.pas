@@ -99,6 +99,10 @@ begin
       'to perform it, so coordination costs — the ones that collapse throughput while every ' +
       'counter stays calm — do not appear here at all. A quiet window is not a healthy system, ' +
       'and a window is not the workload: sample again while the problem is happening.'
+  else if SameText(AToolName, 'fb_monitor_attachments') then
+    LLimit := 'contention. MON$ reports work performed, never time spent waiting for permission ' +
+      'to perform it, so an attachment blocked on another one''s lock is indistinguishable here ' +
+      'from one that is simply busy.'
   else if SameText(AToolName, 'fb_backup_status') then
     LLimit := 'that the backup is off this machine. A backup proved restorable, sitting on the ' +
       'same disk as the database it came from, survives a corrupt page and not a lost disk.'

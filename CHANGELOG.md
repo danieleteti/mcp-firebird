@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **PSQL objects in the generated documentation.** `fb_generate_documentation` stops pretending
   a database is only tables: stored procedures with their parameters, triggers with the event
   they fire on (2.5+), and PSQL functions and packages on the engines that have them (3.0+).
+- **`fb_monitor_attachments`: who is connected, and what they have been running since.** Every
+  attachment with its user, remote address and process, the statement it is running right now and
+  how long it has been running it — flagging attachments idle beyond `idle_minutes` (default 30)
+  and statements past `long_statement_seconds` (default 60). One `MON$ATTACHMENTS` +
+  `MON$STATEMENTS` query that works unchanged on 2.5 through 5.0.
+
+  What it cannot see is contention: MON$ counts work performed and never time spent waiting for
+  permission to perform it, so an attachment blocked on another one's lock is indistinguishable
+  here from one that is simply busy. The tool says so itself.
 - **`fb_backup_start` / `fb_backup_status`: a backup that proves itself.** A backup nobody has
   restored is a file, not a backup — so the job writes the `.fbk` with `gbak`, restores it into
   a scratch database, checks it arrived, and deletes it again. `fb_backup_start` returns at once

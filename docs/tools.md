@@ -5,7 +5,7 @@
 The full catalogue: what every tool does, how the index advisor decides, the prompts and the
 resource, plus the raw `tools/call` shapes if you drive the server yourself.
 
-## The tools (12 free, plus 9 Enterprise announced in `tools/list`)
+## The tools (13 free, plus 9 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
@@ -19,6 +19,7 @@ resource, plus the raw `tools/call` shapes if you drive the server yourself.
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 | `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
 | `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
+| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Who is attached right now, from where and what each one is running; flags attachments idle beyond `idle_minutes` (default 30) and statements running beyond `long_statement_seconds` (default 60). It cannot see contention: MON$ counts work performed, never time spent waiting to perform it |
 | `fb_backup_start` | *(none)* | Starts a `gbak` backup into `firebird.backup_dir` and **returns before the backup does**. The job then restores what it wrote into a scratch database and deletes it again |
 | `fb_backup_status` | *(none)* | The running or last backup: phase, size, how long each stage took, and whether the backup was proved restorable |
 

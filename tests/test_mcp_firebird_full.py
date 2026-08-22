@@ -93,6 +93,7 @@ FREE_TOOLS = {
     "fb_sample_activity",
     "fb_backup_start",
     "fb_backup_status",
+    "fb_monitor_attachments",
 }
 
 # Announced in tools/list, implemented only in the Enterprise edition.
@@ -454,6 +455,26 @@ def test_fb_monitor_transactions_reports_gap(client):
     assert gap >= 0
 
 
+def test_fb_monitor_attachments_sees_the_connection_asking(client):
+    # The server answers this over its own attachment, so a count of zero is not a quiet
+    # database -- it is a broken query. There is always at least one: this one.
+    text = _tool_text(client, "fb_monitor_attachments", {})
+    count = int(re.search(r"\*\*(\d+) attachment\(s\) connected\.\*\*", text).group(1))
+    assert count >= 1, text
+    assert "SYSDBA" in text.upper()
+
+
+def test_fb_monitor_attachments_thresholds_are_honoured(client):
+    # Nothing here has been idle for a thousand minutes, so the generous call must find nothing.
+    # Both thresholds are echoed nowhere, so what proves they arrived is the absence of findings.
+    text = _tool_text(
+        client,
+        "fb_monitor_attachments",
+        {"idle_minutes": 1000, "long_statement_seconds": 100000},
+    )
+    assert "No idle-connection or long-statement issues found." in text, text
+
+
 # --------------------------------------------------------------------------- #
 # 22-24. prompts
 # --------------------------------------------------------------------------- #
@@ -540,6 +561,8 @@ def test_resources_read_schema(client):
         ("fb_suggest_index_drops", {"table_name": "ORDERS"}),
         ("fb_audit_table", {"table_name": "NOPK_LOG"}),
         ("fb_monitor_transactions", {}),
+        ("fb_monitor_attachments", {}),
+        ("fb_backup_status", {}),
     ],
 )
 def test_tools_state_what_they_do_not_rule_out(client, name, arguments):

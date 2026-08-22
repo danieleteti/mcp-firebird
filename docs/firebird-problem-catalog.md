@@ -32,3 +32,6 @@ they need a fixture on the host, not in the schema, and they live in the private
 | 18 | External SORT with no index proposed for it | SKEWED ORDER BY TAG | fb_suggest_indexes (sort index) | **M2** |
 | 19 | Composite index the query can only seek part of | *(no static fixture — read from the explained plan, 3.0+)* | fb_suggest_indexes (segment match) | **M2** |
 | 20 | Join with no usable index on either side | CUSTOMERS ⋈ ORDERS with CITY inactive | fb_suggest_indexes (two-scan join) | **M2** |
+| 21 | Attachments connected and idle far longer than the work they did | *(no fixture: a pool that never shrinks cannot be seeded, only observed on a live server)* | fb_monitor_attachments (idle_minutes, default 30) | **M2** |
+| 22 | One statement running far longer than the rest of the workload | *(no fixture: the suite's own connection runs nothing long, and a seeded slow statement would be a sleep, not a symptom)* | fb_monitor_attachments (long_statement_seconds, default 60) | **M2** |
+| 23 | A backup that has never been restored, and so is not known to be one | *(no fixture: the check is the restore itself — covered end-to-end in `test_mcp_firebird_full.py`)* | fb_backup_start / fb_backup_status (verification restore) | **M2** |

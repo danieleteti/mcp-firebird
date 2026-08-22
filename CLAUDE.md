@@ -160,6 +160,10 @@ Key `sources/` units and what they own:
   both call `TFirebirdConnection.NewMonitoringSnapshot` between readings — without it every delta
   is zero and the database looks idle under any load. `Measure` executes the SQL it is given, so
   it goes through `IsReadOnlySelect` first (as does `Firebird.Goal`'s `query_time_ms`).
+- `Firebird.Attachments` — who is attached, from where, and the statement each one is running
+  now, from `MON$ATTACHMENTS` + `MON$STATEMENTS` in one query that works unchanged on 2.5-5.0
+  (only the `HasMonTables` guard). Flags idle attachments and long-running statements. It reports
+  state, never waiting: an attachment blocked on a lock looks exactly like a busy one.
 - `Firebird.Backup` — drives a **local** `gbak.exe` through temp files, the second sanctioned
   exception to the no-process-spawning rule. `Backup` writes the `.fbk`; `VerifyRestore` restores
   it into a scratch database with `gbak -c` (creates, refuses an existing file) and deletes it,
@@ -171,7 +175,7 @@ Key `sources/` units and what they own:
 `providers/` layer:
 - `FirebirdConfigU` — reads `firebird.*` keys from dotEnv into `TFirebirdConnectionConfig`
   (`LoadFirebirdConfig`), validates them with speaking errors (`NewConfiguredConnection`).
-- `FirebirdToolsU` — the 12 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
+- `FirebirdToolsU` — the 13 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
   `Guard()`, which opens/frees the configured connection and hands it to the body, logs
   `>> tool args` / `<< tool ok|isError Nms` to the `mcp` log tag and converts
   any exception into an `isError` `TMCPToolResult` instead of an opaque JSON-RPC -32603 — keep new
