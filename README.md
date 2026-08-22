@@ -1,11 +1,11 @@
 **[English](README.md) · [Italiano](README-IT.md) · [Español](README-ES.md) · [Deutsch](README-DE.md)**
 
 <p align="center">
-  <img src="docs/logo.png" alt="MCP Firebird" width="360">
+  <img src="https://raw.githubusercontent.com/danieleteti/mcp-firebird/master/docs/logo.png" alt="MCP Firebird" width="360">
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/License-PolyForm_Internal_Use-blue.svg"></a>
+  <a href="https://github.com/danieleteti/mcp-firebird/blob/master/LICENSE"><img alt="License: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/License-PolyForm_Internal_Use-blue.svg"></a>
   <img alt="MCP protocol 2025-03-26" src="https://img.shields.io/badge/MCP-2025--03--26-brightgreen.svg">
   <a href="https://github.com/danieleteti/mcp-server-delphi"><img alt="powered by mcp-server-delphi" src="https://img.shields.io/badge/powered%20by-mcp--server--delphi-orange.svg"></a>
   <a href="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/danieleteti/mcp-firebird/actions/workflows/ci.yml/badge.svg"></a>
@@ -15,1004 +15,135 @@
 
 **Ask your AI assistant why a query is slow, and get an answer worth acting on.**
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for **Firebird 2.5 to 5.0**,
-written in Delphi against the official `fbclient` driver. Connect it to a database and an assistant
-can read your access plans, tell you which indexes are missing and which ones are dead weight,
-audit a table's health, and find the transactions left open that are holding garbage collection
-back.
+A [Model Context Protocol](https://modelcontextprotocol.io) server for **Firebird 2.5 to 5.0**.
+Point it at a database and your assistant can read the real access plans, tell you which index is
+missing and which four are dead weight, audit a table's health, and find the transaction that has
+been holding garbage collection back since Tuesday.
 
-You can also hand it a goal, *"this query must stop scanning NATURAL"*, *"it has to come in under
-200 ms"*, and let it work: it applies a change, measures it again on the database, and tries again
-if that was not enough. What decides the goal is met is the measurement, not the assistant.
+The answers come out of *your* database, not out of an article: the server asks Firebird for the
+plan (`SET PLANONLY`), reads the monitoring tables (`MON$`), and counts how many distinct values a
+column really holds before claiming an index on it would pay off. Every answer arrives as
+**Finding** (what is wrong), **SQL** (the statement that fixes it) and **Verify** (how to check it
+worked). Nothing is written to your database: the server attaches read-only, and the SQL it hands
+you is yours to run, if and when you decide to.
 
-These are not the generic index tips you can find in any article. The answers come out of *your*
-database: the server asks Firebird for the query's execution plan (`SET PLANONLY`), queries the
-monitoring tables (`MON$`), and counts how many distinct values a column really holds before
-claiming an index on it would pay off.
-
-Every answer arrives in three parts. **Finding**: what it found, and why it is a problem. **SQL**:
-the statement that fixes it, already written. **Verify**: how to check the fix actually worked. No
-tool writes to the database. The server reads, and the SQL it hands you is yours to run, when and
-if you decide to.
-
-> Built with **[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi)**, which in
-> turn stands on **[DelphiMVCFramework](https://github.com/danieleteti/delphimvcframework)**. This
-> server is a complete, real-world example of what you can build with them.
-
-- **Transport:** stdio (JSON-RPC 2.0, MCP protocol `2025-03-26`)
-- **Server identity:** `mcp-firebird` v`0.4.0`
-- **Engine support:** Firebird 2.5, 3.0, 4.0, 5.0 (capability-detected at runtime)
-- **Safety:** read-only analysis, enforced by the engine — the server attaches with a read-only transaction, so a write is refused by Firebird itself
-- **Free** for your own databases, at any scale, with no key and no expiry. A licence is needed only
-  to hand the software to somebody else: resell it inside a product of yours, leave it installed at
-  a client's, expose it as a service ([licence details](#editions--licensing))
-- **[Enterprise edition](#enterprise-edition)**, sold separately: it examines the Firebird *server*,
-  not just the database. It reads `firebird.conf`, the machine's RAM and CPUs, `firebird.log` and
-  the Trace API. You want it when the schema is in order and the database is still slow
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.4.0`
+- **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — capability-detected at runtime
+- **Free** on your own databases, at any scale, no key and no expiry. A licence is needed only to
+  pass the software on to somebody else ([details](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md))
 
 ---
 
-## Table of contents
+## Quickstart
 
-1. [What it does](#what-it-does)
-2. [Editions & licensing](#editions--licensing)
-3. [Enterprise edition](#enterprise-edition)
-4. [How it uses mcp-server-delphi](#how-it-uses-mcp-server-delphi)  <!-- release:drop -->
-5. [Prerequisites](#prerequisites)
-6. [Build](#build)  <!-- release:drop -->
-7. [Configuration (`.env`)](#configuration-env)
-8. [Run & verify manually](#run--verify-manually)
-9. [Install it into your AI agent](#install-it-into-your-ai-agent-claude-gemini-cursor-): Claude Desktop · Claude Code · Gemini CLI · OpenCode · Cursor / VS Code · generic
-10. [Using it from Claude](#using-it-from-claude): worked examples
-11. [Tool reference](#tool-reference)
-12. [Testing the project](#testing-the-project)  <!-- release:drop -->
-13. [Troubleshooting](#troubleshooting)
+Five minutes, four steps. Windows x64.
 
----
+**1. Get the server.** Download the [latest release](https://github.com/danieleteti/mcp-firebird/releases)
+and unzip it, say into `C:\Tools\MCPFirebird`.
+Building from source instead: [Building & testing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/development.md).  <!-- release:drop -->
 
-## What it does
-
-### Tools (10 free, plus 9 Enterprise announced in `tools/list`)
-
-| Tool | Arguments | Purpose |
-|---|---|---|
-| `fb_info` | *(none)* | Engine version + detected capabilities (JSON) |
-| `fb_list_tables` | *(none)* | List user tables |
-| `fb_generate_documentation` | `table_name?` | Markdown docs (columns, PK, indexes, triggers with the event they fire on) for one table, or the whole database — which also lists stored procedures with their parameters, functions and packages (3.0+) |
-| `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection), the engine's **explained plan** on 3.0+ (index names, match quality, join strategy) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
-| `fb_suggest_indexes` | `sql` | Index advice for one query: plain B-tree, **expression** (`COMPUTED BY`), **partial** (5.0+) or an index for the **sort** — and **no index at all** when the scan is the correct plan. Refreshes stale statistics before proposing anything structural |
-| `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
-| `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
-| `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
-| `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
-| `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
-
-Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step. Every
-analysis tool also closes with **what it does not rule out**: a plan cannot see contention, a
-snapshot cannot see accumulation, and a clean answer to a narrow question is not a clean bill
-of health.
-
-### What `fb_suggest_indexes` decides, and in what order
-
-An index is not free: it is written on every INSERT, UPDATE and DELETE into that table, for as
-long as it exists. So the advisor proposes the **cheapest remedy that explains what the plan
-did**, and it is willing to propose nothing at all.
-
-1. **Refresh, don't build.** Firebird stores an index's selectivity when the index is created
-   and never recalculates it. An index that exists and is ignored may be ignored because the
-   optimizer is costing it against last year's data — and answering that with a second index
-   leaves the database paying for writes forever because a number needed refreshing. Nothing
-   here says *"the index is not used, and that is correct"* until the stored figure has been
-   compared with the real one.
-2. **Wake, don't duplicate.** An `INACTIVE` index over the column the query filters by is
-   `ALTER INDEX … ACTIVE`, never a second index beside the sleeping one.
-3. **Say when the scan is right.** The query is executed once and the records it read are
-   compared with the rows it returned. A scan that keeps most of what it reads *is* the correct
-   plan, and so is a scan of a table small enough to be a handful of pages: both come back as a
-   finding with the numbers and **no SQL to run**.
-4. **Then, the right shape.** `UPPER(NAME) = ?` cannot use a plain index at all and gets an
-   expression index, with the expression emitted exactly as written — Firebird matches it only
-   on an exact match. `STATE = 'ACTIVE' AND TAG = ?` gets an index on what it seeks by, plus the
-   partial form on 5.0+, which indexes only the population the query looks at. `ORDER BY` on an
-   unindexed column gets an index whose segments match it **in its own direction** — and a plain
-   statement that no single index serves `ORDER BY a ASC, b DESC`, rather than one that would
-   never be used.
-
-Every finding carries the numbers the rule was applied to, so a DBA who disagrees with a
-threshold can disagree with the threshold rather than with the tool. The design and the
-measurements behind it are in
-[`docs/superpowers/specs/2026-08-07-index-advisor.md`](docs/superpowers/specs/2026-08-07-index-advisor.md).
-
-> **Note:** to measure, this tool **executes the query** it is asked about — once, inside the
-> read-only transaction, and only when the plan actually shows a scan or a sort. On a large
-> table that is a full scan. It never executes anything that is not a plain SELECT, and it does
-> not execute a statement with unbound parameters at all: those bind as NULL, match nothing, and
-> would produce a measurement of a query nobody runs.
-
-### Prompts (3)
-
-- **`optimization_goal`**, the goal-driven loop: set an objective, the assistant iterates the
-  `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
-  max-iterations / no-progress safety stop).
-- **`health_check`**: guided whole-database health review.
-- **`classify_problem`**: starts from the symptom, not from a tool. Places the problem on six
-  axes (temporal shape, volume vs concurrency, locality, coordination vs execution,
-  sensitivity to observation, environment), names the dominant class of the seven, and says
-  which reasoning converges on it — including when the answer is that an SQL connection
-  cannot settle it. Follows the taxonomy in Cisar & Reeves, *Practical Firebird Performance
-  Diagnostics* (IBPhoenix, 2026).
-
-### Resources (1)
-
-- **`firebird://schema`**: the live database schema as a single resource.
-
----
-
-## Editions & licensing
-
-Short version: **if you are using it on your own databases, it is free, and it stays free.**
-No trial, no expiry, no licence key, no seat count, no limit on how many tables or databases
-you point it at. Install it, use it in production, use it every day. Nothing phones home.
-
-The one thing you cannot do is hand it to somebody else.
-
-MCP Firebird is **source-available, not open source** as the Open Source Initiative defines the
-term. Saying that plainly matters more than a badge: from **v0.2.0** it is licensed under the
-[PolyForm Internal Use License 1.0.0](LICENSE). Versions up to and including **v0.1.0 were
-released under Apache-2.0 and remain so** for everyone who received them: a licence already
-granted cannot be revoked, and this project does not pretend otherwise.
-
-### What you may do, free of charge
-
-- Run it against any database you like: yours, your employer's, your client's. Development,
-  staging, production, all of them.
-- Run it at any scale. A hundred tables or ten thousand; one database or fifty.
-- **Use it in your consulting practice.** Diagnose, tune, audit and support your clients'
-  Firebird databases with it, and charge them for your time. It is your tool; keep it.
-- Read the source. All of it. Learn from it, and use what you learn.
-- Modify it. Fix a bug, add a detector, change a message. Run your modified build.
-- Use it in a company of any size, commercial or not, for-profit or not, with no fee and no
-  registration.
-
-### What requires a licence
-
-One idea, expressed three ways: **letting the software out of your hands.**
-
-- **Redistributing it.** Publishing a fork, uploading a build, putting it on a CD, sending the
-  binary to a customer, leaving it installed on a client's server when the engagement ends.
-- **Embedding it in a product you sell.** Shipping it inside your ERP, your installer, your
-  Docker image, your appliance, in source or binary form, modified or not.
-- **Offering it as a service.** Standing it up behind an API or a hosted agent that people
-  outside your organisation can reach.
-
-Where the software runs, and whose database it examines, is your business. Where copies of it end
-up is ours.
-
-If your case is one of these, the licence exists and it is not expensive relative to what you are
-building with it. Write to **d.teti@bittime.it**.
-
-### When you need to buy a licence: worked cases
-
-| Your situation | Licence needed? |
-|---|---|
-| Your DBA runs it against the company's production Firebird every morning | **No.** |
-| Your team of forty developers each run it locally | **No.** No seat count, no registration. |
-| You are a consultant, and you run it from your laptop against your client's database | **No.** It is your tool and it stays your tool. Charge them what you like. |
-| Same, but you are sitting at the client's desk, running it on their server | **No.** Take it with you when you leave. |
-| You leave a copy of it installed on your client's server when you go | **Yes.** The software left your hands. |
-| You are a hosting provider, and you run it against the databases you host | **No.** |
-| ...and you give your customers a button that runs it for them | **Yes.** That is offering it as a service. |
-| You ship it inside your Delphi ERP so your customers get "AI database tuning" | **Yes.** Embedding in a product you supply. |
-| You publish a fork on GitHub with your improvements | **Yes.** Talk to us first: we would rather merge it. |
-| You are writing a blog post, a talk, or a university course about it | **No.** Read it, quote it, teach it. |
-| You are on `v0.1.0`, which you obtained under Apache-2.0 | **No.** That version stays Apache-2.0 for you forever. |
-
-The rule behind the table, if you would rather reason than look things up: **ask where the
-software ends up, never what you did with it.** As long as every copy of MCP Firebird stays in
-your hands, you owe nothing: not for the scale you run it at, not for the money it makes you,
-not for whose database you point it at. The moment a copy leaves, we should talk.
-
-There is also a paid **[Enterprise edition](#enterprise-edition)**, a different product, not a
-crippled free tier. Everything described in the rest of this README is in the free one.
-
----
-
-## Enterprise edition
-
-### Where the free edition ends
-
-The free edition is not a demo, and it is not the Enterprise edition with the good parts taken
-out. It is the whole of one job, done properly: **it makes the database answer for itself.**
-
-It reads your schema. It explains your plans. It finds the index you are missing and the four
-you do not need. It catches the missing primary key, the stale statistics, the transaction
-pinning garbage collection since Tuesday. For most databases, most of the time, that is where
-the problem is, and that is where the problem gets fixed. Plenty of people will use it for years
-and never need anything else, and they will never be asked for a cent.
-
-Then one day it comes back and tells you the truth: *your schema is fine. Your indexes are fine.
-No natural scans, no external sorts, statistics fresh.* And the database is still slow.
-
-**That is the line.** The free edition has answered its question honestly and completely, and the
-answer is that the problem is not in the database. It is in the machine underneath it, and no
-`SELECT` will ever show you that. Not because the tool is holding back, but because SQL cannot
-see outside its own process.
-
-### Where the Enterprise edition begins
-
-It is 2 GB of page buffers on a host with 8 GB of RAM. It is `forced writes` switched off for a
-batch load two years ago and never switched back. It is `LockHashSlots` still at its 2010 default
-under four hundred connections, an index four levels deep, a bugcheck written to `firebird.log`
-every Tuesday at 03:00 that nobody reads.
-
-The free edition connects to Firebird the way your application does: an ordinary SQL connection,
-with ordinary rights. **The Enterprise edition asks for more.** It attaches to the Services
-Manager as an administrator (which is how it streams `firebird.log` back, drives the Trace API,
-and reads the physical storage report), and it reads the server's own configuration and hardware.
-That is a different privilege, a different blast radius, and a different conversation with
-whoever owns the server. Hence a different product.
-
-And it does not stop at telling you what is wrong. **It runs the experiment.** Capture a baseline
-under real load, change exactly one parameter, measure again, compare the distributions (the p95
-and the p99, never the average), and keep the change or put it back. Nobody sells you a number.
-The database tells you the number.
-
-| | Free | Enterprise |
-|---|---|---|
-| Schema, docs, plans, index advice, schema audit | ✅ | ✅ |
-| Transaction & sweep health (`MON$`) | ✅ | ✅ |
-| `fb_diagnose`: the entry point, what is already known and the ordered route to run next | ❌ | ✅ |
-| `fb_analyze_config`: `firebird.conf` / `databases.conf`, read against this engine, this architecture, this workload | ❌ | ✅ |
-| `fb_analyze_storage`: index depth, page fill ratios, record-version chains, page distribution | ❌ | ✅ |
-| `fb_parse_log` (`firebird.log`): errors, sweeps, bugchecks, crashes | ❌ | ✅ |
-| `fb_capture_trace` (Trace API): the real workload, and what actually costs | ❌ | ✅ |
-| `fb_trace_start` / `fb_trace_status` / `fb_trace_stop`: the long window, up to two hours of trace drained in the background | ❌ | ✅ |
-| `fb_analyze_host`: RAM against page buffers, CPU against parallel workers, storage class | ❌ | ✅ |
-| Baselines, distributions, before/after comparison: the experiment | ❌ | ✅ |
-
-Note what is *not* in that table: nothing was moved out of the free edition to build the paid one.
-Every free tool stays free, and the ones still to be written stay on the side of the line they
-belong to. The boundary is not a paywall drawn through a feature list. It is the line between
-querying a database and administering a server, and the free edition was always on one side of it.
-
-The hard part was never parsing `firebird.conf`; anyone can parse an INI file. And nobody can
-honestly hand you the right value for `LockHashSlots`: **Firebird's own documentation states no
-optimum for it**, nor for the page cache, nor for the sort cache. What experience buys you is
-knowing *which* parameter your symptom implicates: that throughput collapsing under concurrency
-while the CPU stays calm points at the lock table and never at the page cache. That map is the
-product. The value at the end of it is not asserted. It is measured, on your database, under
-your load.
-
-You will know when you need it, because the free edition will have told you.
-
-The nine tools above already appear in `tools/list` in the free edition, so your assistant can see
-them and say what it would do with them. Call one and it tells you how to get it.
-
-**Enterprise licences, commercial licences and support subscriptions:** d.teti@bittime.it
-
-
-<!-- release:drop -->
-## How it uses mcp-server-delphi
-
-Every tool is a plain Delphi method decorated with attributes from
-[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi). The framework turns the
-class into an MCP tool provider, generates the JSON-RPC schema from the attributes, and wires it
-to the stdio transport: no protocol code in this repo. From `providers/FirebirdToolsU.pas`:
-
-```pascal
-TFirebirdTools = class(TMCPToolProvider)
-public
-  [MCPTool('fb_info', 'Engine version, dialect, charset and detected capabilities of the configured Firebird database')]
-  function FbInfo: TMCPToolResult;
-
-  [MCPTool('fb_generate_documentation', 'Markdown documentation — columns, primary key, indexes — for one table, or for the whole database when table_name is empty')]
-  function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
-
-  [MCPTool('fb_analyze_query', 'Returns and analyzes the access plan of a SQL query (flags NATURAL scans and external sorts)')]
-  function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
-end;
-```
-
-Prompts (`providers/FirebirdPromptsU.pas`) and resources (`providers/FirebirdResourcesU.pas`) use
-the same attribute approach. See the [mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi)
-repository for the full attribute reference.
-
----
-
-## Prerequisites
-
-- **Windows x64** (the server is a native Win64 console app).
-- A **Firebird client library** (`fbclient.dll`) matching, or newer than, your target server.
-  A 5.0 `fbclient.dll` connects fine to 2.5-5.0 servers.
-- A reachable **Firebird database** to point at.
-
-The download ships no `fbclient.dll` on purpose: the right one is your server's own, and a
-mismatched client is worse than none. Point `firebird.client_lib` at it (see below).
-
----
-
-<!-- release:drop -->
-## Build
-
-To build from source you also need **Delphi 13 Athens** (RAD Studio 37.0) with **FireDAC**, and
-**DMVCFramework** plus the **`mcp-server-delphi`** library checked out locally. For the test matrix,
-the Firebird zip-kits under `fb_versions/` and Python 3 with `pytest`.
-
-Search paths the project expects (set once in `app/MCPFirebird.dproj`):
-
-```
-C:\DEV\mcp-server-delphi\sources
-<DMVCFramework>\sources   (every sources subfolder DMVC needs)
-C:\DEV\mcp-firebird\sources
-C:\DEV\mcp-firebird\providers
-```
-
-Build the Win64 Debug app from the repo root:
-
-```powershell
-cmd /c _build_app.bat
-```
-
-`_build_app.bat` calls `rsvars.bat` then `msbuild app\MCPFirebird.dproj /t:Clean;Build /p:Config=Debug /p:Platform=Win64`.
-The executable lands at **`bin\MCPFirebird.exe`**.
-
-(There is a matching `_build_core.bat` for the DUnitX test project.)
-
----
-
-## Configuration (`.env`)
-
-By default the server reads its configuration from a **`.env` file in the same folder as the
-executable**, so where that is depends on how you got the exe:
-
-| | exe | copy the template with |
-|---|---|---|
-| downloaded release | `MCPFirebird.exe` (the folder you unzipped) | `Copy-Item .env.example .env` |
-| built from source | `bin\MCPFirebird.exe` | `Copy-Item bin\.env.example bin\.env` |
-
-Then edit it. (`.env.example` starts with a dot: `ls` and Explorer hide it unless you ask for
-hidden files. It is in the zip.)
-
-### Choosing a different config folder: `--env <dir>`
-
-By default the `.env` is read from the executable's own folder. Pass **`--env <dir>`** to read it
-from another folder instead. The argument is a **directory** (the folder that *contains* the
-`.env`), not the file itself:
-
-```powershell
-MCPFirebird.exe --env C:\configs\prod      # reads C:\configs\prod\.env
-MCPFirebird.exe --env=C:\configs\prod      # the --env=<dir> form also works
-MCPFirebird.exe --env ..\shared            # relative paths resolve against the working directory
-MCPFirebird.exe                            # no argument -> reads <exe folder>\.env
-MCPFirebird.exe --env C:\configs\prod\.env # WRONG -> stops with an error (see below)
-```
-
-> **`--env` is a folder, never the `.env` file.** If you point it at the file (e.g.
-> `...\prod\.env`) the server refuses to start and prints the fix on stderr (which MCP clients
-> surface in their server logs) instead of silently starting with an empty config:
->
-> ```
-> MCPFirebird: --env must point at the FOLDER that contains the .env file, not at the file itself.
->   got:      C:\configs\prod\.env
->   use this: C:\configs\prod
-> ```
-
-**How the argument reaches the server.** MCP clients don't go through a shell. They spawn the
-executable directly with a `command` plus an `args` **array**, where each array element becomes one
-separate argument. So there is no shell quoting to worry about (paths with spaces are fine), and you
-write the directory as its own array element. Two equivalent forms:
-
-| Form | `args` value |
-|---|---|
-| separate | `["--env", "C:\\configs\\prod"]` |
-| joined | `["--env=C:\\configs\\prod"]` |
-
-**Path notes (Windows):** in JSON, backslashes must be **doubled** (`"C:\\configs\\prod"`), or use
-forward slashes, which Windows accepts and don't need escaping (`"C:/configs/prod"`). Prefer an
-**absolute** path in MCP clients: the working directory they launch with is unpredictable, so
-relative paths are unreliable there. Every startup logs the resolved folder to
-`logs\MCPFirebird.NN.mcp.log`:
-
-```
-Boot: .env directory "C:\configs\prod" (.env exists=True)
-```
-
-> **Note:** logs are always written to a `logs\` subfolder next to the **executable** (`logs\` beside the exe),
-> regardless of `--env`.
-
-#### Passing `--env` from each MCP client
-
-**Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`), **Claude Code** (`.mcp.json`),
-**Cursor** (`.cursor/mcp.json`) and **VS Code** (`.vscode/mcp.json`) all use the same shape, a
-`command` plus an `args` array:
-
-```json
-{
-  "mcpServers": {
-    "firebird": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
-      "args": ["--env", "C:\\configs\\prod"]
-    }
-  }
-}
-```
-
-Claude Code can also add it from the CLI:
-
-```powershell
-claude mcp add firebird -- "C:\Tools\MCPFirebird\MCPFirebird.exe" --env "C:\configs\prod"
-```
-
-**Gemini CLI** (`~/.gemini/settings.json`), same `mcpServers` shape:
-
-```json
-{
-  "mcpServers": {
-    "firebird": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
-      "args": ["--env", "C:\\configs\\prod"]
-    }
-  }
-}
-```
-
-**OpenCode** (`opencode.json`). Note the difference: `command` is a **single array** that already
-includes the arguments (there is no separate `args` field):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "firebird": {
-      "type": "local",
-      "command": ["C:\\Tools\\MCPFirebird\\MCPFirebird.exe", "--env", "C:\\configs\\prod"],
-      "enabled": true
-    }
-  }
-}
-```
-
-#### Serving several databases from one build
-
-Register the **same executable** more than once with different `--env` folders. Each folder holds
-its own `.env`:
-
-```json
-{
-  "mcpServers": {
-    "firebird-prod": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
-      "args": ["--env", "C:\\configs\\prod"]
-    },
-    "firebird-test": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
-      "args": ["--env", "C:\\configs\\test"]
-    }
-  }
-}
-```
-
-```
-C:\configs\prod\.env      <- production host/port/database
-C:\configs\test\.env      <- test host/port/database
-```
-
-The client then shows two independent servers (`firebird-prod`, `firebird-test`), each connected to
-its own database.
-
-| Key | Default | Meaning |
-|---|---|---|
-| `firebird.host` | `localhost` | Server host (TCP). Use the real host/IP for remote DBs |
-| `firebird.port` | `3050` | Server port |
-| `firebird.database` | *(empty)* | Full path (or alias) of the database on the server |
-| `firebird.user` | `SYSDBA` | Login user |
-| `firebird.password` | `masterkey` | Login password |
-| `firebird.charset` | `UTF8` | Connection character set |
-| `firebird.client_lib` | *(empty)* | Full path to `fbclient.dll` to load |
-| `firebird.backup_dir` | *(empty)* | Folder `fb_backup_database` may write backups into. Never accepted from the caller — required only when that tool runs |
-| `logger.config.file` | `loggerpro.stdio.json` | File-logger config (logs go to file only; stdout stays pure JSON-RPC) |
-
-Example `.env`:
+**2. Tell it which database.** Copy `.env.example` next to the exe as `.env` and fill in four lines:
 
 ```ini
-firebird.host=localhost
-firebird.port=3050
 firebird.database=C:\data\MYAPP.FDB
 firebird.user=SYSDBA
 firebird.password=masterkey
-firebird.charset=UTF8
 firebird.client_lib=C:\Program Files\Firebird\Firebird_5_0\fbclient.dll
-logger.config.file=loggerpro.stdio.json
 ```
 
-> **Why a file and not client-passed env vars?** The dotEnv strategy is *file-then-env*: the
-> `.env` file takes priority, OS environment variables are the fallback. Configuring via
-> `.env` works identically across every MCP client because it is read relative to the
-> `.exe`, regardless of the client's working directory. Keep this file out of version control
-> (it is already `.gitignore`d): it holds credentials.
+The zip deliberately ships no `fbclient.dll`: the right one is your own server's client library.
 
----
-
-## Run & verify manually
-
-The server speaks JSON-RPC over stdin/stdout. You can smoke-test it without any MCP client by
-piping framed JSON lines into it. From PowerShell:
-
-```powershell
-$msgs = @(
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"manual","version":"1"}}}'
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fb_info","arguments":{}}}'
-) -join "`n"
-$msgs | & .\MCPFirebird.exe
-```
-
-Expected: an `initialize` result naming `mcp-firebird`, a `tools/list` with the 10 `fb_*` tools,
-and `fb_info` returning the live `engine_version`. (Logs appear under `logs\`; stdout is
-pure JSON-RPC.)
-
----
-
-## Install it into your AI agent (Claude, Gemini, Cursor, …)
-
-This is how the server gets in front of an AI agent: you **register it** in the agent's
-configuration, and from then on the agent can call its tools while answering you. Nothing runs as a
-service and nothing listens on a port. The agent **starts the executable itself**, as a child
-process, and talks to it over stdin/stdout (this is what MCP calls a *stdio server*). Close the
-agent and the server is gone with it.
-
-So the whole installation is: tell the agent **one command** (the absolute path to
-`MCPFirebird.exe`) in the file or CLI its vendor gives you for the purpose. Recipes for the
-common agents follow; all of them are the same command in different syntax. The database
-connection is not part of it: the server reads that from the `.env` beside the executable (above),
-or from `--env <dir>`.
-
-### Claude Desktop
-
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "firebird": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe"
-    }
-  }
-}
-```
-
-Restart Claude Desktop. The `fb_*` tools, the `optimization_goal` / `health_check` / `classify_problem` prompts, and
-the `firebird://schema` resource appear in the client.
-
-### Claude Code (CLI)
-
-Add it with one command (local stdio server):
+**3. Register it with your AI agent.** It is a stdio server — the agent starts the exe itself, so
+the whole installation is one command. Claude Code:
 
 ```powershell
 claude mcp add firebird -- "C:\Tools\MCPFirebird\MCPFirebird.exe"
 ```
 
-Or commit a project-scoped `.mcp.json` at the repo root so teammates inherit it:
+Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`), Cursor (`.cursor/mcp.json`),
+VS Code (`.vscode/mcp.json`) all take the same shape:
 
 ```json
-{
-  "mcpServers": {
-    "firebird": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
-      "args": [],
-      "env": {}
-    }
-  }
-}
+{ "mcpServers": { "firebird": { "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe" } } }
 ```
 
-Verify with `claude mcp list` (or `/mcp` inside a session).
+Gemini CLI and OpenCode differ slightly — snippets for every client are in
+[Setup](https://github.com/danieleteti/mcp-firebird/blob/master/docs/setup.md#install-it-into-your-ai-agent-claude-gemini-cursor-).
 
-### Gemini CLI
+**4. Ask it something.**
 
-Edit `~/.gemini/settings.json` (or a project-level `.gemini/settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "firebird": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
-      "args": [],
-      "cwd": "C:\\Tools\\MCPFirebird",
-      "timeout": 30000,
-      "trust": false
-    }
-  }
-}
-```
-
-Then `/mcp` inside Gemini CLI lists the server and its tools. Setting `cwd` to the exe's folder
-keeps the `logs\` directory tidy (the `.env` is found via the exe path regardless).
-
-### OpenCode
-
-Edit `opencode.json` (global `~/.config/opencode/opencode.json` or per-project) and register a
-**local** MCP server (`command` is an argv array):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "firebird": {
-      "type": "local",
-      "command": ["C:\\Tools\\MCPFirebird\\MCPFirebird.exe"],
-      "enabled": true
-    }
-  }
-}
-```
-
-### Cursor / VS Code
-
-Cursor reads `.cursor/mcp.json`; VS Code (and MCP-aware extensions) read `.vscode/mcp.json`.
-Both use the same shape:
-
-```json
-{
-  "mcpServers": {
-    "firebird": {
-      "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe"
-    }
-  }
-}
-```
-
-### Any other MCP client
-
-The server is a standard **stdio** MCP server. Whatever the client's config format, give it:
-
-- **command:** `C:\Tools\MCPFirebird\MCPFirebird.exe`
-- **args:** *(none)*, or `["--env", "C:\\configs\\prod"]` to use a `.env` from another folder
-- **transport:** stdio
-- **env:** *(none required)*, connection comes from the `.env`
-
-> **Tip:** to point different clients at different databases, give each one a different
-> `--env <dir>` (a folder with its own `.env`). No need to copy the whole install folder. For
-> example, in a Claude Code `.mcp.json`:
-> ```json
-> { "mcpServers": { "firebird": {
->     "command": "C:\\Tools\\MCPFirebird\\MCPFirebird.exe",
->     "args": ["--env", "C:\\configs\\prod"] } } }
-> ```
-
----
-
-## Using it from Claude
-
-Once the server is registered, you talk to Claude in plain language. It picks the right `fb_*`
-tool, runs it against your configured database, and turns the result into ready-to-run SQL. The
-exchanges below assume the seeded demo database; swap in your own table and column names.
-
-> In **Claude Desktop** the tools appear automatically and the two prompts show up as commands
-> (the 🔌 / "+" menu). In **Claude Code** run `/mcp` to inspect the server, and the prompts are
-> available as slash commands. You can always nudge it explicitly: *"use the firebird tools"*.
-
-### 1. Get your bearings
-
-> **You:** What Firebird version am I connected to, and which features are available?
-
-Claude calls **`fb_info`** and reports the engine version, dialect, charset and detected
-capabilities (MON$ tables, explained plans, BOOLEAN, INT128, timezones, parallel workers).
-
-> **You:** List the tables in the database.
-
-→ **`fb_list_tables`** → `CUSTOMERS`, `ORDERS`, `NOPK_LOG`, `OVERIDX`, `STALE_T`, …
-
-### 2. Document a schema
-
-> **You:** Document the CUSTOMERS table.
-
-→ **`fb_generate_documentation`** → columns, the `CUSTOMER_ID` primary key and the indexes.
-
-> **You:** Generate full Markdown documentation for the whole database and put it in a file.
-
-→ **`fb_generate_documentation`** again (no table = whole DB). Claude returns the Markdown; ask it to
-save the text to `docs/schema.md` if you want it on disk.
-
-### 3. Diagnose a slow query and fix it
-
-> **You:** This query is slow, why?
-> `SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'`
-
-→ **`fb_analyze_query`** → *"⚠️ NATURAL scan on CUSTOMERS: the filtered column `CITY` is not
-usefully indexed."*
-
+> **You:** What Firebird version am I connected to, and which tables are in the database?
+>
+> **You:** This query is slow, why? `SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'`
+>
 > **You:** Suggest an index that fixes it.
 
-→ **`fb_suggest_indexes`** → a ready-to-run statement plus how to verify:
-
-```sql
-CREATE INDEX IDX_CUSTOMERS_CITY ON CUSTOMERS (CITY);
--- Verify: re-run fb_analyze_query; the NATURAL scan on CUSTOMERS should be gone.
-```
-
-> **You:** And this one? `SELECT * FROM ORDERS WHERE TOTAL > 100`
-
-→ **`fb_suggest_indexes`** → *"Table ORDERS is scanned when filtered by TOTAL, and that is the
-right plan: the scan returns 93% of what it reads (4650 of 5004 records)."* No SQL, because
-there is nothing worth running: an index here would be maintained on every INSERT and would
-save nothing.
-
-> **You:** And this one? `SELECT * FROM CUSTOMERS WHERE UPPER(NAME) = 'ACME'`
-
-→ **`fb_suggest_indexes`** → *"a plain index on `NAME` can never serve it: the index stores the
-column, the query asks for the result of the function"*, and
-
-```sql
-CREATE INDEX IDX_CUSTOMERS_UPPER_NAME ON CUSTOMERS COMPUTED BY (UPPER(NAME));
-```
-
-> **You:** And this one? `SELECT * FROM CUSTOMERS ORDER BY CITY`
-
-→ **`fb_analyze_query`** flags an **external SORT** (no usable index for the ordering), and
-**`fb_suggest_indexes`** now answers it: an index on `(CITY)` in the direction the query asks
-for, with a warning when reading most of a table through an index would cost more than the sort
-it removes.
-
-### 4. Clean up redundant indexes
-
-> **You:** Which indexes on ORDERS can I safely drop?
-
-→ **`fb_suggest_index_drops`** → flags `IDX_ORDERS_CUSTOMER_DUP` as a duplicate of the
-system foreign-key index, with the `DROP INDEX` statement and a verify step.
-
-> **You:** Do the same for CUSTOMERS.
-
-→ flags the redundant left-prefix (`IDX_CUST_NAME`), the inactive index (`IDX_CUST_CITY`) and
-the low-selectivity index (`IDX_CUST_STATUS`).
-
-### 5. Audit schema health
-
-> **You:** Audit the NOPK_LOG table.
-
-→ **`fb_audit_table`** → *"🛑 critical: Table NOPK_LOG has no PRIMARY KEY …"* with the
-`ALTER TABLE … ADD CONSTRAINT` fix. On `OVERIDX` it reports over-indexing; on `STALE_T` it
-reports stale statistics with the `SET STATISTICS INDEX …` fix.
-
-> **You:** Run a full health check on the database.
-
-→ Claude uses the **`health_check`** prompt: `fb_info` → `fb_list_tables` → `fb_suggest_index_drops`
-per table → a single summary grouped by table with all the ready-to-run SQL.
-
-### 6. Goal-driven optimization (iterate until met)
-
-The **`optimization_goal`** prompt makes Claude loop: measure → suggest → re-measure, stopping as
-soon as the goal is met (or it can't improve).
-
-> **You:** Use the optimization_goal prompt. Keep optimizing until this query no longer does a
-> natural scan:
-> `SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'`
-
-Claude:
-1. Calls **`fb_evaluate_goal`** (`goal_type=query_no_natural_scan`) → `met: false` (baseline).
-2. Calls `fb_analyze_query` + `fb_suggest_indexes`, presents `CREATE INDEX IDX_CUSTOMERS_CITY …`.
-3. You run the SQL (writes are off by default, see [Safety](#safety--compatibility)).
-4. Calls `fb_evaluate_goal` again → `met: true`, and stops with the result.
-
-You can also state the goal numerically, e.g. *"get this query under 50 ms"*
-(`goal_type=query_time_ms`, `threshold=50`).
+That is the whole setup. If the client lists the server but shows no tools, see
+**Troubleshooting**, at the bottom of this page.
 
 ---
 
-### 7. "Is it getting worse, or was it always like this?"
+## What you can ask it
 
-Some problems are not in any one query. They build up.
+| Ask | What happens |
+|---|---|
+| *"Document the CUSTOMERS table"* | Markdown docs: columns, PK, indexes, triggers. Leave the table out and you get the whole database, procedures and packages included |
+| *"Why is this query slow?"* | The access plan, the NATURAL scans and external sorts in it, the engine's explained plan on 3.0+, **and** what the query really cost when executed once |
+| *"Suggest an index"* | The cheapest remedy that explains the plan — refresh stale statistics, wake an inactive index, or create one — and **"no index, the scan is right here"** with the numbers, when that is the answer |
+| *"Which indexes can I drop?"* | Duplicates, redundant prefixes, inactive and low-selectivity indexes, with the `DROP INDEX` and a verify step |
+| *"Audit this table"* | Missing primary key, over-indexing, stale statistics |
+| *"Keep optimizing until this query stops scanning NATURAL"* | The goal loop: it changes, re-measures on the database, and stops when the measurement says the goal is met — not when the assistant thinks so |
+| *"It crawls every afternoon and nobody changed anything"* | Classifies the symptom before touching a tool, then samples `MON$` across a window to show what accumulates |
 
-> **You:** The order screen crawls every afternoon and nobody changed anything. Use the
-> classify_problem prompt.
+Every analysis also closes with **what it does not rule out**: a plan cannot see contention, and a
+snapshot cannot see accumulation.
 
-→ **`classify_problem`** places the symptom on six axes before touching a tool — does it grow over
-hours or appear instantly under load, does it track volume or concurrency, is it concentrated on a
-few tables, is time spent working or waiting — then names the dominant class of the seven and the
-reasoning that converges on it. "Fine at 9am, unusable at 4pm, fine again tomorrow" is temporal
-accumulation, and no plan analysis will ever explain it.
-
-> **You:** Sample the database for 30 seconds now, and again after lunch.
-
-→ **`fb_sample_activity`** reads the MON$ counters twice across the window and reports the
-difference: records read sequentially and by index, pages moved, versions collected, transactions
-started, and whether the transaction horizon advanced at all. A horizon that never moves while
-transactions keep starting is garbage collection getting nowhere — invisible in any single
-snapshot, obvious across two.
-
-Each tool also closes with **what it does not rule out**. A clean plan is not a fast query, and a
-quiet window is not a healthy system: MON$ counts work performed, never time spent waiting for
-permission to perform it.
-
-## Worked session: optimizing a query on `employee.fdb`
-
-A full round-trip against the stock **`employee`** sample database that ships with Firebird
-(`examples/empbuild/employee.fdb`). The outputs below are verbatim tool results.
-
-> **You:** Analyze this Firebird query and suggest improvements:
-> ```sql
-> SELECT emp_no, first_name, last_name, salary
-> FROM employee
-> WHERE salary > 60000
-> ```
-
-**1. Baseline.** `fb_analyze_query` returns (engine `3.0.12`):
-
-```
-PLAN (EMPLOYEE NATURAL)
-```
-> NATURAL scan on: EMPLOYEE. Run `fb_suggest_indexes` on this query for ready-to-run DDL.
-
-`NATURAL` means Firebird reads **every** row of `EMPLOYEE` and throws away those with
-`salary <= 60000`: there is no index on `SALARY` to seek with.
-
-**2. Confirm the problem.** `fb_evaluate_goal` (`goal_type=query_no_natural_scan`):
-
-```json
-{ "goal_type": "query_no_natural_scan", "measured": 1.0, "met": false,
-  "iteration_hint": "plan: PLAN (EMPLOYEE NATURAL)", "engine_version": "3.0.12" }
-```
-
-**3. Get the fix.** `fb_suggest_indexes`:
-
-```sql
-CREATE INDEX IDX_EMPLOYEE_SALARY ON EMPLOYEE (salary);
-```
-> **Verify:** re-run `fb_analyze_query`; the plan should use `IDX_EMPLOYEE_SALARY` and no longer show
-> `EMPLOYEE NATURAL`. Then run `SET STATISTICS INDEX IDX_EMPLOYEE_SALARY;` to refresh selectivity.
-
-**4. Apply it** (the server is read-only: run the DDL yourself), then **re-analyze**: the plan becomes `PLAN (EMPLOYEE INDEX (IDX_EMPLOYEE_SALARY))` and
-`fb_evaluate_goal` returns `met: true`.
-
-**When *not* to add the index.** The win comes from `salary > 60000` being **selective** (few rows).
-If the predicate matched most of the table (e.g. `salary > 0`), the NATURAL scan is actually the
-cheaper plan and the index would just add write overhead. Not every NATURAL scan is a bug.
+**[→ Worked examples, verbatim tool output, a full round-trip on `employee.fdb`](https://github.com/danieleteti/mcp-firebird/blob/master/docs/usage.md)**
 
 ---
 
-## Tool reference
+## The tools
 
-A few call examples (MCP `tools/call` `arguments`):
+Ten tools, three prompts, one resource. Full reference — arguments, what each one decides, the raw
+`tools/call` shapes — in **[docs/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md)**.
 
-```jsonc
-// Describe a table (omit table_name for the whole database)
-{ "name": "fb_generate_documentation", "arguments": { "table_name": "CUSTOMERS" } }
+`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_analyze_query` ·
+`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_evaluate_goal` ·
+`fb_monitor_transactions` · `fb_sample_activity`
 
-// Analyze a query's plan (flags NATURAL scans and external SORTs)
-{ "name": "fb_analyze_query", "arguments": { "sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'" } }
+Prompts: `optimization_goal` (iterate until met) · `health_check` · `classify_problem`.
+Resource: `firebird://schema`.
 
-// Suggest indexes for a slow query
-{ "name": "fb_suggest_indexes", "arguments": { "sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'" } }
-
-// Which indexes to drop on a table
-{ "name": "fb_suggest_index_drops", "arguments": { "table_name": "ORDERS" } }
-
-// Schema-health audit
-{ "name": "fb_audit_table", "arguments": { "table_name": "NOPK_LOG" } }
-
-// What changed over the last 10 seconds (a window, not an instant)
-{ "name": "fb_sample_activity", "arguments": { "seconds": 10 } }
-
-// Goal check: "this query must no longer do a NATURAL scan"
-{ "name": "fb_evaluate_goal",
-  "arguments": { "goal_type": "query_no_natural_scan",
-                 "target": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'",
-                 "threshold": 0 } }
-```
-
-`fb_evaluate_goal` `goal_type` values: `query_no_natural_scan`, `query_time_ms`,
-`no_redundant_indexes`, and `no_stale_index_statistics` — the one whose first move writes
-nothing structural: it counts the indexes on a table whose stored selectivity no longer
-describes the data, so the loop can tell the optimizer the truth before it asks the database to
-carry another index. See
-[`docs/firebird-problem-catalog.md`](docs/firebird-problem-catalog.md) for every problem the
-tools detect, the fixture that provokes it, and the milestone it lands in.
-
-### Enterprise tools
-
-These nine appear in `tools/list` here too, so your assistant knows they exist and can tell you
-what it would do with one. Calling them in this edition returns an `isError` result explaining
-how to get them. They are implemented in the [Enterprise edition](#enterprise-edition), which
-attaches to the Services Manager as an administrator and reads the server's configuration and
-hardware: privileges this edition never asks for.
-
-| Tool | Arguments | What it does |
-|---|---|---|
-| `fb_diagnose` | *(none)* | Start here when something is wrong and you do not know why: what is already known, what to ask, and the route to follow |
-| `fb_analyze_config` | *(none)* | Reads `firebird.conf` and `databases.conf` and reports every setting that matters (page buffers, `TempCacheLimit`, `LockHashSlots`, `MaxUnflushedWrites`, `GCPolicy`, parallel workers) against *this* engine version and *this* server architecture, since the defaults and even the existence of a parameter change across both |
-| `fb_analyze_storage` | `table_name?` | The physical picture no `SELECT` can show: index depth, page fill ratios, record-version chain length, page distribution |
-| `fb_parse_log` | *(none)* | Streams `firebird.log` back over the Services API and separates the noise from what matters: bugchecks, page corruption, I/O errors, sweeps that ran, or never did |
-| `fb_capture_trace` | *(none)* | Opens a bounded Trace API session, samples the real workload, and ranks the statements that actually cost, as a latency distribution, not an average |
-| `fb_trace_start` | `duration_seconds?` | Opens the long window: up to two hours of Trace API capture, drained to disk in the background while the call returns at once |
-| `fb_trace_status` | *(none)* | Reports the running capture: elapsed against duration, bytes captured, and whether the session is still watching |
-| `fb_trace_stop` | *(none)* | Stops the capture, or retrieves a finished one, and returns the same ranked report as `fb_capture_trace`, over hours instead of seconds |
-| `fb_analyze_host` | `config_dir?` | The engine against its hardware: RAM versus the memory the configuration actually commits, core count versus `MaxParallelWorkers` and `CpuAffinityMask`, free space versus the size of the database, and whether the pages it misses cost a seek |
-
-Plus the part that makes them a product rather than a report: **baselines and experiments.** Take a
-measurement under real load, change one parameter, take another, and get a verdict on whether the
-tail moved, with a rollback if it did not.
-
-Firebird's documentation states no optimal value for most of these parameters, and neither will we.
-What the Enterprise edition brings is the map from a symptom to the parameter that explains it, and
-a harness that proves the change worked on your database.
+Nine further tools appear in `tools/list` and belong to the [Enterprise edition](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md#enterprise-edition):
+your assistant can see them and say what it would do with them.
 
 ---
 
-<!-- release:drop -->
-## Testing the project
+## Editions
 
-The suite runs the **DUnitX core tests against real Firebird servers** (2.5 → 5.0) plus a
-**Python stdio compliance suite** and a **core-boundary check**.
+**Using it on your own databases is free, and stays free.** No trial, no expiry, no licence key,
+no seat count. Consultants: it is your tool, use it on your clients' databases and charge for your
+time. The one thing that needs a licence is **letting a copy out of your hands** — redistributing
+it, embedding it in a product you sell, or offering it as a service.
 
-### Prerequisites for the test matrix
+A separate paid **Enterprise edition** picks up where an SQL connection ends: `firebird.conf`, the
+machine's RAM and CPUs, `firebird.log`, the Trace API, the physical storage report. You want it
+when the schema is in order and the database is still slow.
 
-- Firebird zip-kits present under `fb_versions/` (paths/ports in `tests/fbkit.versions.psd1`).
-  Ports: **2.5 → 3070**, 3.0 → 3053, 4.0 → 3054, 5.0 → 3055.
-- **One-time** per kit: the zip-kits ship without a usable `SYSDBA`. With the server stopped,
-  create it in embedded mode (needed for 3.0/4.0/5.0; 2.5 works out of the box):
-  ```
-  <kit>\isql.exe -user SYSDBA "<kit>\security<N>.fdb"
-    CREATE USER SYSDBA PASSWORD 'masterkey';
-    COMMIT; QUIT;
-  ```
-  (`security3.fdb` / `security4.fdb` / `security5.fdb`).
-- Python 3 with `pytest` (`python -m pip install pytest`).
+**[→ Editions, licensing, and the worked cases](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md)** · d.teti@bittime.it
 
-### Run everything (one command)
+---
 
-```powershell
-pwsh tests/run_all.ps1
-```
+## Documentation
 
-#### Or via PyInvoke (`tasks.py`)
-
-A `tasks.py` wraps the whole build + test workflow (`python -m pip install invoke`):
-
-```powershell
-invoke --list                 # show all tasks
-invoke build                  # build the core test project + the MCP app
-invoke core --version 5.0     # core suite against one FB version (start/seed/test/stop)
-invoke matrix                 # core suite across every present FB version
-invoke compliance             # Python stdio MCP compliance suite (on FB 5.0)
-invoke boundary               # enforce the core/MVCFramework boundary
-invoke all                    # full run_all.ps1 (matrix + boundary + compliance)
-```
-
-For each present kit it: starts the server → seeds a fresh `TESTDB.FDB` → runs the core exe →
-stops the server; then runs the boundary check and the Python suite on 5.0. Expected tail:
-
-```
-==== Core suite on FB 2.5 ====   ... 27 passed / 3 ignored
-==== Core suite on FB 3.0 ====   ... 27 passed / 3 ignored
-==== Core suite on FB 4.0 ====   ... 27 passed / 3 ignored
-==== Core suite on FB 5.0 ====   ... 27 passed / 3 ignored
-Core boundary OK: no MVCFramework imports in sources/
-7 passed
-ALL SUITES PASSED
-```
-
-(The 3 *ignored* tests are M2-pending detectors, kept visible as backlog.)
-
-### Run against a single version
-
-```powershell
-pwsh tests/fbkit.ps1   -Action start  -Version 5.0
-pwsh tests/seed/make_seed.ps1          -Version 5.0
-$env:FBTEST_PORT='3055'
-$env:FBTEST_DB='C:\DEV\mcp-firebird\tests\seed\TESTDB.FDB'
-$env:FBTEST_CLIENTLIB=(pwsh tests/fbkit.ps1 -Action client -Version 5.0)
-& 'C:\DEV\mcp-firebird\tests\coreproject\MCPFirebirdCoreTests.exe'
-pwsh tests/fbkit.ps1   -Action stop   -Version 5.0
-```
-
-### Python compliance only
-
-```powershell
-pwsh tests/fbkit.ps1 -Action start -Version 5.0
-pwsh tests/seed/make_seed.ps1 -Version 5.0
-python -m pytest tests/test_mcp_firebird_stdio.py -v
-pwsh tests/fbkit.ps1 -Action stop -Version 5.0
-```
+| | |
+|---|---|
+| [Setup](https://github.com/danieleteti/mcp-firebird/blob/master/docs/setup.md) | Prerequisites, the `.env` reference, `--env <dir>`, several databases from one build, per-client snippets, manual smoke test |
+| [Worked examples](https://github.com/danieleteti/mcp-firebird/blob/master/docs/usage.md) | The conversations, verbatim tool output, an optimization round-trip |
+| [Tool reference](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md) | All ten tools, how the index advisor decides, prompts, resources, Enterprise tools |
+| [Editions & licensing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md) | What is free, what needs a licence, what Enterprise adds |
+| [Building & testing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/development.md) | Delphi build, the 2.5→5.0 test matrix, how it uses mcp-server-delphi |  <!-- release:drop -->
+| [Problem catalog](https://github.com/danieleteti/mcp-firebird/blob/master/docs/firebird-problem-catalog.md) | Every problem detected, the fixture that provokes it, the milestone |
 
 ---
 
@@ -1020,8 +151,8 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Client shows the server but **no tools** | `.env` missing or DB unreachable: the server starts but tools fail on connect. Test with the [manual smoke test](#run--verify-manually). |
-| `Your user name and password are not defined` (SQLSTATE 28000) | Wrong credentials, or a zip-kit without `SYSDBA`. See the one-time init above. |
+| Client shows the server but **no tools** | `.env` missing or DB unreachable: the server starts but tools fail on connect. Test with the [manual smoke test](https://github.com/danieleteti/mcp-firebird/blob/master/docs/setup.md#run--verify-manually). |
+| `Your user name and password are not defined` (SQLSTATE 28000) | Wrong credentials, or a Firebird zip-kit that ships without a usable `SYSDBA` (see [Building & testing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/development.md)). |
 | Analysis tools return empty / no NATURAL scan on a **remote** DB | Ensure `firebird.host` is the real host (the plan analyzer uses the configured host). |
 | `fbclient.dll` not found / wrong bitness | Set `firebird.client_lib` to a **Win64** `fbclient.dll`; a 5.0 client works against 2.5-5.0. |
 | stdout has non-JSON noise | Logging must go to file only: keep `logger.config.file=loggerpro.stdio.json`. |
@@ -1050,13 +181,15 @@ pwsh tests/fbkit.ps1 -Action stop -Version 5.0
 
 ## License
 
-From **v0.2.0**, licensed under the **[PolyForm Internal Use License 1.0.0](LICENSE)**: free on your
-own databases, at any scale, and a licence is needed only to pass the software on to somebody else.
-See [Editions & licensing](#editions--licensing) for what that means in practice, and [`NOTICE`](NOTICE).
+From **v0.2.0**, licensed under the
+**[PolyForm Internal Use License 1.0.0](https://github.com/danieleteti/mcp-firebird/blob/master/LICENSE)**:
+free on your own databases, at any scale, and a licence is needed only to pass the software on to
+somebody else. **v0.1.0 and earlier were released under Apache-2.0, and stay that way** for everyone
+who received them. See
+[Editions & licensing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md)
+and [`NOTICE`](https://github.com/danieleteti/mcp-firebird/blob/master/NOTICE).
 
-**v0.1.0 and earlier were released under Apache-2.0, and stay that way** for everyone who received
-them.
-
-MCP Firebird is a showcase for
-[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi). If you build your own MCP
+Built with **[mcp-server-delphi](https://github.com/danieleteti/mcp-server-delphi)**, which in turn
+stands on **[DelphiMVCFramework](https://github.com/danieleteti/delphimvcframework)**. This server is
+a complete, real-world example of what you can build with them: if you are writing your own MCP
 server in Delphi, start there.

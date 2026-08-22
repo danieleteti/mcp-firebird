@@ -8,7 +8,7 @@ An MCP (Model Context Protocol) **server** for Firebird 2.5–5.0, written in De
 official `fbclient` driver + FireDAC. It talks JSON-RPC 2.0 over stdio. Given a configured
 database, it documents schemas, analyzes query plans, helps the DBA and advises on indexes — strictly
 read-only: no tool runs DDL or write SQL (write tools are M3, still unimplemented, and will ship
-behind an explicit opt-in setting). Full user-facing docs, tool reference and worked examples live in `README.md` —
+behind an explicit opt-in setting). Full user-facing docs, tool reference and worked examples live in `README.md` and `docs/` (setup, usage, tools, editions) —
 read it for anything about *using* the server; this file is about *building* it.
 
 ## Prerequisites
@@ -44,10 +44,10 @@ invoke build-core
 
 ## Running manually / configuring
 
-The app reads `bin\.env` by default (or a folder passed via `--env <dir>`; see README for the
+The app reads `bin\.env` by default (or a folder passed via `--env <dir>`; see `docs/setup.md` for the
 full `--env` contract, per-client MCP JSON snippets, and the `.env` key reference). Smoke-test by
 piping framed JSON-RPC lines into the exe — the exact commands are in
-[README.md § Run & verify manually](README.md#run--verify-manually).
+[docs/setup.md § Run & verify manually](docs/setup.md#run--verify-manually).
 
 ## Testing
 
@@ -67,7 +67,7 @@ kits ship without a usable `SYSDBA`. With the server stopped, create it in embed
   CREATE USER SYSDBA PASSWORD 'masterkey';
   COMMIT; QUIT;
 ```
-See the README's Troubleshooting section for details if this trips you up.
+See README's Troubleshooting section for details if this trips you up.
 
 Ports per version (`tests/fbkit.versions.psd1`): 2.5→3070, 3.0→3053, 4.0→3054, 5.0→3055.
 `tests/fbkit.ps1 -Action <start|stop|client|port> -Version <X.Y>` drives a single kit;
