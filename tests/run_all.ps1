@@ -43,6 +43,11 @@ try {
   $port   = (& "$PSScriptRoot\fbkit.ps1" -Action port   -Version 5.0)
   $client = (& "$PSScriptRoot\fbkit.ps1" -Action client -Version 5.0)
   Copy-Item (Join-Path $root 'bin\loggerpro.stdio.json') $compDir -Force
+  # fb_backup_start refuses to run without a declared destination, and its end-to-end test SKIPS
+  # when the key is absent - a green suite that never backed anything up. The folder holds the
+  # .fbk and, during the verification restore, a second copy of the database.
+  $backupDir = Join-Path $compDir 'backups'
+  New-Item -ItemType Directory -Force $backupDir | Out-Null
   @(
     'firebird.host=localhost'
     "firebird.port=$port"
@@ -51,6 +56,7 @@ try {
     'firebird.password=masterkey'
     'firebird.charset=UTF8'
     "firebird.client_lib=$client"
+    "firebird.backup_dir=$backupDir"
     'logger.config.file=loggerpro.stdio.json'
   ) | Set-Content (Join-Path $compDir '.env')
   pwsh "$PSScriptRoot\check_core_boundary.ps1"

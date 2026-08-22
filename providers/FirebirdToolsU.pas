@@ -32,14 +32,20 @@ type
     [MCPTool('fb_sample_activity', 'Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, record versions collected, and whether the transaction horizon advanced. Use this when the question is what is changing over time rather than what is true right now')]
     function FbSampleActivity(
       [MCPParam('Length of the observation window in seconds (default 5, 1-60)', TMCPParamPresence.Optional)] const seconds: Integer): TMCPToolResult;
+    [MCPTool('fb_backup_start', 'Starts a gbak backup of the configured database into firebird.backup_dir and returns at once. The backup is then restored into a scratch database to prove it can be restored. Poll fb_backup_status')]
+    function FbBackupStart: TMCPToolResult;
+    [MCPTool('fb_backup_status', 'Reports the running or last backup: phase, size, how long each stage took, and whether the backup was proved restorable')]
+    function FbBackupStatus: TMCPToolResult;
   end;
 implementation
 uses
-  System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, JsonDataObjects,
+  System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, System.DateUtils,
+  JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
   Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, Firebird.Activity,
-  FirebirdToolRuntimeU, MVCFramework.MCP.Server, MVCFramework.Logger;
+  FirebirdToolRuntimeU, FirebirdConfigU, FirebirdBackupJobU,
+  MVCFramework.MCP.Server, MVCFramework.Logger;
 
 const DEFAULT_STALE_MINUTES = 5;
 const DEFAULT_SAMPLE_SECONDS = 5;
@@ -289,6 +295,79 @@ begin
         Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_sample_activity'));
       finally SB.Free; A.Free; end;
     end);
+end;
+
+function TFirebirdTools.FbBackupStart: TMCPToolResult;
+begin
+  Result := Guard('fb_backup_start', '',
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      LDir: string;
+    begin
+      { Inside Guard, so a missing firebird.backup_dir comes back as an isError
+        carrying EFirebirdConfig's speaking message instead of an opaque -32603.
+        The connection Guard opened is used for exactly one thing: proving the
+        credentials work before a thread goes off with them. }
+      LDir := LoadBackupDir;
+      if not StartBackupJob(Conn.Config, LDir) then
+        Exit(TMCPToolResult.Error(
+          'A backup is already running. Call fb_backup_status; starting a second one ' +
+          'would have both writing to the same folder at once.'));
+      Result := TMCPToolResult.Text(Format(
+        'Backup started into `%s`. It runs in the background — this call did not wait for it.' +
+        sLineBreak + sLineBreak +
+        'Call **fb_backup_status** to see how it is going. When the backup itself is done ' +
+        'the job restores it into a scratch database and deletes that again, so the answer ' +
+        'is not "a file exists" but "this backup restores".', [LDir]));
+    end);
+end;
+
+function TFirebirdTools.FbBackupStatus: TMCPToolResult;
+var
+  S: TBackupJobState;
+  SB: TStringBuilder;
+begin
+  { No Guard: this touches no database at all, and opening a connection to report
+    on a thread would be the only thing that could make it fail. }
+  LogI('>> fb_backup_status', 'mcp');
+  S := BackupJobState;
+  SB := TStringBuilder.Create;
+  try
+    case S.Phase of
+      bpNever:
+        SB.AppendLine('No backup has been started since this server started. Use fb_backup_start.');
+      bpBackingUp:
+        SB.AppendLine(Format('**Backing up** — still running, %d seconds so far, %.1f MB written to `%s`.',
+          [SecondsBetween(Now, S.StartedAt), S.BackupBytes / 1024 / 1024, S.BackupFile],
+          TFormatSettings.Invariant));
+      bpVerifying:
+        SB.AppendLine(Format(
+          '**Verifying** — still running. The backup finished in %.1fs (%.1f MB) and is now ' +
+          'being restored into a scratch database.',
+          [S.BackupSeconds, S.BackupBytes / 1024 / 1024], TFormatSettings.Invariant));
+      bpDone:
+        begin
+          SB.AppendLine(Format('**Done.** `%s`', [S.BackupFile]));
+          SB.AppendLine(Format('**Size:** %.1f MB  **Backup:** %.1fs  **Verify:** %.1fs',
+            [S.BackupBytes / 1024 / 1024, S.BackupSeconds, S.VerifySeconds],
+            TFormatSettings.Invariant));
+          SB.AppendLine;
+          SB.AppendLine('The backup was restored into a scratch database and then deleted. ' +
+            'It is a backup, not just a file.');
+        end;
+      bpFailed:
+        begin
+          SB.AppendLine('**Failed.** ' + S.Detail);
+          if S.BackupFile <> '' then
+            SB.AppendLine(Format('The backup file itself is at `%s`.', [S.BackupFile]));
+        end;
+    end;
+    if S.GbakLog <> '' then
+      SB.AppendLine.AppendLine('```').AppendLine(S.GbakLog.Trim).AppendLine('```');
+    Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_backup_status'));
+  finally
+    SB.Free;
+  end;
 end;
 
 initialization

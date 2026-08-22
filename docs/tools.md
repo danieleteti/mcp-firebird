@@ -5,7 +5,7 @@
 The full catalogue: what every tool does, how the index advisor decides, the prompts and the
 resource, plus the raw `tools/call` shapes if you drive the server yourself.
 
-## The tools (10 free, plus 9 Enterprise announced in `tools/list`)
+## The tools (12 free, plus 9 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
@@ -19,6 +19,29 @@ resource, plus the raw `tools/call` shapes if you drive the server yourself.
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 | `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
 | `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
+| `fb_backup_start` | *(none)* | Starts a `gbak` backup into `firebird.backup_dir` and **returns before the backup does**. The job then restores what it wrote into a scratch database and deletes it again |
+| `fb_backup_status` | *(none)* | The running or last backup: phase, size, how long each stage took, and whether the backup was proved restorable |
+
+### What the backup needs, and what it proves
+
+A backup nobody has restored is a file, not a backup. So the job does not stop at writing the
+`.fbk`: it restores it into a scratch database with `gbak -c` (which creates, and refuses an
+existing file), checks the database arrived, and throws it away. `fb_backup_status` says
+*"this backup restores"*, not *"a file exists"*.
+
+Three things it needs, all of them yours to arrange:
+
+- **`firebird.backup_dir`** in the `.env`. The destination is declared once, there, and is never
+  taken from the caller — the tools take instructions from whatever is talking to the server.
+- **`gbak.exe` beside your `fbclient.dll`.** The server drives a *local* client tool, the same
+  way plan analysis drives a local `isql.exe`. It never attaches to the Services Manager.
+- **Room for a second copy of the database** on that disk, for as long as the verification
+  restore runs.
+
+One backup at a time: `fb_backup_start` refuses while one is running, and tells you to poll
+instead. And what it cannot tell you: whether the backup is *off this machine*. A backup proved
+restorable, sitting on the same disk as the database it came from, survives a corrupt page and
+not a lost disk.
 
 Every advisory comes with a **Finding**, ready-to-run **SQL**, and a **Verify** step. Every
 analysis tool also closes with **what it does not rule out**: a plan cannot see contention, a

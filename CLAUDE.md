@@ -160,17 +160,26 @@ Key `sources/` units and what they own:
   both call `TFirebirdConnection.NewMonitoringSnapshot` between readings — without it every delta
   is zero and the database looks idle under any load. `Measure` executes the SQL it is given, so
   it goes through `IsReadOnlySelect` first (as does `Firebird.Goal`'s `query_time_ms`).
+- `Firebird.Backup` — drives a **local** `gbak.exe` through temp files, the second sanctioned
+  exception to the no-process-spawning rule. `Backup` writes the `.fbk`; `VerifyRestore` restores
+  it into a scratch database with `gbak -c` (creates, refuses an existing file) and deletes it,
+  because a backup nobody has restored is a file. Takes the connection config **by value**: it
+  issues no SQL and runs on a thread that outlives the tool call.
 - `Firebird.Advisory` — the shared `TAdvisory` record (Severity/Finding/SQLText/Verify) that every
   advisory-producing unit returns, rendered uniformly by `providers/FirebirdToolsU.AdvisoriesToText`.
 
 `providers/` layer:
 - `FirebirdConfigU` — reads `firebird.*` keys from dotEnv into `TFirebirdConnectionConfig`
   (`LoadFirebirdConfig`), validates them with speaking errors (`NewConfiguredConnection`).
-- `FirebirdToolsU` — the 10 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
+- `FirebirdToolsU` — the 12 `fb_*` MCPTool methods (`TFirebirdTools`); every tool body runs through
   `Guard()`, which opens/frees the configured connection and hands it to the body, logs
   `>> tool args` / `<< tool ok|isError Nms` to the `mcp` log tag and converts
   any exception into an `isError` `TMCPToolResult` instead of an opaque JSON-RPC -32603 — keep new
   tools inside `Guard` so failures surface to the MCP client instead of just crashing the request.
+- `FirebirdBackupJobU` — the one-slot backup job: `StartBackupJob` hands `Firebird.Backup` to an
+  anonymous thread and returns at once (False when one is already running), `BackupJobState`
+  reports the phase. Lives in `providers/` because the asynchrony is a protocol concern — MCP
+  cannot stream progress — and `sources/` stays synchronous and directly testable.
 - `FirebirdPromptsU` — the `optimization_goal`, `health_check` and `classify_problem` prompts.
 - `FirebirdResourcesU` — the `firebird://schema` resource.
 
@@ -213,7 +222,8 @@ the MCP transport itself.
   Manager** (`firebird.log`, the Trace API, the storage report — note these stream back over the
   wire and touch no file, so a filesystem-only rule would miss them). `invoke boundary` fails the
   build on both: file reads / process spawning in `sources/` (`Firebird.PlanAnalyzer`, which drives
-  a local `isql`, is the one sanctioned exception), and any `isc_service_*` / `TFDPhysFBService` /
-  `service_mgr` reference. The six locked tools in `providers/FirebirdStubsU.pas` announce the
+  a local `isql`, and `Firebird.Backup`, which drives a local `gbak`, are the two sanctioned
+  exceptions — the allowlist in `tests/check_core_boundary.ps1`), and any `isc_service_*` / `TFDPhysFBService` /
+  `service_mgr` reference. The nine locked tools in `providers/FirebirdStubsU.pas` announce the
   Enterprise edition; their names are a contract — the Python compliance suite is shared with the
   Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.

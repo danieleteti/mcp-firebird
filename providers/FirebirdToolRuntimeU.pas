@@ -99,6 +99,9 @@ begin
       'to perform it, so coordination costs — the ones that collapse throughput while every ' +
       'counter stays calm — do not appear here at all. A quiet window is not a healthy system, ' +
       'and a window is not the workload: sample again while the problem is happening.'
+  else if SameText(AToolName, 'fb_backup_status') then
+    LLimit := 'that the backup is off this machine. A backup proved restorable, sitting on the ' +
+      'same disk as the database it came from, survives a corrupt page and not a lost disk.'
   else
     Exit(ABody);
   Result := ABody + sLineBreak + '---' + sLineBreak +

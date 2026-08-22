@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **PSQL objects in the generated documentation.** `fb_generate_documentation` stops pretending
+  a database is only tables: stored procedures with their parameters, triggers with the event
+  they fire on (2.5+), and PSQL functions and packages on the engines that have them (3.0+).
+- **`fb_backup_start` / `fb_backup_status`: a backup that proves itself.** A backup nobody has
+  restored is a file, not a backup — so the job writes the `.fbk` with `gbak`, restores it into
+  a scratch database, checks it arrived, and deletes it again. `fb_backup_start` returns at once
+  and the work runs on a thread, because a backup takes minutes and an MCP call must not; poll
+  `fb_backup_status` for the phase, the size, and the verdict.
+  Needs `firebird.backup_dir` in the `.env` — declared once there, never accepted from the
+  caller — plus `gbak.exe` beside your `fbclient.dll` and room for a second copy of the
+  database while the restore runs. One backup at a time.
+
+  Still inside the free edition's line: a *local* client tool driven through temp files, the
+  same sanctioned exception `Firebird.PlanAnalyzer` has always had for `isql.exe`. No Services
+  Manager, no file on the server.
+
 ## [0.4.0] - 2026-08-07
 
 `fb_suggest_indexes` used to find `NATURAL` in a plan, pull the predicate columns out of the SQL

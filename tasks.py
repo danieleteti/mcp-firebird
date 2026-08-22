@@ -190,6 +190,10 @@ def release(c, version):
     _fbkit(c, "start", "5.0")
     try:
         _pwsh(c, MAKE_SEED, "-Version", "5.0")
+        # Not inside DIST: the archive is already sealed, and a backup folder the released
+        # zip does not contain is one fewer thing to explain to whoever unpacks it.
+        proof_backups = os.path.join(ROOT, "build", "release-backup-proof")
+        os.makedirs(proof_backups, exist_ok=True)
         with open(os.path.join(DIST, ".env"), "w", encoding="utf-8") as f:
             f.write(
                 f"firebird.host=localhost\n"
@@ -199,6 +203,7 @@ def release(c, version):
                 f"firebird.password=masterkey\n"
                 f"firebird.charset=UTF8\n"
                 f"firebird.client_lib={_client_lib(c, '5.0')}\n"
+                f"firebird.backup_dir={proof_backups}\n"
                 f"logger.config.file=loggerpro.stdio.json\n"
             )
         c.run(f'python -m pytest "{PY_SUITE}" "{PY_SUITE_FULL}" -v', pty=False,
@@ -321,6 +326,11 @@ def _write_compliance_env(c, version):
     """Give the compliance exe its own .env pointing at the seeded TESTDB on this kit."""
     os.makedirs(COMPLIANCE_DIR, exist_ok=True)
     shutil.copy2(LOGGER_CONFIG, COMPLIANCE_DIR)  # logger.config.file resolves against the exe folder
+    # fb_backup_start refuses to run without a declared destination, and its end-to-end test
+    # SKIPS when the key is absent -- a green suite that never backed anything up. The folder
+    # holds the .fbk and, during the verification restore, a second copy of the database.
+    backup_dir = os.path.join(COMPLIANCE_DIR, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
     with open(os.path.join(COMPLIANCE_DIR, ".env"), "w", encoding="utf-8") as f:
         f.write(
             f"firebird.host=localhost\n"
@@ -330,6 +340,7 @@ def _write_compliance_env(c, version):
             f"firebird.password=masterkey\n"
             f"firebird.charset=UTF8\n"
             f"firebird.client_lib={_client_lib(c, version)}\n"
+            f"firebird.backup_dir={backup_dir}\n"
             f"logger.config.file=loggerpro.stdio.json\n"
         )
 

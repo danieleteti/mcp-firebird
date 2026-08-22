@@ -1,7 +1,7 @@
 """
 Comprehensive end-to-end suite for the MCP Firebird stdio server.
 
-Exercises every JSON-RPC method, all 10 fb_ tools, all three prompts, the schema
+Exercises every JSON-RPC method, all 12 fb_ tools, all three prompts, the schema
 resource, and the error/recovery paths against a real Firebird 5.0 seeded with
 tests/seed/seed.sql + problems.sql. Assertions are tied to the guaranteed seed
 fixtures and use substring/upper() checks rather than brittle exact equality.
@@ -11,6 +11,7 @@ Companion to test_mcp_firebird_stdio.py — both share the fixtures in conftest.
 import json
 import os
 import re
+import time
 
 import pytest
 
@@ -90,6 +91,8 @@ FREE_TOOLS = {
     "fb_evaluate_goal",
     "fb_monitor_transactions",
     "fb_sample_activity",
+    "fb_backup_start",
+    "fb_backup_status",
 }
 
 # Announced in tools/list, implemented only in the Enterprise edition.
@@ -648,3 +651,31 @@ def test_unknown_method_returns_error_and_survives(client):
     assert "code" in r["error"]
     # server must still respond afterwards
     assert client.call("ping")["result"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# backup: start returns at once, status tells the truth about what happened
+# --------------------------------------------------------------------------- #
+def test_backup_start_returns_immediately_and_status_finishes(client):
+    started = time.monotonic()
+    r = client.call("tools/call", {"name": "fb_backup_start", "arguments": {}})
+    elapsed = time.monotonic() - started
+    text = r["result"]["content"][0]["text"]
+
+    if r["result"].get("isError") and "firebird.backup_dir" in text:
+        pytest.skip("no firebird.backup_dir configured for this run")
+
+    assert not r["result"].get("isError"), text
+    assert elapsed < 5, f"fb_backup_start blocked for {elapsed:.1f}s; it must return at once"
+
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        s = client.call("tools/call", {"name": "fb_backup_status", "arguments": {}})
+        status = s["result"]["content"][0]["text"]
+        if "still running" not in status:
+            break
+        time.sleep(2)
+    else:
+        pytest.fail("backup did not finish within 300s")
+
+    assert "restored into a scratch database" in status, status
