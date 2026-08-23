@@ -12,7 +12,7 @@ Ist der Server registriert, redest du mit Claude in normaler Sprache. Claude wä
 ausführbares SQL. Die folgenden Dialoge setzen die vorbereitete Demo-Datenbank voraus; setz deine
 eigenen Tabellen- und Spaltennamen ein.
 
-> In **Claude Desktop** erscheinen die Tools automatisch, und die beiden Prompts tauchen als Befehle auf
+> In **Claude Desktop** erscheinen die Tools automatisch, und die drei Prompts tauchen als Befehle auf
 > (Menü 🔌 bzw. "+"). In **Claude Code** inspizierst du den Server mit `/mcp`, dort stehen die Prompts
 > als Slash-Befehle bereit. Du kannst jederzeit explizit nachhelfen: *"nutz die Firebird-Tools"*.
 
@@ -83,7 +83,8 @@ Statistiken samt der Korrektur `SET STATISTICS INDEX …`.
 > **Du:** Führ einen vollständigen Health-Check der Datenbank durch.
 
 → Claude nutzt den Prompt **`health_check`**: `fb_info` → `fb_list_tables` → `fb_suggest_index_drops`
-pro Tabelle → eine einzige, nach Tabellen gruppierte Zusammenfassung mit allem direkt ausführbaren SQL.
+pro Tabelle → einmal `fb_audit_security` → eine Zusammenfassung in zwei Teilen: das nach Tabellen
+gruppierte Index-SQL, danach die Befunde zu den Berechtigungen, die kritischen zuerst.
 
 ### 6. Zielgetriebene Optimierung (iterieren, bis das Ziel erreicht ist)
 

@@ -1,7 +1,7 @@
 """
 Comprehensive end-to-end suite for the MCP Firebird stdio server.
 
-Exercises every JSON-RPC method, all 13 fb_ tools, all three prompts, the schema
+Exercises every JSON-RPC method, all 15 fb_ tools, all three prompts, the schema
 resource, and the error/recovery paths against a real Firebird 5.0 seeded with
 tests/seed/seed.sql + problems.sql. Assertions are tied to the guaranteed seed
 fixtures and use substring/upper() checks rather than brittle exact equality.
@@ -55,7 +55,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.5.0"
+    assert res["serverInfo"]["version"] == "0.6.0"
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -64,7 +64,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.5.0"
+    assert res["serverInfo"]["version"] == "0.6.0"
     assert res["protocolVersion"] == "2025-03-26"
 
 
@@ -84,10 +84,12 @@ FREE_TOOLS = {
     "fb_info",
     "fb_list_tables",
     "fb_generate_documentation",
+    "fb_query",
     "fb_analyze_query",
     "fb_suggest_indexes",
     "fb_suggest_index_drops",
     "fb_audit_table",
+    "fb_audit_security",
     "fb_evaluate_goal",
     "fb_monitor_transactions",
     "fb_sample_activity",
@@ -182,6 +184,16 @@ def test_fb_generate_documentation_describes_customers(client):
 def test_fb_generate_documentation_single_table(client):
     text = _tool_text(client, "fb_generate_documentation", {"table_name": "CUSTOMERS"}).upper()
     assert "CUSTOMERS" in text
+
+
+def test_fb_generate_documentation_documents_views_domains_and_checks(client):
+    one = _tool_text(client, "fb_generate_documentation", {"table_name": "BRANCHES"})
+    assert "D_CITY" in one, one
+    assert "VARCHAR(60)" in one, "a UTF8 database stores 60 characters as 240 bytes"
+    assert "CHK_BRANCH_STAFF" in one
+    view = _tool_text(client, "fb_generate_documentation", {"table_name": "V_CUSTOMER_ORDERS"})
+    assert "(view)" in view, view
+    assert "View source" in view
 
 
 def test_fb_generate_documentation_whole_db(client):
@@ -476,6 +488,98 @@ def test_fb_monitor_attachments_thresholds_are_honoured(client):
 
 
 # --------------------------------------------------------------------------- #
+# 21b. fb_query
+# --------------------------------------------------------------------------- #
+def test_fb_query_returns_the_rows(client):
+    text = _tool_text(
+        client, "fb_query", {"sql": "SELECT CUSTOMER_ID, NAME FROM CUSTOMERS WHERE CUSTOMER_ID = 1"}
+    )
+    assert "| CUSTOMER_ID | NAME |" in text, text
+    assert "CUST_1" in text
+    assert "1 row(s)" in text
+
+
+def test_fb_query_caps_the_rows(client):
+    # The seed holds 5000 customers. Without a cap this answer is the table.
+    text = _tool_text(client, "fb_query", {"sql": "SELECT * FROM CUSTOMERS", "max_rows": 5})
+    assert "5 row(s)" in text, text
+    assert "stopped at the cap of 5" in text, text
+    # Header, separator and five data rows: anything more means the cap did not hold.
+    assert len([ln for ln in text.splitlines() if ln.startswith("| ")]) == 6, text
+
+
+def test_fb_query_defaults_to_one_hundred_rows(client):
+    # One narrow column: with SELECT * the character budget stops this first, which is a
+    # different limit and a different message.
+    text = _tool_text(client, "fb_query", {"sql": "SELECT CUSTOMER_ID FROM CUSTOMERS"})
+    assert "stopped at the cap of 100" in text, text
+
+
+def test_fb_query_stops_a_wide_result_on_size(client):
+    # The row cap bounds rows, not width. Four columns of 200 characters exhaust the budget
+    # long before the hundredth row, and the answer has to say which limit it hit.
+    text = _tool_text(
+        client,
+        "fb_query",
+        {"sql": "SELECT LPAD('', 200, 'x'), LPAD('', 200, 'x'), LPAD('', 200, 'x'), "
+                "LPAD('', 200, 'x') FROM CUSTOMERS"},
+    )
+    assert "too wide" in text, text
+    assert len(text) < 40000, "the budget did not bound the answer"
+
+
+def test_fb_query_refuses_a_delete(client):
+    # The read-only TPB would refuse it anyway; this is the polite refusal in front of it,
+    # and it must not come back as a JSON-RPC error but as a tool result that explains itself.
+    text = _tool_text(client, "fb_query", {"sql": "DELETE FROM CUSTOMERS"})
+    assert "Not executed" in text, text
+    assert "SELECT" in text
+
+
+def test_fb_query_refuses_unbound_placeholders(client):
+    text = _tool_text(client, "fb_query", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = ?"})
+    assert "Not executed" in text, text
+
+
+def test_fb_query_reports_a_bad_table_as_an_error(client):
+    r = client.call(
+        "tools/call",
+        {"name": "fb_query", "arguments": {"sql": "SELECT * FROM NO_SUCH_TABLE_HERE"}},
+    )
+    assert r["result"]["isError"] is True, r["result"]
+
+
+# --------------------------------------------------------------------------- #
+# 21c. fb_audit_security
+# --------------------------------------------------------------------------- #
+def test_fb_audit_security_flags_the_public_grants(client):
+    text = _tool_text(client, "fb_audit_security", {})
+    assert "PUBLIC" in text, text
+    assert "CUSTOMERS" in text
+    assert "NOPK_LOG" in text
+    assert "critical" in text, "a write grant to PUBLIC is not a warning"
+
+
+def test_fb_audit_security_flags_delegation_and_dead_roles(client):
+    text = _tool_text(client, "fb_audit_security", {})
+    assert "REPORT_USER" in text, text
+    assert "GRANT OPTION" in text
+    assert "DEAD_ROLE" in text
+
+
+def test_fb_audit_security_leaves_out_the_system_tables(client):
+    # PUBLIC holds SELECT on most of RDB$: reporting those buries the grants somebody made.
+    text = _tool_text(client, "fb_audit_security", {})
+    assert "RDB$RELATIONS" not in text, text
+
+
+def test_fb_audit_security_says_what_it_cannot_see(client):
+    text = _tool_text(client, "fb_audit_security", {})
+    assert "Not ruled out by this check" in text, text
+    assert "security database" in text
+
+
+# --------------------------------------------------------------------------- #
 # 22-24. prompts
 # --------------------------------------------------------------------------- #
 def test_prompts_list(client):
@@ -513,6 +617,8 @@ def test_prompts_get_health_check(client):
     blob = json.dumps(r["result"])
     assert r["result"]["messages"]
     assert "fb_list_tables" in blob
+    # A health review that never asks who may read the data reviews half the database.
+    assert "fb_audit_security" in blob
 
 
 def test_prompts_get_classify_problem(client):
@@ -556,10 +662,12 @@ def test_resources_read_schema(client):
 @pytest.mark.parametrize(
     "name,arguments",
     [
+        ("fb_query", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}),
         ("fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}),
         ("fb_suggest_indexes", {"sql": "SELECT * FROM CUSTOMERS WHERE CITY = 'Rome'"}),
         ("fb_suggest_index_drops", {"table_name": "ORDERS"}),
         ("fb_audit_table", {"table_name": "NOPK_LOG"}),
+        ("fb_audit_security", {}),
         ("fb_monitor_transactions", {}),
         ("fb_monitor_attachments", {}),
         ("fb_backup_status", {}),

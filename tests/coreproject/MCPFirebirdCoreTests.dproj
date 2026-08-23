@@ -88,6 +88,8 @@
         <DCCReference Include="..\..\sources\Firebird.Activity.pas"/>
         <DCCReference Include="..\..\sources\Firebird.Attachments.pas"/>
         <DCCReference Include="..\..\sources\Firebird.Backup.pas"/>
+        <DCCReference Include="..\..\sources\Firebird.Query.pas"/>
+        <DCCReference Include="..\..\sources\Firebird.SecurityAudit.pas"/>
         <DCCReference Include="Test.Firebird.Connection.pas"/>
         <DCCReference Include="Test.Firebird.Capabilities.pas"/>
         <DCCReference Include="Test.Firebird.Introspection.pas"/>
@@ -102,6 +104,8 @@
         <DCCReference Include="Test.Firebird.Activity.pas"/>
         <DCCReference Include="Test.Firebird.Backup.pas"/>
         <DCCReference Include="Test.Firebird.Attachments.pas"/>
+        <DCCReference Include="Test.Firebird.Query.pas"/>
+        <DCCReference Include="Test.Firebird.SecurityAudit.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

@@ -11,7 +11,7 @@ Registrato il server, gli parli normalmente: sceglie lui il tool `fb_*` giusto, 
 database che hai configurato, e ti restituisce SQL già pronto. Gli scambi qui sotto girano sul
 database demo; al posto di tabelle e colonne metti le tue.
 
-> In **Claude Desktop** i tool compaiono da soli e i due prompt li trovi fra i comandi (menu 🔌 /
+> In **Claude Desktop** i tool compaiono da soli e i tre prompt li trovi fra i comandi (menu 🔌 /
 > "+"). In **Claude Code** usa `/mcp` per ispezionare il server, e i prompt sono slash command. E
 > puoi sempre forzargli la mano: *"usa i tool firebird"*.
 
@@ -82,7 +82,8 @@ quello poco selettivo (`IDX_CUST_STATUS`).
 > **Tu:** Fammi un health check completo del database.
 
 → Claude usa il prompt **`health_check`**: `fb_info` → `fb_list_tables` → `fb_suggest_index_drops`
-su ogni tabella → un unico riepilogo per tabella, con tutto l'SQL già pronto.
+su ogni tabella → `fb_audit_security` una volta → un riepilogo in due parti: l'SQL degli indici
+raggruppato per tabella, poi i rilievi sui grant, prima i critical.
 
 ### 6. Ottimizzare per obiettivo (finché non è raggiunto)
 

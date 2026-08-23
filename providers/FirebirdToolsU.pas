@@ -13,6 +13,9 @@ type
     function FbListTables: TMCPToolResult;
     [MCPTool('fb_generate_documentation', 'Markdown documentation for one table (columns, primary key, indexes, triggers with the event they fire on), or for the whole database when table_name is empty — which also lists stored procedures with their parameters, functions and packages (3.0+)')]
     function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
+    [MCPTool('fb_query', 'Runs a read-only SELECT and returns the rows as a Markdown table. Capped at max_rows (default 100, ceiling 1000); anything that is not a plain SELECT is refused, and so is a statement with unbound placeholders')]
+    function FbQuery([MCPParam('The SELECT to run')] const sql: string;
+      [MCPParam('Maximum rows to return (default 100, ceiling 1000)', TMCPParamPresence.Optional)] const max_rows: Integer): TMCPToolResult;
     [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported')]
     function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
     [MCPTool('fb_suggest_indexes', 'Index advice for one query, as ready-to-run DDL: plain B-tree, expression (COMPUTED BY) or partial (5.0+), whichever the predicate calls for — and no index at all when the scan is the correct plan. Refreshes stale statistics before proposing anything structural. Executes the query once to measure what the scan reads against what it returns, so on a large table this costs a full scan')]
@@ -21,6 +24,8 @@ type
     function FbSuggestIndexDrops([MCPParam('Table name')] const table_name: string): TMCPToolResult;
     [MCPTool('fb_audit_table', 'Schema-health audit of a table: missing PK, over-indexing, stale statistics')]
     function FbAuditTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
+    [MCPTool('fb_audit_security', 'Who holds which privileges inside this database, and which grant is a mistake: privileges held by PUBLIC, delegation via WITH GRANT OPTION, roles nobody is a member of')]
+    function FbAuditSecurity: TMCPToolResult;
     [MCPTool('fb_evaluate_goal', 'Deterministically measures an optimization goal and returns whether it is met')]
     function FbEvaluateGoal(
       [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes | no_stale_index_statistics')] const goal_type: string;
@@ -48,10 +53,13 @@ uses
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
   Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, Firebird.Activity,
-  Firebird.Attachments,
+  Firebird.Attachments, Firebird.Query, Firebird.SecurityAudit,
   FirebirdToolRuntimeU, FirebirdConfigU, FirebirdBackupJobU,
   MVCFramework.MCP.Server, MVCFramework.Logger;
 
+{ Enough rows to see the shape of who holds what. Past this the table is not read, it is
+  scrolled, and the findings underneath it are what matters anyway. }
+const GRANT_ROWS_SHOWN = 200;
 const DEFAULT_STALE_MINUTES = 5;
 const DEFAULT_SAMPLE_SECONDS = 5;
 const DEFAULT_IDLE_MINUTES = 30;
@@ -109,6 +117,86 @@ begin
         if LTable.Trim.IsEmpty then Result := TMCPToolResult.Text(D.DatabaseMarkdown)
         else Result := TMCPToolResult.Text(D.TableMarkdown(LTable.ToUpper));
       finally D.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbQuery(const sql: string; const max_rows: Integer): TMCPToolResult;
+var LSql: string; LMaxRows: Integer;
+begin
+  LSql := sql;
+  // Same optional-Integer caveat as fb_monitor_transactions: 0 means "not passed", and
+  // Firebird.Query turns it into the documented default.
+  LMaxRows := max_rows;
+  Result := Guard('fb_query', Format('sql=%s max_rows=%d', [LSql, LMaxRows]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    begin
+      Result := TMCPToolResult.Text(
+        WithLimits(RunSelect(Conn, LSql, LMaxRows).ToMarkdown, 'fb_query'));
+    end);
+end;
+
+function TFirebirdTools.FbAuditSecurity: TMCPToolResult;
+begin
+  Result := Guard('fb_audit_security', '',
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      A: TFirebirdSecurityAudit;
+      G: TGrantSummary;
+      R: TRoleInfo;
+      lGrants: TArray<TGrantSummary>;
+      lRoles: TArray<TRoleInfo>;
+      SB: TStringBuilder;
+    begin
+      A := TFirebirdSecurityAudit.Create(Conn);
+      SB := TStringBuilder.Create;
+      try
+        lGrants := A.Grants;
+        lRoles := A.Roles;
+        if Length(lGrants) = 0 then
+          SB.AppendLine('**No grants on user objects.** Every object is reachable only by its ' +
+            'owner and by SYSDBA.').AppendLine
+        else
+        begin
+          SB.AppendLine(Format('**%d grant(s) on user objects.** Owners are not listed: every ' +
+            'object''s owner holds everything on it by definition.',
+            [Length(lGrants)])).AppendLine;
+          SB.AppendLine('| Grantee | Object | Privileges | Grant option | Granted by |');
+          SB.AppendLine('|---|---|---|---|---|');
+          for var lRow := 0 to High(lGrants) do
+          begin
+            if lRow >= GRANT_ROWS_SHOWN then
+            begin
+              SB.AppendLine(Format('| … | *and %d more, not listed* | | | |',
+                [Length(lGrants) - GRANT_ROWS_SHOWN]));
+              Break;
+            end;
+            G := lGrants[lRow];
+            SB.AppendLine(Format('| %s%s | %s%s | %s | %s | %s |',
+              [G.Grantee, IfThen(G.GranteeIsRole, ' *(role)*', ''),
+               G.ObjectName, IfThen(G.ObjectKind = 'table', '', ' *(' + G.ObjectKind + ')*'),
+               G.Privileges, IfThen(G.WithGrantOption, 'yes', 'no'),
+               IfThen(G.Grantor = '', '—', G.Grantor)]));
+          end;
+          SB.AppendLine;
+          { The listing is capped; the findings below it are not. Whatever was left out of the
+            table, anything wrong with it is still reported. }
+        end;
+
+        SB.AppendLine(Format('**%d user-defined role(s).**', [Length(lRoles)]));
+        for R in lRoles do
+          SB.AppendLine(Format('- `%s` (owner %s) — %s', [R.RoleName,
+            IfThen(R.Owner = '', 'unknown', R.Owner),
+            IfThen(Length(R.Members) = 0, 'no members', string.Join(', ', R.Members))]));
+        SB.AppendLine;
+
+        SB.Append(AdvisoriesToText(A.Analyze,
+          'No grant issues found: nothing is held by PUBLIC, nothing carries a grant option, ' +
+          'and every role has members.'));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_audit_security'));
+      finally
+        SB.Free;
+        A.Free;
+      end;
     end);
 end;
 

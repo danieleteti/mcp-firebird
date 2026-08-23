@@ -5,17 +5,19 @@
 El catálogo completo: qué hace cada herramienta, cómo decide el asesor de índices, los
 prompts y el recurso, más las llamadas `tools/call` en crudo si pilotas el servidor tú.
 
-## Las herramientas (13 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
+## Las herramientas (15 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
 
 | Herramienta | Argumentos | Para qué sirve |
 |---|---|---|
 | `fb_info` | *(ninguno)* | Versión del motor y capacidades detectadas (JSON) |
 | `fb_list_tables` | *(ninguno)* | Lista las tablas de usuario |
-| `fb_generate_documentation` | `table_name?` | Documentación Markdown (columnas, PK, índices) de una tabla, o de toda la base de datos |
+| `fb_generate_documentation` | `table_name?` | Documentación Markdown de una tabla — columnas (con el **dominio** en el que se apoyan), PK, índices, **restricciones CHECK**, triggers con el evento que los dispara — o de toda la base de datos, que además lista las **vistas con su SELECT**, los procedimientos con sus parámetros, las funciones y los paquetes (3.0+). Si el nombre es el de una vista, documenta la vista |
+| `fb_query` | `sql`, `max_rows?` | Ejecuta un SELECT de solo lectura y devuelve las filas como tabla Markdown, con un tope de `max_rows` (por defecto 100, máximo 1000) **y de ~20 000 caracteres**, porque un tope de filas limita filas y no anchura. Se rechaza todo lo que no sea un SELECT simple, y también una sentencia con marcadores sin rellenar |
 | `fb_analyze_query` | `sql` | Análisis del plan de acceso (escaneos NATURAL y SORT externos), el **plan explicado** del motor en 3.0+ (nombres de índices, qué parte del índice usó la consulta, estrategia de join) **y coste medido**: un SELECT simple se ejecuta una vez y se informan los registros y las páginas que realmente tocó |
 | `fb_suggest_indexes` | `sql` | Aconseja el índice para una consulta: B-tree normal, **de expresión** (`COMPUTED BY`), **parcial** (5.0+) o un índice para la **ordenación** — y **ningún índice** cuando el escaneo es el plan correcto. Antes de proponer algo estructural refresca las estadísticas obsoletas |
 | `fb_suggest_index_drops` | `table_name` | Señala índices duplicados, con prefijo redundante, inactivos o de baja selectividad |
 | `fb_audit_table` | `table_name` | Auditoría de salud del esquema: PK ausente, exceso de índices, estadísticas obsoletas |
+| `fb_audit_security` | *(ninguno)* | Todos los permisos registrados en la base de datos, una línea por beneficiario y objeto, más los tres hallazgos que suelen ser un error: privilegios en manos de **PUBLIC** (critical si incluyen escritura), delegación con **WITH GRANT OPTION** y roles sin ningún miembro |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Comprobación determinista del objetivo (es lo que mueve el bucle de optimización) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salud de transacciones y sweep **en este instante**: distancia OIT/OAT/Next, transacciones largas que bloquean (con su última sentencia SQL) |
 | `fb_sample_activity` | `seconds?` | Lee los contadores MON$ dos veces a lo largo de una ventana e informa la diferencia: registros leídos en secuencia y por índice, páginas movidas, versiones recogidas, y si el horizonte de transacciones avanzó |
@@ -87,12 +89,37 @@ que se apoya están en
 > al motor como NULL, no casan con nada y producirían la medición de una consulta que nadie
 > ejecuta.
 
+## Qué ve `fb_audit_security` y qué no puede ver
+
+Los permisos viven en la base de datos: `RDB$USER_PRIVILEGES` y `RDB$ROLES`, legibles desde una
+conexión SQL normal — que es exactamente lo que es la edición gratuita. El informe es completo
+sobre *permisos*, y calla sobre todo lo que un permiso no es. Quedan fuera dos clases de fila,
+porque nadie las concedió y listarlas entierra las que sí concedió alguien: los privilegios
+propios del motor sobre `RDB$`/`MON$` y los que cada propietario tiene sobre sus objetos.
+
+No ve la **lista de cuentas**, ni los **roles administrativos**, ni la política de contraseñas, ni
+quién llega siquiera al puerto: eso vive en la base de datos de seguridad y en la configuración
+del servidor, y leerlo exige un attach administrativo que esta edición no hace. Una base de datos
+con todos los permisos correctos puede seguir siendo accesible por una cuenta que nadie recuerda
+haber creado.
+
+Tres hallazgos, en el orden en que importan:
+
+1. **PUBLIC.** No es un grupo al que alguien se haya apuntado: es todo el que pueda conectarse,
+   incluidas las cuentas creadas después de conceder el permiso. `critical` si incluye INSERT,
+   UPDATE o DELETE; `warning` en caso contrario.
+2. **WITH GRANT OPTION.** Quien lo tiene puede ampliar el acceso sin que ningún DBA lo vea, y el
+   permiso resultante es indistinguible de uno hecho por un administrador.
+3. **Un rol sin miembros.** O los privilegios que lleva no se usan, o las cuentas que deberían
+   tenerlos están usando permisos directos.
+
 ## Prompts (3)
 
 - **`optimization_goal`**, el bucle guiado por objetivos: fija una meta y el asistente itera sobre
   las herramientas `fb_*` y vuelve a comprobar `fb_evaluate_goal` hasta que devuelve `met: true`
   (con una parada de seguridad por máximo de iteraciones o por falta de progreso).
-- **`health_check`**: revisión guiada de la salud de toda la base de datos.
+- **`health_check`**: revisión guiada de la salud de toda la base de datos — los índices tabla
+  por tabla, luego los permisos de una sola pasada, diciendo dónde se detiene esa parte.
 - **`classify_problem`**: parte del síntoma, no de una herramienta. Sitúa el problema en seis
   ejes (forma temporal, volumen frente a concurrencia, localidad, coordinación frente a
   ejecución, sensibilidad a la observación, entorno), nombra la clase dominante de las siete

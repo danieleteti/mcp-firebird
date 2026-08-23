@@ -54,3 +54,17 @@ BEGIN
 END^
 SET TERM ; ^
 COMMIT;
+
+/* A domain, a view and a CHECK constraint: the schema features fb_generate_documentation
+   reports and no other tool reads. 2.5-safe. */
+CREATE DOMAIN D_CITY AS VARCHAR(60);
+CREATE TABLE BRANCHES (
+  BRANCH_ID INTEGER NOT NULL PRIMARY KEY,
+  CITY      D_CITY,
+  STAFF     INTEGER,
+  CONSTRAINT CHK_BRANCH_STAFF CHECK (STAFF >= 0)
+);
+CREATE VIEW V_CUSTOMER_ORDERS AS
+  SELECT c.CUSTOMER_ID, c.NAME, o.ORDER_ID, o.TOTAL
+  FROM CUSTOMERS c JOIN ORDERS o ON o.CUSTOMER_ID = c.CUSTOMER_ID;
+COMMIT;

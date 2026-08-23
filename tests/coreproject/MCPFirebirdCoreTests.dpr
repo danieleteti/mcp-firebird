@@ -20,6 +20,8 @@ uses
   Firebird.Activity in '..\..\sources\Firebird.Activity.pas',
   Firebird.Attachments in '..\..\sources\Firebird.Attachments.pas',
   Firebird.Backup in '..\..\sources\Firebird.Backup.pas',
+  Firebird.Query in '..\..\sources\Firebird.Query.pas',
+  Firebird.SecurityAudit in '..\..\sources\Firebird.SecurityAudit.pas',
   Test.Firebird.Connection in 'Test.Firebird.Connection.pas',
   Test.Firebird.Capabilities in 'Test.Firebird.Capabilities.pas',
   Test.Firebird.Introspection in 'Test.Firebird.Introspection.pas',
@@ -33,7 +35,9 @@ uses
   Test.Firebird.TransactionMonitor in 'Test.Firebird.TransactionMonitor.pas',
   Test.Firebird.Activity in 'Test.Firebird.Activity.pas',
   Test.Firebird.Backup in 'Test.Firebird.Backup.pas',
-  Test.Firebird.Attachments in 'Test.Firebird.Attachments.pas';
+  Test.Firebird.Attachments in 'Test.Firebird.Attachments.pas',
+  Test.Firebird.Query in 'Test.Firebird.Query.pas',
+  Test.Firebird.SecurityAudit in 'Test.Firebird.SecurityAudit.pas';
 var
   LRunner: ITestRunner;
   LResults: IRunResults;
@@ -52,6 +56,8 @@ begin
   TDUnitX.RegisterTestFixture(Test.Firebird.Activity.TActivityTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.Backup.TBackupTests);
   TDUnitX.RegisterTestFixture(Test.Firebird.Attachments.TAttachmentsTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.Query.TQueryTests);
+  TDUnitX.RegisterTestFixture(Test.Firebird.SecurityAudit.TSecurityAuditTests);
   LRunner := TDUnitX.CreateRunner;
   LRunner.AddLogger(TDUnitXConsoleLogger.Create(True));
   LRunner.AddLogger(TDUnitXXMLNUnitFileLogger.Create(

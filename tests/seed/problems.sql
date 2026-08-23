@@ -116,3 +116,19 @@ EXECUTE BLOCK AS DECLARE I INTEGER = 1000; BEGIN
 END^
 SET TERM ; ^
 COMMIT;
+
+/* (24) Privileges held by PUBLIC: not a group somebody joined, but every account that can
+   attach — including the ones created after the grant. The second one writes. */
+GRANT SELECT ON CUSTOMERS TO PUBLIC;
+GRANT INSERT, UPDATE ON NOPK_LOG TO PUBLIC;
+
+/* (25) Delegation: a grantee that can widen access without a DBA seeing it. */
+GRANT SELECT ON ORDERS TO REPORT_USER WITH GRANT OPTION;
+
+/* (26) A role nobody is a member of: either dead, or the accounts that should hold its
+   privileges are holding direct grants instead. Next to it, a role that is used as intended:
+   the audit must flag the first and leave the second alone. */
+CREATE ROLE DEAD_ROLE;
+CREATE ROLE REPORT_ROLE;
+GRANT REPORT_ROLE TO REPORT_USER;
+COMMIT;

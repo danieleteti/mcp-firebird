@@ -111,6 +111,7 @@ il database.
 |---|---|---|
 | Schema, documentazione, piani, indici da creare o da togliere, audit dello schema | ✅ | ✅ |
 | Salute di transazioni e sweep (`MON$`) | ✅ | ✅ |
+| Grant registrati nel database (`fb_audit_security`): PUBLIC, grant option, ruoli inutilizzati | ✅ | ✅ |
 | `fb_diagnose`: il punto di ingresso, cosa si sa già e il percorso ordinato da seguire | ❌ | ✅ |
 | `fb_analyze_config`: `firebird.conf` e `databases.conf`, letti per questo motore, questa architettura, questo carico | ❌ | ✅ |
 | `fb_analyze_storage`: profondità degli indici, riempimento delle pagine, catene di versioni dei record, distribuzione delle pagine | ❌ | ✅ |

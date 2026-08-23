@@ -66,7 +66,13 @@ begin
         '1. Call fb_info and report the engine version and capabilities.' + sLineBreak +
         '2. Call fb_list_tables.' + sLineBreak +
         '3. For each table, call fb_suggest_index_drops and collect the findings.' + sLineBreak +
-        '4. Summarize: redundant/duplicate/inactive indexes, with the ready-to-run SQL grouped by table.')
+        { A health review that never asks who may read the data is a review of half the database.
+          One call, whatever the schema size: the grants are one report, not one per table. }
+        '4. Call fb_audit_security once and collect the grant findings.' + sLineBreak +
+        '5. Summarize in two parts: redundant/duplicate/inactive indexes with the ready-to-run ' +
+        'SQL grouped by table, then the grant findings, criticals first. Say plainly that the ' +
+        'grant half stops at the database: accounts, admin roles and authentication live in the ' +
+        'security database, which this server does not attach to.')
     ]);
 end;
 

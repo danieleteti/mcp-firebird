@@ -6,6 +6,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-23
+
+### Added
+
+- **`fb_query`: the rows themselves.** Every other tool executes a query to say something *about*
+  it — a plan, a cost, a goal — and throws the rows away. That is the right default for a server
+  that advises, and the wrong one at the end of every advice loop: "the index is used now" is a
+  claim about a plan, and the question that follows it is always what the query actually returns.
+  `fb_query` runs a read-only SELECT and returns the rows as a Markdown table, capped at
+  `max_rows` (default 100, ceiling 1000) by *not fetching* past the cap — a `SELECT *` over
+  twenty million rows costs the rowset it was capped at, not the table — and at ~20 000
+  characters, because a row cap bounds rows and not width: a hundred rows of a forty-column
+  table is a hundred rows and half a megabyte of Markdown. Anything that is not a plain SELECT
+  is refused before it reaches the engine, and so is a statement with placeholders nobody
+  bound.
+- **`fb_audit_security`: who may do what, and which of those is a mistake.** Every grant recorded
+  in the database, merged to one line per grantee and object, plus three findings: privileges
+  held by **PUBLIC** (`critical` when they include INSERT, UPDATE or DELETE — PUBLIC is not a
+  group somebody joined, it is everyone who can attach, including accounts created after the
+  grant), delegation via **WITH GRANT OPTION**, and **roles nobody is a member of**.
+
+  It reads `RDB$USER_PRIVILEGES` and `RDB$ROLES` over an ordinary SQL connection, and says what
+  that cannot reach: the account list, the admin roles and the authentication settings live in
+  the security database, which this edition does not attach to.
+- **Views, domains and CHECK constraints in the generated documentation.**
+  `fb_generate_documentation` now prints the **domain** a column is built on (one named rule, one
+  place to change it), the table's **CHECK constraints**, and — for a view — the **SELECT behind
+  it**, which is the only place a view's cost is visible. The whole-database document gained a
+  `# Views` section, and asking for a view by name documents the view instead of pretending it is
+  a table.
+
+### Fixed
+
+- **`VARCHAR(n)` was documented as `VARCHAR(n*4)` on a UTF8 database.** `RDB$FIELD_LENGTH` counts
+  bytes; the character count lives in `RDB$CHARACTER_LENGTH`. Every column, procedure parameter
+  and function return type in the generated documentation now reports the length that was
+  declared.
+- **CHECK-constraint triggers are no longer listed as triggers.** Firebird enforces one CHECK
+  with a pair of triggers the user never wrote and cannot alter; they were reported as schema
+  objects, twice per constraint. The constraint itself is reported instead.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added

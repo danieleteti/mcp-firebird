@@ -5,17 +5,19 @@
 Der vollständige Katalog: was jedes Tool tut, wie der Index-Berater entscheidet, die
 Prompts und die Ressource, dazu die rohen `tools/call`-Aufrufe.
 
-## Die Tools (13 kostenlose, dazu 9 Enterprise-Tools, die in `tools/list` angekündigt werden)
+## Die Tools (15 kostenlose, dazu 9 Enterprise-Tools, die in `tools/list` angekündigt werden)
 
 | Tool | Argumente | Zweck |
 |---|---|---|
 | `fb_info` | *(keine)* | Engine-Version + erkannte Fähigkeiten (JSON) |
 | `fb_list_tables` | *(keine)* | Listet die Benutzertabellen auf |
-| `fb_generate_documentation` | `table_name?` | Markdown-Doku (Spalten, PK, Indizes) für eine Tabelle oder für die ganze Datenbank |
+| `fb_generate_documentation` | `table_name?` | Markdown-Doku für eine Tabelle — Spalten (mit der **Domäne**, auf der sie beruhen), PK, Indizes, **CHECK-Constraints**, Trigger samt auslösendem Ereignis — oder für die ganze Datenbank, die zusätzlich **Views mit ihrem SELECT**, Stored Procedures mit ihren Parametern, Funktionen und Packages (3.0+) auflistet. Bei einem View-Namen dokumentiert es den View |
+| `fb_query` | `sql`, `max_rows?` | Führt ein nur lesendes SELECT aus und gibt die Zeilen als Markdown-Tabelle zurück, gedeckelt auf `max_rows` (Standard 100, Obergrenze 1000) **und auf ~20 000 Zeichen**, denn ein Zeilendeckel begrenzt Zeilen und nicht Breite. Alles, was kein reines SELECT ist, wird abgewiesen, ebenso ein Statement mit ungebundenen Platzhaltern |
 | `fb_analyze_query` | `sql` | Analyse des Zugriffsplans (NATURAL-Scans und externe SORTs), der **erklärte Plan** der Engine ab 3.0 (Indexnamen, wie viel vom Index die Abfrage genutzt hat, Join-Strategie) **und gemessene Kosten**: ein reines SELECT wird einmal ausgeführt, berichtet werden die Datensätze und Seiten, die es tatsächlich angefasst hat |
 | `fb_suggest_indexes` | `sql` | Indexrat für eine Abfrage: gewöhnlicher B-Baum, **Ausdrucksindex** (`COMPUTED BY`), **partieller Index** (ab 5.0) oder ein Index für die **Sortierung** — und **gar kein Index**, wenn der Scan der richtige Plan ist. Vor jedem strukturellen Vorschlag werden veraltete Statistiken aufgefrischt |
 | `fb_suggest_index_drops` | `table_name` | Meldet doppelte, präfix-redundante, inaktive und wenig selektive Indizes |
 | `fb_audit_table` | `table_name` | Prüfung der Schema-Gesundheit: fehlender PK, zu viele Indizes, veraltete Statistiken |
+| `fb_audit_security` | *(keine)* | Jede in der Datenbank verzeichnete Berechtigung, eine Zeile je Empfänger und Objekt, dazu die drei Befunde, die meist ein Fehler sind: Rechte in der Hand von **PUBLIC** (critical, wenn sie Schreibrechte enthalten), Delegation über **WITH GRANT OPTION** und Rollen ohne Mitglieder |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministische Zielprüfung (treibt die Optimierungsschleife an) |
 | `fb_monitor_transactions` | `stale_minutes?` | Zustand von Transaktionen und Sweep **in diesem Augenblick**: Abstand zwischen OIT/OAT/Next, blockierende Langläufer (samt ihrem letzten SQL-Statement) |
 | `fb_sample_activity` | `seconds?` | Liest die MON$-Zähler zweimal über ein Zeitfenster und berichtet die Differenz: sequenziell und über Index gelesene Datensätze, bewegte Seiten, eingesammelte Versionen, und ob der Transaktionshorizont vorangekommen ist |
@@ -90,12 +92,38 @@ Entwurf und Messungen dahinter stehen in
 > überhaupt nicht aus: Die kommen als NULL bei der Engine an, treffen auf nichts und ergäben die
 > Messung einer Abfrage, die niemand ausführt.
 
+## Was `fb_audit_security` sieht — und was nicht
+
+Berechtigungen stehen in der Datenbank: `RDB$USER_PRIVILEGES` und `RDB$ROLES`, lesbar über eine
+gewöhnliche SQL-Verbindung — genau das ist die kostenlose Edition. Der Bericht ist also
+vollständig, was *Berechtigungen* angeht, und schweigt zu allem, was keine ist. Zwei Arten von
+Zeilen bleiben draußen, weil niemand sie vergeben hat und sie die vergebenen zudecken würden:
+die eigenen Rechte der Engine auf `RDB$`/`MON$` und das, was jeder Eigentümer auf seinen eigenen
+Objekten hält.
+
+Er sieht weder die **Kontenliste** noch die **Admin-Rollen**, die Passwortregeln oder wer den Port
+überhaupt erreicht: Das liegt in der Sicherheitsdatenbank und in der Serverkonfiguration, und
+dafür braucht es einen administrativen Attach, den diese Edition nicht macht. Eine Datenbank, in
+der jede Berechtigung stimmt, kann trotzdem von einem Konto erreichbar sein, an dessen Anlage sich
+niemand erinnert.
+
+Drei Befunde, in der Reihenfolge ihrer Bedeutung:
+
+1. **PUBLIC.** Keine Gruppe, der jemand beigetreten ist: jeder, der sich verbinden kann,
+   einschließlich der Konten, die nach der Vergabe angelegt wurden. `critical`, wenn INSERT,
+   UPDATE oder DELETE dabei sind, sonst `warning`.
+2. **WITH GRANT OPTION.** Wer sie hält, kann den Zugriff ausweiten, ohne dass ein DBA es sieht,
+   und die entstehende Berechtigung ist von einer administrativen nicht zu unterscheiden.
+3. **Eine Rolle ohne Mitglieder.** Entweder werden ihre Rechte nicht gebraucht, oder die Konten,
+   die sie halten sollten, arbeiten mit direkten Berechtigungen.
+
 ## Prompts (3)
 
 - **`optimization_goal`**, die zielgetriebene Schleife: du setzt ein Ziel, der Assistent iteriert über
   die `fb_*`-Tools und prüft `fb_evaluate_goal` erneut, bis dort `met: true` steht (mit Notbremse bei
   zu vielen Iterationen oder ausbleibendem Fortschritt).
-- **`health_check`**: geführte Gesundheitsprüfung der gesamten Datenbank.
+- **`health_check`**: geführte Gesundheitsprüfung der gesamten Datenbank — Indizes Tabelle für
+  Tabelle, dann die Berechtigungen in einem Durchgang, und sie sagt, wo dieser Teil endet.
 - **`classify_problem`**: beginnt beim Symptom, nicht beim Werkzeug. Ordnet das Problem auf
   sechs Achsen ein (zeitliche Form, Volumen gegen Nebenläufigkeit, Lokalität, Koordination
   gegen Ausführung, Empfindlichkeit gegenüber Beobachtung, Umgebung), benennt die dominante
