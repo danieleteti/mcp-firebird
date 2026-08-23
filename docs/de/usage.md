@@ -12,7 +12,7 @@ Ist der Server registriert, redest du mit Claude in normaler Sprache. Claude wä
 ausführbares SQL. Die folgenden Dialoge setzen die vorbereitete Demo-Datenbank voraus; setz deine
 eigenen Tabellen- und Spaltennamen ein.
 
-> In **Claude Desktop** erscheinen die Tools automatisch, und die drei Prompts tauchen als Befehle auf
+> In **Claude Desktop** erscheinen die Tools automatisch, und die vier Prompts tauchen als Befehle auf
 > (Menü 🔌 bzw. "+"). In **Claude Code** inspizierst du den Server mit `/mcp`, dort stehen die Prompts
 > als Slash-Befehle bereit. Du kannst jederzeit explizit nachhelfen: *"nutz die Firebird-Tools"*.
 

@@ -11,7 +11,7 @@ Registrato il server, gli parli normalmente: sceglie lui il tool `fb_*` giusto, 
 database che hai configurato, e ti restituisce SQL già pronto. Gli scambi qui sotto girano sul
 database demo; al posto di tabelle e colonne metti le tue.
 
-> In **Claude Desktop** i tool compaiono da soli e i tre prompt li trovi fra i comandi (menu 🔌 /
+> In **Claude Desktop** i tool compaiono da soli e i quattro prompt li trovi fra i comandi (menu 🔌 /
 > "+"). In **Claude Code** usa `/mcp` per ispezionare il server, e i prompt sono slash command. E
 > puoi sempre forzargli la mano: *"usa i tool firebird"*.
 

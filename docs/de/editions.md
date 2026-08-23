@@ -119,6 +119,7 @@ zurücknehmen. Niemand verkauft dir eine Zahl. Die Zahl nennt dir die Datenbank.
 | Schema, Doku, Pläne, Index-Beratung, Schema-Audit | ✅ | ✅ |
 | Zustand von Transaktionen und Sweep (`MON$`) | ✅ | ✅ |
 | In der Datenbank verzeichnete Berechtigungen (`fb_audit_security`): PUBLIC, Grant Options, ungenutzte Rollen | ✅ | ✅ |
+| Rechte für ein Anwendungskonto (`app_user_plan` + `fb_suggest_grants`): das Gespräch und das aus dem Katalog erzeugte SQL | ✅ | ✅ |
 | `fb_diagnose`: der Einstiegspunkt, was schon bekannt ist und die geordnete Route, die als Nächstes zu gehen ist | ✗ | ✅ |
 | `fb_analyze_config`: `firebird.conf` / `databases.conf`, gelesen gegen diese Engine, diese Architektur, diese Last | ✗ | ✅ |
 | `fb_analyze_storage`: Indextiefe, Füllgrad der Seiten, Satzversionsketten, Seitenverteilung | ✗ | ✅ |

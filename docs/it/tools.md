@@ -5,7 +5,7 @@
 Il catalogo completo: cosa fa ogni tool, come decide l'advisor degli indici, i prompt e la
 risorsa, più le chiamate `tools/call` grezze se piloti il server da solo.
 
-## I tool (15 free, più i 9 Enterprise annunciati in `tools/list`)
+## I tool (16 free, più i 9 Enterprise annunciati in `tools/list`)
 
 | Tool | Argomenti | A cosa serve |
 |---|---|---|
@@ -17,6 +17,7 @@ risorsa, più le chiamate `tools/call` grezze se piloti il server da solo.
 | `fb_suggest_indexes` | `sql` | Consiglia l'indice per una query: B-tree normale, **su espressione** (`COMPUTED BY`), **parziale** (5.0+) oppure un indice per l'**ordinamento** — e **nessun indice** quando la scansione è il piano giusto. Prima di proporre qualcosa di strutturale aggiorna le statistiche vecchie |
 | `fb_suggest_index_drops` | `table_name` | Segnala indici duplicati, con prefisso ridondante, inattivi o poco selettivi |
 | `fb_audit_table` | `table_name` | Stato di salute dello schema: PK assente, troppi indici, statistiche vecchie |
+| `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Gli statement che danno a un'utenza l'accesso agli oggetti che corrispondono a un pattern **e a nient'altro**: un `CREATE USER` condizionale, un ruolo, i `GRANT` generati dal catalogo con gli identificatori quotati solo dove Firebird lo richiede, e il ruolo concesso nella forma che questa versione supporta (`GRANT DEFAULT` da 4.0; sotto, la nota che la connessione deve passare il ruolo o i grant restano inerti). Poi verifica l'affermazione: i grant a PUBLIC e quelli che l'utenza già possiede fuori dal piano tornano come rilievi, con la `REVOKE` che li chiude |
 | `fb_audit_security` | *(nessuno)* | Tutti i grant registrati nel database, una riga per beneficiario e oggetto, più i tre rilievi che di solito sono errori: privilegi in mano a **PUBLIC** (critical se comprendono la scrittura), delega tramite **WITH GRANT OPTION**, e ruoli di cui non è membro nessuno |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Verifica deterministica dell'obiettivo (è il motore del ciclo di ottimizzazione) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salute di transazioni e sweep **in questo istante**: distanza fra OIT/OAT/Next, transazioni lunghe che bloccano (con il loro ultimo statement SQL) |
@@ -112,11 +113,19 @@ Tre rilievi, nell'ordine in cui contano:
 3. **Un ruolo senza membri.** O i privilegi che porta non servono, o gli account che dovrebbero
    averli stanno usando grant diretti.
 
-## Prompt (3)
+## Prompt (4)
 
 - **`optimization_goal`**: il ciclo guidato da un obiettivo. Lo fissi, l'assistente itera sui tool
   `fb_*` e richiama `fb_evaluate_goal` finché non ottiene `met: true`. Si ferma da solo dopo troppe
   iterazioni o se smette di fare progressi.
+- **`app_user_plan`**: l'unico prompt che parte da una decisione che nessuno ha ancora preso. La
+  maggior parte delle applicazioni Firebird si collega come SYSDBA, e quello non è un problema di
+  privilegi: è un database in cui i privilegi non si applicano, perché SYSDBA non ne è soggetto e
+  nemmeno il proprietario di un oggetto. Quindi il prompt prima guarda (versione del motore, nomi
+  degli oggetti, cosa ha già PUBLIC), poi chiede solo ciò che il catalogo non sa, e finisce in
+  `fb_suggest_grants` invece che in GRANT inventati. Se le risposte non arrivano non si blocca:
+  propone il ripiego, che un'utenza con DML su tutte le tabelle comunque non può fare DROP,
+  cambiare lo schema, leggere il security database, creare utenze o fermare il server.
 - **`health_check`**: esame guidato della salute dell'intero database — gli indici tabella per
   tabella, poi i grant in una sola passata, dicendo dove la parte sui grant si ferma.
 - **`classify_problem`**: si parte dal sintomo, non da un tool. Colloca il problema su sei

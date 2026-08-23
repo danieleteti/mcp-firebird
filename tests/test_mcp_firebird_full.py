@@ -1,7 +1,7 @@
 """
 Comprehensive end-to-end suite for the MCP Firebird stdio server.
 
-Exercises every JSON-RPC method, all 15 fb_ tools, all three prompts, the schema
+Exercises every JSON-RPC method, all 16 fb_ tools, all four prompts, the schema
 resource, and the error/recovery paths against a real Firebird 5.0 seeded with
 tests/seed/seed.sql + problems.sql. Assertions are tied to the guaranteed seed
 fixtures and use substring/upper() checks rather than brittle exact equality.
@@ -90,6 +90,7 @@ FREE_TOOLS = {
     "fb_suggest_index_drops",
     "fb_audit_table",
     "fb_audit_security",
+    "fb_suggest_grants",
     "fb_evaluate_goal",
     "fb_monitor_transactions",
     "fb_sample_activity",
@@ -580,6 +581,82 @@ def test_fb_audit_security_says_what_it_cannot_see(client):
 
 
 # --------------------------------------------------------------------------- #
+# 21d. fb_suggest_grants — the requests people actually make
+# --------------------------------------------------------------------------- #
+def test_grants_create_an_app_user_limited_to_one_prefix(client):
+    """"Create the user APP; it must reach only the tbl_* tables." """
+    text = _tool_text(
+        client, "fb_suggest_grants", {"user_name": "APP", "object_pattern": "tbl_*"}
+    )
+    sql = text.split("```sql")[1].split("```")[0]
+    assert "CREATE USER APP PASSWORD" in sql, sql
+    assert "CREATE ROLE APP_ROLE;" in sql
+    assert "GRANT SELECT ON TBL_ORDERS TO APP_ROLE;" in sql
+    assert "GRANT SELECT ON TBL_ITEMS TO APP_ROLE;" in sql
+    assert "GRANT EXECUTE ON PROCEDURE TBL_SP_COUNT TO APP_ROLE;" in sql
+    # The prefix is a prefix: TBLX_OTHER belongs to somebody else, and CUSTOMERS was never asked for.
+    assert "TBLX_OTHER" not in sql, sql
+    assert "CUSTOMERS" not in sql, sql
+    # The seed runs on 5.0, which has DEFAULT roles: the role must be activated, not just granted.
+    assert "GRANT DEFAULT APP_ROLE TO USER APP;" in sql, sql
+
+
+def test_grants_report_what_makes_only_untrue(client):
+    # PUBLIC holds SELECT on CUSTOMERS, so APP reaches it whatever this plan says.
+    text = _tool_text(
+        client, "fb_suggest_grants", {"user_name": "APP", "object_pattern": "tbl_*"}
+    )
+    assert "CUSTOMERS" in text, "the PUBLIC grant must be reported as a conflict"
+    assert "REVOKE" in text
+    assert "Does the plan hold?" in text
+
+
+def test_grants_readwrite_gives_the_write_privileges(client):
+    text = _tool_text(
+        client,
+        "fb_suggest_grants",
+        {"user_name": "APP", "object_pattern": "tbl_*", "access": "readwrite"},
+    )
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TBL_ORDERS TO APP_ROLE;" in text, text
+
+
+def test_grants_honour_an_exclusion(client):
+    """"...but it must never touch the audit table." """
+    text = _tool_text(
+        client,
+        "fb_suggest_grants",
+        {
+            "user_name": "APP",
+            "object_pattern": "tbl_*",
+            "access": "readwrite",
+            "exclude_pattern": "TBL_ITEMS",
+        },
+    )
+    sql = text.split("```sql")[1].split("```")[0]
+    assert "TBL_ORDERS" in sql
+    assert "TBL_ITEMS" not in sql, sql
+
+
+def test_grants_use_the_role_the_caller_named(client):
+    text = _tool_text(
+        client,
+        "fb_suggest_grants",
+        {"user_name": "APP", "object_pattern": "tbl_*", "role_name": "REPORT_ROLE"},
+    )
+    # REPORT_ROLE is seeded, so the plan adds to it instead of creating it again.
+    assert "CREATE ROLE REPORT_ROLE;" not in text, text
+    assert "GRANT SELECT ON TBL_ORDERS TO REPORT_ROLE;" in text
+
+
+def test_grants_say_so_when_nothing_matches(client):
+    text = _tool_text(
+        client, "fb_suggest_grants", {"user_name": "APP", "object_pattern": "no_such_prefix_*"}
+    )
+    assert "nothing to grant" in text, text
+    assert "CREATE USER" not in text, "an empty match must not leave an account behind"
+
+
+# --------------------------------------------------------------------------- #
 # 22-24. prompts
 # --------------------------------------------------------------------------- #
 def test_prompts_list(client):
@@ -588,6 +665,7 @@ def test_prompts_list(client):
     assert "optimization_goal" in prompts
     assert "health_check" in prompts
     assert "classify_problem" in prompts
+    assert "app_user_plan" in prompts
     arg_names = {a["name"] for a in prompts["optimization_goal"]["arguments"]}
     assert "goal_type" in arg_names
     assert "target" in arg_names
@@ -619,6 +697,20 @@ def test_prompts_get_health_check(client):
     assert "fb_list_tables" in blob
     # A health review that never asks who may read the data reviews half the database.
     assert "fb_audit_security" in blob
+
+
+def test_prompts_get_app_user_plan(client):
+    r = client.call(
+        "prompts/get",
+        {"name": "app_user_plan", "arguments": {"application": "a Delphi order-entry client"}},
+    )
+    blob = json.dumps(r["result"])
+    # The interview has to name the thing everybody is actually doing, and it has to end in
+    # generated SQL rather than GRANTs the assistant made up.
+    assert "SYSDBA" in blob
+    assert "fb_suggest_grants" in blob
+    assert "fb_audit_security" in blob
+    assert "a Delphi order-entry client" in blob
 
 
 def test_prompts_get_classify_problem(client):

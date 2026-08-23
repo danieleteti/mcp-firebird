@@ -19,6 +19,11 @@ type
       ... WHERE) arrived in 5.0; below it the advice is the plain B-tree plus a line saying what
       5.0 would allow. }
     HasExpressionIndexes, HasPartialIndexes: Boolean;
+    { `GRANT DEFAULT <role> TO USER <user>` — 4.0 and up; on 3.0 the parser stops at DEFAULT.
+      It decides whether a grant plan works on its own. Below 4.0 a role is active only when the
+      connection asks for it, so an application that does not pass its role gets none of the
+      privileges that were granted to it, and the plan has to say so instead of assuming. }
+    HasDefaultRoles: Boolean;
     class function Parse(const AVersion: string): TFirebirdCapabilities; static;
     class function Detect(AConn: TFirebirdConnection): TFirebirdCapabilities; static;
   end;
@@ -43,6 +48,7 @@ begin
   Result.HasTimezones       := Result.Ordinal >= 400;
   Result.HasRdbConfig       := Result.Ordinal >= 400;
   Result.HasParallelWorkers := Result.Ordinal >= 500;
+  Result.HasDefaultRoles    := Result.Ordinal >= 400;
   Result.HasExpressionIndexes := Result.Ordinal >= 200;
   Result.HasPartialIndexes    := Result.Ordinal >= 500;
 end;

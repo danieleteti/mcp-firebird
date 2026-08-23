@@ -96,6 +96,7 @@ That is the whole setup. If the client lists the server but shows no tools, see
 | *"It crawls every afternoon and nobody changed anything"* | Classifies the symptom before touching a tool, then samples `MON$` across a window to show what accumulates |
 | *"Who is connected, and what are they running?"* | Every attachment with its user, address and process, the statement it is running now, and how long it has been running it |
 | *"Show me the rows that are actually in there"* | `fb_query` runs the SELECT and returns the rows, capped so an answer stays an answer. Nothing else is accepted: not an UPDATE, not a DELETE, not a DDL |
+| *"Our app connects as SYSDBA. What should it use instead?"* | `app_user_plan` asks what the application actually does — a handful of questions, each of which changes the statements — then `fb_suggest_grants` writes them from the catalogue: the account, a role, the grants, and the role activated the way your engine version needs |
 | *"Who can read this table?"* | Every grant recorded in the database, and the three that are usually mistakes: PUBLIC, `WITH GRANT OPTION`, and roles nobody is a member of |
 | *"Back the database up"* | Runs `gbak` in the background and **restores what it wrote into a scratch database**, so the answer is "this backup restores", not "a file exists" |
 
@@ -108,19 +109,20 @@ snapshot cannot see accumulation.
 
 ## The tools
 
-Fifteen tools, three prompts, one resource. Full reference — arguments, what each one decides, the
+Sixteen tools, four prompts, one resource. Full reference — arguments, what each one decides, the
 raw `tools/call` shapes — in **[docs/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md)**.
 
 `fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
 `fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
-`fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` · `fb_monitor_attachments` ·
-`fb_backup_start` · `fb_backup_status`
+`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` returns before the backup does — poll `fb_backup_status`. It needs
 `firebird.backup_dir` set in the `.env`, `gbak.exe` beside your `fbclient.dll`, and room on that
 disk for a second copy of the database while the verification restore runs.
 
-Prompts: `optimization_goal` (iterate until met) · `health_check` · `classify_problem`.
+Prompts: `optimization_goal` (iterate until met) · `health_check` · `classify_problem` ·
+`app_user_plan` (work out what an application account should be allowed to do, and produce the SQL).
 Resource: `firebird://schema`.
 
 Nine further tools appear in `tools/list` and belong to the [Enterprise edition](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md#enterprise-edition):

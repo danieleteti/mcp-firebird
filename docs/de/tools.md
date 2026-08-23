@@ -5,7 +5,7 @@
 Der vollständige Katalog: was jedes Tool tut, wie der Index-Berater entscheidet, die
 Prompts und die Ressource, dazu die rohen `tools/call`-Aufrufe.
 
-## Die Tools (15 kostenlose, dazu 9 Enterprise-Tools, die in `tools/list` angekündigt werden)
+## Die Tools (16 kostenlose, dazu 9 Enterprise-Tools, die in `tools/list` angekündigt werden)
 
 | Tool | Argumente | Zweck |
 |---|---|---|
@@ -17,6 +17,7 @@ Prompts und die Ressource, dazu die rohen `tools/call`-Aufrufe.
 | `fb_suggest_indexes` | `sql` | Indexrat für eine Abfrage: gewöhnlicher B-Baum, **Ausdrucksindex** (`COMPUTED BY`), **partieller Index** (ab 5.0) oder ein Index für die **Sortierung** — und **gar kein Index**, wenn der Scan der richtige Plan ist. Vor jedem strukturellen Vorschlag werden veraltete Statistiken aufgefrischt |
 | `fb_suggest_index_drops` | `table_name` | Meldet doppelte, präfix-redundante, inaktive und wenig selektive Indizes |
 | `fb_audit_table` | `table_name` | Prüfung der Schema-Gesundheit: fehlender PK, zu viele Indizes, veraltete Statistiken |
+| `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Die Statements, die einem Konto Zugriff auf die zum Muster passenden Objekte geben — **und auf nichts sonst**: ein bedingtes `CREATE USER`, eine Rolle, die aus dem Katalog erzeugten `GRANT`s mit Bezeichnern, die nur dort gequotet sind, wo Firebird es braucht, und die Rollenvergabe in der Form, die diese Version kennt (`GRANT DEFAULT` ab 4.0; darunter der Hinweis, dass die Verbindung die Rolle mitgeben muss, sonst laufen die Rechte ins Leere). Danach prüft es die Behauptung: PUBLIC-Rechte und Rechte, die das Konto außerhalb des Plans schon hat, kommen als Befunde zurück, mit dem `REVOKE`, das sie schließt |
 | `fb_audit_security` | *(keine)* | Jede in der Datenbank verzeichnete Berechtigung, eine Zeile je Empfänger und Objekt, dazu die drei Befunde, die meist ein Fehler sind: Rechte in der Hand von **PUBLIC** (critical, wenn sie Schreibrechte enthalten), Delegation über **WITH GRANT OPTION** und Rollen ohne Mitglieder |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministische Zielprüfung (treibt die Optimierungsschleife an) |
 | `fb_monitor_transactions` | `stale_minutes?` | Zustand von Transaktionen und Sweep **in diesem Augenblick**: Abstand zwischen OIT/OAT/Next, blockierende Langläufer (samt ihrem letzten SQL-Statement) |
@@ -117,11 +118,20 @@ Drei Befunde, in der Reihenfolge ihrer Bedeutung:
 3. **Eine Rolle ohne Mitglieder.** Entweder werden ihre Rechte nicht gebraucht, oder die Konten,
    die sie halten sollten, arbeiten mit direkten Berechtigungen.
 
-## Prompts (3)
+## Prompts (4)
 
 - **`optimization_goal`**, die zielgetriebene Schleife: du setzt ein Ziel, der Assistent iteriert über
   die `fb_*`-Tools und prüft `fb_evaluate_goal` erneut, bis dort `met: true` steht (mit Notbremse bei
   zu vielen Iterationen oder ausbleibendem Fortschritt).
+- **`app_user_plan`**: der eine Prompt, der bei einer Entscheidung beginnt, die noch niemand
+  getroffen hat. Die meisten Firebird-Anwendungen verbinden sich als SYSDBA, und das ist kein
+  Rechteproblem — es ist eine Datenbank, in der Rechte nicht greifen, denn SYSDBA unterliegt
+  ihnen nicht und der Eigentümer eines Objekts ebenso wenig. Also schaut der Prompt zuerst
+  (Engine-Version, Objektnamen, was PUBLIC schon hält), fragt nur, was der Katalog nicht
+  beantwortet, und endet in `fb_suggest_grants` statt in erfundenen GRANTs. Bleiben die Antworten
+  aus, blockiert er nicht, sondern bietet den Rückfallweg an: ein Konto mit DML auf allen
+  Tabellen kann immer noch keine Tabelle löschen, das Schema ändern, die Sicherheitsdatenbank
+  lesen, Konten anlegen oder den Server anhalten.
 - **`health_check`**: geführte Gesundheitsprüfung der gesamten Datenbank — Indizes Tabelle für
   Tabelle, dann die Berechtigungen in einem Durchgang, und sie sagt, wo dieser Teil endet.
 - **`classify_problem`**: beginnt beim Symptom, nicht beim Werkzeug. Ordnet das Problem auf

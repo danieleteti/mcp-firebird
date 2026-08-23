@@ -99,6 +99,7 @@ La instalación es esto. Si el cliente muestra el servidor pero ninguna herramie
 | *"Cada tarde se arrastra y nadie ha tocado nada"* | Clasifica el síntoma antes de tocar una herramienta, y luego muestrea `MON$` sobre una ventana para enseñar qué se acumula |
 | *"¿Quién está conectado, y qué está ejecutando?"* | Cada conexión con su usuario, dirección y proceso, la sentencia que ejecuta ahora mismo y desde cuándo |
 | *"Enséñame las filas que hay de verdad"* | `fb_query` ejecuta el SELECT y devuelve las filas, con un tope para que una respuesta siga siendo una respuesta. No pasa nada más: ni UPDATE, ni DELETE, ni DDL |
+| *"Nuestra aplicación se conecta como SYSDBA. ¿Qué debería usar?"* | `app_user_plan` pregunta qué hace de verdad la aplicación — pocas preguntas, y cada una cambia las sentencias — y `fb_suggest_grants` las escribe desde el catálogo: la cuenta, un rol, los permisos y el rol activado como pide tu versión del motor |
 | *"¿Quién puede leer esta tabla?"* | Todos los permisos registrados en la base de datos, y los tres que suelen ser un error: PUBLIC, `WITH GRANT OPTION` y roles sin ningún miembro |
 | *"Haz una copia de seguridad"* | Ejecuta `gbak` en segundo plano y **restaura lo que ha escrito en una base de datos desechable**: la respuesta no es "existe un fichero" sino "este backup se restaura" |
 
@@ -111,14 +112,14 @@ instantánea no ve la acumulación.
 
 ## Las herramientas
 
-Quince herramientas, tres prompts, un recurso. Referencia completa — argumentos, qué decide cada una,
+Dieciséis herramientas, cuatro prompts, un recurso. Referencia completa — argumentos, qué decide cada una,
 las llamadas `tools/call` en crudo — en
 **[docs/es/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/tools.md)**.
 
 `fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
 `fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
-`fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` · `fb_monitor_attachments` ·
-`fb_backup_start` · `fb_backup_status`
+`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` vuelve antes que el backup — luego haz polling con `fb_backup_status`. Necesita
 `firebird.backup_dir` en el `.env`, `gbak.exe` junto a tu `fbclient.dll`, y sitio en ese disco para

@@ -26,6 +26,13 @@ type
     function FbAuditTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
     [MCPTool('fb_audit_security', 'Who holds which privileges inside this database, and which grant is a mistake: privileges held by PUBLIC, delegation via WITH GRANT OPTION, roles nobody is a member of')]
     function FbAuditSecurity: TMCPToolResult;
+    [MCPTool('fb_suggest_grants', 'Builds the statements that give one account access to the objects matching a pattern and nothing else: a conditional CREATE USER, a role, the GRANTs generated from the catalogue, and the role granted to the account in the form this engine version needs. Then checks the claim: PUBLIC grants and grants the account already holds outside the plan are reported with the REVOKE that closes them')]
+    function FbSuggestGrants(
+      [MCPParam('The account the access is for, e.g. APP')] const user_name: string;
+      [MCPParam('Which objects: a glob or LIKE pattern such as TBL_* (* and % both mean any sequence, _ is literal). Default: every user object', TMCPParamPresence.Optional)] const object_pattern: string;
+      [MCPParam('read (SELECT) or readwrite (SELECT/INSERT/UPDATE/DELETE). Default read', TMCPParamPresence.Optional)] const access: string;
+      [MCPParam('Role that carries the privileges. Default <USER>_ROLE', TMCPParamPresence.Optional)] const role_name: string;
+      [MCPParam('Objects to subtract from the match, same pattern syntax — the audit log inside the application prefix, for instance', TMCPParamPresence.Optional)] const exclude_pattern: string): TMCPToolResult;
     [MCPTool('fb_evaluate_goal', 'Deterministically measures an optimization goal and returns whether it is met')]
     function FbEvaluateGoal(
       [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes | no_stale_index_statistics')] const goal_type: string;
@@ -53,7 +60,7 @@ uses
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
   Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, Firebird.Activity,
-  Firebird.Attachments, Firebird.Query, Firebird.SecurityAudit,
+  Firebird.Attachments, Firebird.Query, Firebird.SecurityAudit, Firebird.GrantPlanner,
   FirebirdToolRuntimeU, FirebirdConfigU, FirebirdBackupJobU,
   MVCFramework.MCP.Server, MVCFramework.Logger;
 
@@ -300,6 +307,63 @@ begin
       try Result := TMCPToolResult.Text(WithLimits(AdvisoriesToText(A.AuditTable(LTable.ToUpper),
         'No schema-health issues found on ' + LTable + '.'), 'fb_audit_table'));
       finally A.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbSuggestGrants(const user_name, object_pattern, access, role_name,
+  exclude_pattern: string): TMCPToolResult;
+var
+  LUser, LPattern, LAccess, LRole, LExclude: string;
+begin
+  LUser := user_name; LPattern := object_pattern; LAccess := access;
+  LRole := role_name; LExclude := exclude_pattern;
+  Result := Guard('fb_suggest_grants',
+    Format('user_name=%s object_pattern=%s access=%s role_name=%s exclude_pattern=%s',
+      [LUser, LPattern, LAccess, LRole, LExclude]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      P: TGrantPlan;
+      SB: TStringBuilder;
+      T: TGrantTarget;
+      S: string;
+    begin
+      P := PlanGrants(Conn, LUser, LPattern, LAccess, LRole, LExclude);
+      SB := TStringBuilder.Create;
+      try
+        SB.AppendLine(Format('**%s access for %s**, through role %s.',
+          [P.Access, P.UserName, P.RoleName])).AppendLine;
+
+        if Length(P.Statements) > 0 then
+        begin
+          SB.AppendLine('```sql');
+          for S in P.Statements do
+            SB.AppendLine(S);
+          SB.AppendLine('```').AppendLine;
+        end;
+
+        if Length(P.Targets) > 0 then
+        begin
+          SB.AppendLine(Format('**%d object(s) in the plan:**', [Length(P.Targets)]));
+          for T in P.Targets do
+            SB.AppendLine(Format('- `%s` *(%s)*', [T.Name, T.Kind]));
+          SB.AppendLine;
+        end;
+
+        for S in P.Notes do
+          SB.AppendLine('- ' + S);
+        SB.AppendLine;
+
+        { The conflicts are the half that makes "and nothing else" true or false, so they are
+          rendered as findings rather than prose: severity, statement, verification. }
+        SB.AppendLine('### Does the plan hold?').AppendLine;
+        SB.Append(AdvisoriesToText(P.Conflicts,
+          Format('Nothing outside this plan is reachable by %s through an existing grant: no ' +
+            'PUBLIC privileges on other objects, and no grants this account already holds ' +
+            'elsewhere.', [P.UserName])));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_suggest_grants'));
+      finally
+        SB.Free;
+      end;
     end);
 end;
 

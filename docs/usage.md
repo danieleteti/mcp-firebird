@@ -11,7 +11,7 @@ Once the server is registered, you talk to Claude in plain language. It picks th
 tool, runs it against your configured database, and turns the result into ready-to-run SQL. The
 exchanges below assume the seeded demo database; swap in your own table and column names.
 
-> In **Claude Desktop** the tools appear automatically and the three prompts show up as commands
+> In **Claude Desktop** the tools appear automatically and the four prompts show up as commands
 > (the 🔌 / "+" menu). In **Claude Code** run `/mcp` to inspect the server, and the prompts are
 > available as slash commands. You can always nudge it explicitly: *"use the firebird tools"*.
 

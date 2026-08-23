@@ -12,7 +12,7 @@ adecuada, la ejecuta contra la base de datos que configuraste y convierte el res
 para ejecutar. Los intercambios de abajo dan por hecha la base de datos de demostración; cambia los
 nombres de tablas y columnas por los tuyos.
 
-> En **Claude Desktop** las herramientas aparecen solas y los tres prompts salen como comandos (el
+> En **Claude Desktop** las herramientas aparecen solas y los cuatro prompts salen como comandos (el
 > menú 🔌 / "+"). En **Claude Code**, `/mcp` inspecciona el servidor y los prompts están disponibles
 > como comandos de barra. Siempre puedes empujarlo de forma explícita: *"usa las herramientas de
 > firebird"*.

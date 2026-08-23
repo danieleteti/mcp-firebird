@@ -5,7 +5,7 @@
 The full catalogue: what every tool does, how the index advisor decides, the prompts and the
 resource, plus the raw `tools/call` shapes if you drive the server yourself.
 
-## The tools (15 free, plus 9 Enterprise announced in `tools/list`)
+## The tools (16 free, plus 9 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
@@ -17,6 +17,7 @@ resource, plus the raw `tools/call` shapes if you drive the server yourself.
 | `fb_suggest_indexes` | `sql` | Index advice for one query: plain B-tree, **expression** (`COMPUTED BY`), **partial** (5.0+) or an index for the **sort** — and **no index at all** when the scan is the correct plan. Refreshes stale statistics before proposing anything structural |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
+| `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | The statements that give one account access to the objects matching a pattern **and nothing else**: a conditional `CREATE USER`, a role, the `GRANT`s generated from the catalogue with identifiers quoted only where Firebird needs it, and the role granted in the form this version supports (`GRANT DEFAULT` on 4.0+; below that, a note that the connection must pass the role or the grants are inert). Then it checks the claim: PUBLIC grants and grants the account already holds outside the plan come back as findings with the `REVOKE` that closes them |
 | `fb_audit_security` | *(none)* | Every grant recorded in the database, one line per grantee and object, plus the three findings that are usually mistakes: privileges held by **PUBLIC** (critical when they include writes), delegation via **WITH GRANT OPTION**, and roles nobody is a member of |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 | `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
@@ -111,11 +112,19 @@ Three findings, in the order they matter:
 3. **A role with no members.** Either the privileges it carries are unused, or the accounts that
    should hold them are holding direct grants instead.
 
-## Prompts (3)
+## Prompts (4)
 
 - **`optimization_goal`**, the goal-driven loop: set an objective, the assistant iterates the
   `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
   max-iterations / no-progress safety stop).
+- **`app_user_plan`**: the one prompt that starts from a decision nobody has made yet. Most
+  Firebird applications connect as SYSDBA, and that is not a privilege problem — it is a database
+  where privileges do not apply, because SYSDBA is not subject to them and neither is the owner
+  of an object. So the prompt looks first (engine version, object names, what PUBLIC already
+  holds), asks only what the catalogue cannot answer, and ends in `fb_suggest_grants` rather than
+  in GRANTs an assistant made up. If the answers do not come, it offers the fallback instead of
+  stalling: an account with DML on every table still cannot drop a table, alter the schema, read
+  the security database, create accounts or shut the server down.
 - **`health_check`**: guided whole-database health review — indexes table by table, then the
   grants in one pass, and it says where the grant half stops.
 - **`classify_problem`**: starts from the symptom, not from a tool. Places the problem on six

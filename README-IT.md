@@ -97,6 +97,7 @@ frequenti**, in fondo a questa pagina.
 | *"Ogni pomeriggio rallenta e nessuno ha toccato niente"* | Classifica il sintomo prima di toccare un tool, poi campiona `MON$` su una finestra per mostrare cosa si accumula |
 | *"Chi è collegato, e cosa sta eseguendo?"* | Ogni attachment con utente, indirizzo e processo, lo statement che sta eseguendo adesso e da quanto |
 | *"Fammi vedere le righe che ci sono davvero"* | `fb_query` esegue la SELECT e restituisce le righe, con un tetto perché una risposta resti una risposta. Nient'altro passa: né UPDATE, né DELETE, né DDL |
+| *"L'applicazione si collega come SYSDBA. Cosa dovrebbe usare?"* | `app_user_plan` chiede cosa fa davvero l'applicazione — poche domande, ognuna delle quali cambia gli statement — poi `fb_suggest_grants` li scrive dal catalogo: l'utenza, un ruolo, i grant, e il ruolo attivato nel modo che la tua versione richiede |
 | *"Chi può leggere questa tabella?"* | Tutti i grant registrati nel database, e i tre che di solito sono errori: PUBLIC, `WITH GRANT OPTION`, e i ruoli di cui non è membro nessuno |
 | *"Fammi il backup del database"* | Esegue `gbak` in background e **ripristina quello che ha scritto in un database usa-e-getta**: la risposta non è "esiste un file" ma "questo backup si ripristina" |
 
@@ -109,19 +110,20 @@ uno snapshot non vede l'accumulo.
 
 ## I tool
 
-Quindici tool, tre prompt, una risorsa. Riferimento completo — argomenti, cosa decide ciascuno, le
+Sedici tool, quattro prompt, una risorsa. Riferimento completo — argomenti, cosa decide ciascuno, le
 chiamate `tools/call` grezze — in **[docs/it/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/it/tools.md)**.
 
 `fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
 `fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
-`fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` · `fb_monitor_attachments` ·
-`fb_backup_start` · `fb_backup_status`
+`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` torna prima del backup — poi fai polling con `fb_backup_status`. Gli serve
 `firebird.backup_dir` nel `.env`, `gbak.exe` accanto al tuo `fbclient.dll`, e spazio su quel disco
 per una seconda copia del database mentre gira il ripristino di verifica.
 
-Prompt: `optimization_goal` (itera finché non è raggiunto) · `health_check` · `classify_problem`.
+Prompt: `optimization_goal` (itera finché non è raggiunto) · `health_check` · `classify_problem` ·
+`app_user_plan` (capire cosa deve poter fare un utente applicativo, e produrne l'SQL).
 Risorsa: `firebird://schema`.
 
 Altri nove tool compaiono in `tools/list` e appartengono all'[edizione Enterprise](https://github.com/danieleteti/mcp-firebird/blob/master/docs/it/editions.md#edizione-enterprise):

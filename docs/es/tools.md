@@ -5,7 +5,7 @@
 El catálogo completo: qué hace cada herramienta, cómo decide el asesor de índices, los
 prompts y el recurso, más las llamadas `tools/call` en crudo si pilotas el servidor tú.
 
-## Las herramientas (15 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
+## Las herramientas (16 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
 
 | Herramienta | Argumentos | Para qué sirve |
 |---|---|---|
@@ -17,6 +17,7 @@ prompts y el recurso, más las llamadas `tools/call` en crudo si pilotas el serv
 | `fb_suggest_indexes` | `sql` | Aconseja el índice para una consulta: B-tree normal, **de expresión** (`COMPUTED BY`), **parcial** (5.0+) o un índice para la **ordenación** — y **ningún índice** cuando el escaneo es el plan correcto. Antes de proponer algo estructural refresca las estadísticas obsoletas |
 | `fb_suggest_index_drops` | `table_name` | Señala índices duplicados, con prefijo redundante, inactivos o de baja selectividad |
 | `fb_audit_table` | `table_name` | Auditoría de salud del esquema: PK ausente, exceso de índices, estadísticas obsoletas |
+| `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Las sentencias que dan a una cuenta acceso a los objetos que casan con un patrón **y a nada más**: un `CREATE USER` condicional, un rol, los `GRANT` generados desde el catálogo con los identificadores entrecomillados solo donde Firebird lo exige, y el rol concedido en la forma que admite esta versión (`GRANT DEFAULT` desde 4.0; por debajo, la nota de que la conexión debe pasar el rol o los permisos no sirven de nada). Después comprueba la afirmación: los permisos de PUBLIC y los que la cuenta ya tiene fuera del plan vuelven como hallazgos, con el `REVOKE` que los cierra |
 | `fb_audit_security` | *(ninguno)* | Todos los permisos registrados en la base de datos, una línea por beneficiario y objeto, más los tres hallazgos que suelen ser un error: privilegios en manos de **PUBLIC** (critical si incluyen escritura), delegación con **WITH GRANT OPTION** y roles sin ningún miembro |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Comprobación determinista del objetivo (es lo que mueve el bucle de optimización) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salud de transacciones y sweep **en este instante**: distancia OIT/OAT/Next, transacciones largas que bloquean (con su última sentencia SQL) |
@@ -113,11 +114,20 @@ Tres hallazgos, en el orden en que importan:
 3. **Un rol sin miembros.** O los privilegios que lleva no se usan, o las cuentas que deberían
    tenerlos están usando permisos directos.
 
-## Prompts (3)
+## Prompts (4)
 
 - **`optimization_goal`**, el bucle guiado por objetivos: fija una meta y el asistente itera sobre
   las herramientas `fb_*` y vuelve a comprobar `fb_evaluate_goal` hasta que devuelve `met: true`
   (con una parada de seguridad por máximo de iteraciones o por falta de progreso).
+- **`app_user_plan`**: el único prompt que parte de una decisión que nadie ha tomado todavía. La
+  mayoría de las aplicaciones Firebird se conectan como SYSDBA, y eso no es un problema de
+  permisos: es una base de datos donde los permisos no se aplican, porque SYSDBA no está sujeto a
+  ellos y el propietario de un objeto tampoco. Así que el prompt mira primero (versión del motor,
+  nombres de los objetos, qué tiene ya PUBLIC), pregunta solo lo que el catálogo no sabe y acaba
+  en `fb_suggest_grants` en vez de en GRANTs inventados. Si no llegan las respuestas no se
+  atasca: ofrece el plan de repliegue, porque una cuenta con DML sobre todas las tablas sigue sin
+  poder borrar una tabla, cambiar el esquema, leer la base de datos de seguridad, crear cuentas o
+  parar el servidor.
 - **`health_check`**: revisión guiada de la salud de toda la base de datos — los índices tabla
   por tabla, luego los permisos de una sola pasada, diciendo dónde se detiene esa parte.
 - **`classify_problem`**: parte del síntoma, no de una herramienta. Sitúa el problema en seis
