@@ -18,7 +18,7 @@ Prompts und die Ressource, dazu die rohen `tools/call`-Aufrufe.
 | `fb_suggest_index_drops` | `table_name` | Meldet doppelte, präfix-redundante, inaktive und wenig selektive Indizes |
 | `fb_audit_table` | `table_name` | Prüfung der Schema-Gesundheit: fehlender PK, zu viele Indizes, veraltete Statistiken |
 | `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Die Statements, die einem Konto Zugriff auf die zum Muster passenden Objekte geben — **und auf nichts sonst**: ein bedingtes `CREATE USER`, eine Rolle, die aus dem Katalog erzeugten `GRANT`s mit Bezeichnern, die nur dort gequotet sind, wo Firebird es braucht, und die Rollenvergabe in der Form, die diese Version kennt (`GRANT DEFAULT` ab 4.0; darunter der Hinweis, dass die Verbindung die Rolle mitgeben muss, sonst laufen die Rechte ins Leere). Danach prüft es die Behauptung: PUBLIC-Rechte und Rechte, die das Konto außerhalb des Plans schon hat, kommen als Befunde zurück, mit dem `REVOKE`, das sie schließt |
-| `fb_audit_security` | *(keine)* | Jede in der Datenbank verzeichnete Berechtigung, eine Zeile je Empfänger und Objekt, dazu die drei Befunde, die meist ein Fehler sind: Rechte in der Hand von **PUBLIC** (critical, wenn sie Schreibrechte enthalten), Delegation über **WITH GRANT OPTION** und Rollen ohne Mitglieder |
+| `fb_audit_security` | `user_name?` | Jede in der Datenbank verzeichnete Berechtigung, eine Zeile je Empfänger und Objekt, dazu die drei Befunde, die meist ein Fehler sind: Rechte in der Hand von **PUBLIC** (critical, wenn sie Schreibrechte enthalten), Delegation über **WITH GRANT OPTION** und Rollen ohne Mitglieder |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministische Zielprüfung (treibt die Optimierungsschleife an) |
 | `fb_monitor_transactions` | `stale_minutes?` | Zustand von Transaktionen und Sweep **in diesem Augenblick**: Abstand zwischen OIT/OAT/Next, blockierende Langläufer (samt ihrem letzten SQL-Statement) |
 | `fb_sample_activity` | `seconds?` | Liest die MON$-Zähler zweimal über ein Zeitfenster und berichtet die Differenz: sequenziell und über Index gelesene Datensätze, bewegte Seiten, eingesammelte Versionen, und ob der Transaktionshorizont vorangekommen ist |
@@ -107,6 +107,14 @@ Er sieht weder die **Kontenliste** noch die **Admin-Rollen**, die Passwortregeln
 dafür braucht es einen administrativen Attach, den diese Edition nicht macht. Eine Datenbank, in
 der jede Berechtigung stimmt, kann trotzdem von einem Konto erreichbar sein, an dessen Anlage sich
 niemand erinnert.
+
+Mit `user_name` beantwortet es stattdessen die andere Frage: **was dieses eine Konto erreicht und
+auf welchem Weg** — direkt vergeben, über PUBLIC oder über eine Rolle, der es angehört. Eine Zeile
+über eine Rolle ist mit *(only when active)* markiert, denn eine Firebird-Rolle ist inaktiv, solange
+die Verbindung sie nicht nennt oder sie nicht als DEFAULT-Rolle vergeben wurde (ab 4.0) — und was
+davon gilt, steht in der Sicherheitsdatenbank, in die dieser Server nicht schaut. Der Bericht sagt
+außerdem, wenn das Konto SYSDBA ist oder Objekte besitzt, denn beides unterliegt den aufgeführten
+Rechten nicht.
 
 Drei Befunde, in der Reihenfolge ihrer Bedeutung:
 

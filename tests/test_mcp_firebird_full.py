@@ -574,6 +574,22 @@ def test_fb_audit_security_leaves_out_the_system_tables(client):
     assert "RDB$RELATIONS" not in text, text
 
 
+def test_fb_audit_security_answers_for_one_account(client):
+    """"What can REPORT_USER actually reach?" — the question a privilege list does not answer."""
+    text = _tool_text(client, "fb_audit_security", {"user_name": "REPORT_USER"})
+    assert "What REPORT_USER can reach" in text, text
+    assert "| ORDERS | SELECT | direct |" in text, text
+    # PUBLIC needs no membership, and a role row is conditional on the role being active.
+    assert "PUBLIC" in text
+    assert "role REPORT_ROLE" in text
+    assert "only when active" in text
+
+
+def test_fb_audit_security_says_sysdba_is_not_bound_by_any_of_it(client):
+    text = _tool_text(client, "fb_audit_security", {"user_name": "SYSDBA"})
+    assert "not subject to privileges" in text, text
+
+
 def test_fb_audit_security_says_what_it_cannot_see(client):
     text = _tool_text(client, "fb_audit_security", {})
     assert "Not ruled out by this check" in text, text

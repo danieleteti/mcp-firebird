@@ -15,6 +15,9 @@ type
     [Test] procedure Every_Advisory_Carries_A_Remedy_And_A_Verify;
     [Test] procedure A_Role_With_Members_Is_Left_Alone;
     [Test] procedure Every_Remedy_Is_A_Statement_That_Parses;
+    [Test] procedure Effective_Privileges_Name_How_Each_One_Is_Reached;
+    [Test] procedure Effective_Privileges_Mark_A_Role_Row_As_Conditional;
+    [Test] procedure An_Account_Nobody_Granted_Anything_Still_Reaches_What_PUBLIC_Holds;
   end;
 implementation
 uses System.SysUtils, Firebird.Connection, Firebird.Advisory, Firebird.SecurityAudit, TestFixtureU;
@@ -219,4 +222,68 @@ begin
     finally A.Free; end;
   finally Conn.Free; end;
 end;
+function Reached(const ARows: TArray<TEffectiveGrant>; const AObject: string;
+  out ARow: TEffectiveGrant): Boolean;
+var E: TEffectiveGrant;
+begin
+  for E in ARows do
+    if E.ObjectName = AObject then
+    begin
+      ARow := E;
+      Exit(True);
+    end;
+  Result := False;
+end;
+
+{ A privilege list answers "who was granted what". This answers "what can this account reach",
+  which is a different question the moment PUBLIC or a role is involved. }
+procedure TSecurityAuditTests.Effective_Privileges_Name_How_Each_One_Is_Reached;
+var Conn: TFirebirdConnection; A: TFirebirdSecurityAudit; lRows: TArray<TEffectiveGrant>; E: TEffectiveGrant;
+begin
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdSecurityAudit.Create(Conn);
+    try
+      lRows := A.EffectivePrivileges('REPORT_USER');
+      Assert.IsTrue(Reached(lRows, 'ORDERS', E), 'the direct grant is missing');
+      Assert.AreEqual('direct', E.Via);
+      Assert.IsTrue(Reached(lRows, 'CUSTOMERS', E), 'what PUBLIC holds is reached by everyone');
+      Assert.AreEqual('PUBLIC', E.Via);
+      Assert.IsTrue(Reached(lRows, 'BRANCHES', E), 'the grant on REPORT_ROLE is missing');
+      Assert.AreEqual('role REPORT_ROLE', E.Via);
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+{ Firebird will not say whether a role is automatic for an account — a DEFAULT role lives in the
+  security database — so a role row is what the account *may* reach, and it has to say so. }
+procedure TSecurityAuditTests.Effective_Privileges_Mark_A_Role_Row_As_Conditional;
+var Conn: TFirebirdConnection; A: TFirebirdSecurityAudit; E: TEffectiveGrant;
+begin
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdSecurityAudit.Create(Conn);
+    try
+      Assert.IsTrue(Reached(A.EffectivePrivileges('REPORT_USER'), 'BRANCHES', E));
+      Assert.IsTrue(E.Conditional, 'a role row is conditional on the role being active');
+      Assert.IsTrue(Reached(A.EffectivePrivileges('REPORT_USER'), 'ORDERS', E));
+      Assert.IsFalse(E.Conditional, 'a direct grant is not conditional on anything');
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TSecurityAuditTests.An_Account_Nobody_Granted_Anything_Still_Reaches_What_PUBLIC_Holds;
+var Conn: TFirebirdConnection; A: TFirebirdSecurityAudit; E: TEffectiveGrant;
+begin
+  Conn := NewTestConnection;
+  try
+    A := TFirebirdSecurityAudit.Create(Conn);
+    try
+      Assert.IsTrue(Reached(A.EffectivePrivileges('NOBODY_IN_PARTICULAR'), 'CUSTOMERS', E),
+        'PUBLIC needs no membership: an account nobody granted anything still reads this');
+      Assert.AreEqual('PUBLIC', E.Via);
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
 end.

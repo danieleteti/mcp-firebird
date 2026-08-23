@@ -125,7 +125,10 @@ begin
         '- fb_list_tables: read the names and propose the groupings you can see — a common ' +
         'prefix, an obvious log or audit table, tables that look like reference data.' + sLineBreak +
         '- fb_audit_security: whatever PUBLIC already holds is held by every account, including ' +
-        'the new one. A plan that ignores it is not a plan.' + sLineBreak + sLineBreak +
+        'the new one. A plan that ignores it is not a plan.' + sLineBreak +
+        '- fb_audit_security(user_name) once you have a name: it answers what that one account ' +
+        'can reach today and how — directly, through PUBLIC, or through a role — which is also ' +
+        'how you check the plan afterwards.' + sLineBreak + sLineBreak +
 
         'STEP 2 — ask. Few questions, in this order, and skip any you have already answered from ' +
         'STEP 1. Ask two or three at a time, not as a form. Each one changes the statements:' + sLineBreak +
@@ -140,10 +143,15 @@ begin
         'on first use? If yes, that is the one requirement that needs DDL rights, and it belongs ' +
         'to a separate account a person runs deliberately, not to the account the application ' +
         'uses all day.' + sLineBreak +
-        '6. Does anything else connect with the same account — reports, a nightly job, an ' +
+        '6. Can the application''s connection string be changed? Ask this only if fb_info says ' +
+        'the engine is below 4.0. There a role is inactive unless the connection names it, so ' +
+        'privileges on a role do nothing until the application sends RoleName=... — if that ' +
+        'string cannot be touched, the privileges have to go straight on the account ' +
+        '(grant_to=user, which is what fb_suggest_grants defaults to below 4.0).' + sLineBreak +
+        '7. Does anything else connect with the same account — reports, a nightly job, an ' +
         'integration? Each of those is its own account and its own role, otherwise the ' +
         'privileges of the application become the union of every job that shares its password.' + sLineBreak +
-        '7. Who creates the objects? If this account creates them it owns them, and an owner can ' +
+        '8. Who creates the objects? If this account creates them it owns them, and an owner can ' +
         'drop what it owns whatever you granted. Schema ownership stays with SYSDBA or a ' +
         'dedicated owner account.' + sLineBreak + sLineBreak +
 

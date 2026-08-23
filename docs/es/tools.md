@@ -18,7 +18,7 @@ prompts y el recurso, más las llamadas `tools/call` en crudo si pilotas el serv
 | `fb_suggest_index_drops` | `table_name` | Señala índices duplicados, con prefijo redundante, inactivos o de baja selectividad |
 | `fb_audit_table` | `table_name` | Auditoría de salud del esquema: PK ausente, exceso de índices, estadísticas obsoletas |
 | `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Las sentencias que dan a una cuenta acceso a los objetos que casan con un patrón **y a nada más**: un `CREATE USER` condicional, un rol, los `GRANT` generados desde el catálogo con los identificadores entrecomillados solo donde Firebird lo exige, y el rol concedido en la forma que admite esta versión (`GRANT DEFAULT` desde 4.0; por debajo, la nota de que la conexión debe pasar el rol o los permisos no sirven de nada). Después comprueba la afirmación: los permisos de PUBLIC y los que la cuenta ya tiene fuera del plan vuelven como hallazgos, con el `REVOKE` que los cierra |
-| `fb_audit_security` | *(ninguno)* | Todos los permisos registrados en la base de datos, una línea por beneficiario y objeto, más los tres hallazgos que suelen ser un error: privilegios en manos de **PUBLIC** (critical si incluyen escritura), delegación con **WITH GRANT OPTION** y roles sin ningún miembro |
+| `fb_audit_security` | `user_name?` | Todos los permisos registrados en la base de datos, una línea por beneficiario y objeto, más los tres hallazgos que suelen ser un error: privilegios en manos de **PUBLIC** (critical si incluyen escritura), delegación con **WITH GRANT OPTION** y roles sin ningún miembro |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Comprobación determinista del objetivo (es lo que mueve el bucle de optimización) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salud de transacciones y sweep **en este instante**: distancia OIT/OAT/Next, transacciones largas que bloquean (con su última sentencia SQL) |
 | `fb_sample_activity` | `seconds?` | Lee los contadores MON$ dos veces a lo largo de una ventana e informa la diferencia: registros leídos en secuencia y por índice, páginas movidas, versiones recogidas, y si el horizonte de transacciones avanzó |
@@ -103,6 +103,14 @@ quién llega siquiera al puerto: eso vive en la base de datos de seguridad y en 
 del servidor, y leerlo exige un attach administrativo que esta edición no hace. Una base de datos
 con todos los permisos correctos puede seguir siendo accesible por una cuenta que nadie recuerda
 haber creado.
+
+Con `user_name` responde a la otra pregunta: **qué alcanza esa cuenta y por qué vía** — concedido
+a ella directamente, concedido a PUBLIC o concedido a un rol del que es miembro. Una fila que llega
+por un rol lleva la marca *(only when active)*, porque en Firebird un rol está inactivo mientras la
+conexión no lo nombre o no se haya concedido como rol DEFAULT (4.0+) — y cuál de las dos cosas
+aplica está en la base de datos de seguridad, donde este servidor no mira. El informe también avisa
+cuando la cuenta es SYSDBA o es propietaria de objetos, porque ninguna de las dos está sujeta a los
+permisos listados.
 
 Tres hallazgos, en el orden en que importan:
 

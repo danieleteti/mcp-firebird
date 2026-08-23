@@ -18,7 +18,7 @@ resource, plus the raw `tools/call` shapes if you drive the server yourself.
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
 | `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | The statements that give one account access to the objects matching a pattern **and nothing else**: a conditional `CREATE USER`, a role, the `GRANT`s generated from the catalogue with identifiers quoted only where Firebird needs it, and the role granted in the form this version supports (`GRANT DEFAULT` on 4.0+; below that, a note that the connection must pass the role or the grants are inert). Then it checks the claim: PUBLIC grants and grants the account already holds outside the plan come back as findings with the `REVOKE` that closes them |
-| `fb_audit_security` | *(none)* | Every grant recorded in the database, one line per grantee and object, plus the three findings that are usually mistakes: privileges held by **PUBLIC** (critical when they include writes), delegation via **WITH GRANT OPTION**, and roles nobody is a member of |
+| `fb_audit_security` | `user_name?` | Every grant recorded in the database, one line per grantee and object, plus the three findings that are usually mistakes: privileges held by **PUBLIC** (critical when they include writes), delegation via **WITH GRANT OPTION**, and roles nobody is a member of |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 | `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
 | `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
@@ -101,6 +101,13 @@ It cannot see the **account list**, the **admin roles**, the password policy or 
 port at all: those live in the security database and in the server configuration, and reading
 them means an administrative attach this edition does not make. A database whose every grant is
 correct can still be reachable by an account nobody remembers creating.
+
+Given `user_name` it answers the other question instead: **what can this one account reach, and
+how** — granted to it directly, granted to PUBLIC, or granted to a role it belongs to. A row that
+comes through a role is marked *(only when active)*, because a Firebird role is inactive unless
+the connection names it or it was granted as a DEFAULT role (4.0+) — and which of the two applies
+is recorded in the security database, where this server cannot look. The report also says when the
+account is SYSDBA or owns objects, because neither is subject to the privileges listed.
 
 Three findings, in the order they matter:
 

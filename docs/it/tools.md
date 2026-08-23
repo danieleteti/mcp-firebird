@@ -18,7 +18,7 @@ risorsa, più le chiamate `tools/call` grezze se piloti il server da solo.
 | `fb_suggest_index_drops` | `table_name` | Segnala indici duplicati, con prefisso ridondante, inattivi o poco selettivi |
 | `fb_audit_table` | `table_name` | Stato di salute dello schema: PK assente, troppi indici, statistiche vecchie |
 | `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Gli statement che danno a un'utenza l'accesso agli oggetti che corrispondono a un pattern **e a nient'altro**: un `CREATE USER` condizionale, un ruolo, i `GRANT` generati dal catalogo con gli identificatori quotati solo dove Firebird lo richiede, e il ruolo concesso nella forma che questa versione supporta (`GRANT DEFAULT` da 4.0; sotto, la nota che la connessione deve passare il ruolo o i grant restano inerti). Poi verifica l'affermazione: i grant a PUBLIC e quelli che l'utenza già possiede fuori dal piano tornano come rilievi, con la `REVOKE` che li chiude |
-| `fb_audit_security` | *(nessuno)* | Tutti i grant registrati nel database, una riga per beneficiario e oggetto, più i tre rilievi che di solito sono errori: privilegi in mano a **PUBLIC** (critical se comprendono la scrittura), delega tramite **WITH GRANT OPTION**, e ruoli di cui non è membro nessuno |
+| `fb_audit_security` | `user_name?` | Tutti i grant registrati nel database, una riga per beneficiario e oggetto, più i tre rilievi che di solito sono errori: privilegi in mano a **PUBLIC** (critical se comprendono la scrittura), delega tramite **WITH GRANT OPTION**, e ruoli di cui non è membro nessuno |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Verifica deterministica dell'obiettivo (è il motore del ciclo di ottimizzazione) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salute di transazioni e sweep **in questo istante**: distanza fra OIT/OAT/Next, transazioni lunghe che bloccano (con il loro ultimo statement SQL) |
 | `fb_sample_activity` | `seconds?` | Legge i contatori MON$ due volte su una finestra e riporta la differenza: record letti in sequenza e per indice, pagine movimentate, versioni raccolte, e se l'orizzonte delle transazioni è avanzato |
@@ -102,6 +102,14 @@ Non vede l'**elenco degli account**, i **ruoli amministrativi**, la policy delle
 riesce ad arrivare alla porta: stanno nel security database e nella configurazione del server, e
 leggerli richiede un attach amministrativo che questa edizione non fa. Un database con tutti i
 grant a posto può comunque essere raggiungibile da un account che nessuno ricorda di aver creato.
+
+Con `user_name` risponde invece all'altra domanda: **cosa riesce a raggiungere quell'utenza, e
+come** — concesso a lei direttamente, concesso a PUBLIC, o concesso a un ruolo di cui è membro.
+Una riga che passa da un ruolo è marcata *(only when active)*, perché in Firebird un ruolo è
+inattivo se la connessione non lo nomina o se non è stato concesso come ruolo DEFAULT (4.0+) — e
+quale dei due valga è registrato nel security database, dove questo server non può guardare. Il
+report dice anche quando l'utenza è SYSDBA o possiede oggetti, perché nessuno dei due è soggetto
+ai privilegi elencati.
 
 Tre rilievi, nell'ordine in cui contano:
 

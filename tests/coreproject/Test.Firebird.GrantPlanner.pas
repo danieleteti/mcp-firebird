@@ -21,6 +21,10 @@ type
     [Test] procedure A_Pattern_That_Matches_Nothing_Says_So_And_Grants_Nothing;
     [Test] procedure A_Plan_For_SYSDBA_Says_It_Changes_Nothing;
     [Test] procedure An_Access_Level_Nobody_Understands_Is_Not_Silently_Downgraded;
+    [Test] procedure The_Default_Shape_Is_The_One_That_Works_On_This_Engine;
+    [Test] procedure Granting_To_The_User_Uses_No_Role_At_All;
+    [Test] procedure A_Role_Plan_Below_Four_Says_It_Does_Nothing_Until_The_Role_Is_Passed;
+    [Test] procedure The_Plan_Actually_Grants_What_It_Claims;
   end;
 implementation
 uses System.SysUtils, Firebird.Connection, Firebird.Capabilities, Firebird.Advisory,
@@ -51,11 +55,24 @@ begin
       Exit(True);
 end;
 
+{ Most of these tests are about the shape of a role-based plan, so they ask for it: the default
+  depends on the engine, and that default has tests of its own below. }
 function Plan(AConn: TFirebirdConnection; const APattern: string;
   const AAccess: string = 'read'; const AUser: string = 'APP';
-  const ARole: string = ''; const AExclude: string = ''): TGrantPlan;
+  const ARole: string = ''; const AExclude: string = '';
+  const AGrantTo: string = 'role'): TGrantPlan;
 begin
-  Result := PlanGrants(AConn, AUser, APattern, AAccess, ARole, AExclude);
+  Result := PlanGrants(AConn, AUser, APattern, AAccess, ARole, AExclude, AGrantTo);
+end;
+
+procedure TryExec(AConn: TFirebirdConnection; const ASQL: string);
+begin
+  try
+    AConn.ExecSQL(ASQL);
+  except
+    // Cleaning up something that is not there is not a failure.
+    on E: Exception do ;
+  end;
 end;
 
 { Somebody who asks for TBL_* is naming a prefix. SQL would read the underscore as "any single
@@ -250,6 +267,116 @@ begin
     Assert.IsTrue(AllNotes(P).Contains('not a value this understands'),
       'falling back quietly would hand somebody read access they think is write access: ' + AllNotes(P));
   finally Conn.Free; end;
+end;
+
+{ Below 4.0 a role is inactive unless the connection names it, and there is no way to make it
+  automatic — so a role plan is a plan that does nothing until somebody edits a connection
+  string this server cannot see. The default has to be the shape that works as printed. }
+procedure TGrantPlannerTests.The_Default_Shape_Is_The_One_That_Works_On_This_Engine;
+var Conn: TFirebirdConnection; P: TGrantPlan; C: TFirebirdCapabilities;
+begin
+  Conn := NewTestConnection;
+  try
+    C := TFirebirdCapabilities.Detect(Conn);
+    P := PlanGrants(Conn, 'APP', 'TBL_*', 'read', '', '', '');
+    if C.HasDefaultRoles then
+    begin
+      Assert.AreEqual('role', P.GrantTo, 'a DEFAULT role needs nothing from the application');
+      Assert.IsTrue(AllStatements(P).Contains('GRANT DEFAULT APP_ROLE TO USER APP;'));
+    end
+    else
+    begin
+      Assert.AreEqual('user', P.GrantTo,
+        'on ' + C.EngineVersion + ' a role plan is inert unless the connection names the role');
+      Assert.IsTrue(AllStatements(P).Contains('GRANT SELECT ON TBL_ORDERS TO APP;'), AllStatements(P));
+      Assert.IsFalse(AllStatements(P).Contains('CREATE ROLE'), AllStatements(P));
+    end;
+  finally Conn.Free; end;
+end;
+
+procedure TGrantPlannerTests.Granting_To_The_User_Uses_No_Role_At_All;
+var Conn: TFirebirdConnection; P: TGrantPlan; SQL: string;
+begin
+  Conn := NewTestConnection;
+  try
+    P := Plan(Conn, 'TBL_*', 'read', 'APP', '', '', 'user');
+    SQL := AllStatements(P);
+    Assert.AreEqual('', P.RoleName);
+    Assert.IsTrue(SQL.Contains('GRANT SELECT ON TBL_ORDERS TO APP;'), SQL);
+    Assert.IsFalse(SQL.Contains('CREATE ROLE'), SQL);
+    Assert.IsFalse(SQL.Contains('APP_ROLE'), SQL);
+    Assert.IsTrue(AllNotes(P).Contains('straight to APP'), AllNotes(P));
+  finally Conn.Free; end;
+end;
+
+procedure TGrantPlannerTests.A_Role_Plan_Below_Four_Says_It_Does_Nothing_Until_The_Role_Is_Passed;
+var Conn: TFirebirdConnection; P: TGrantPlan; C: TFirebirdCapabilities;
+begin
+  Conn := NewTestConnection;
+  try
+    C := TFirebirdCapabilities.Detect(Conn);
+    if C.HasDefaultRoles then
+      Exit;
+    P := Plan(Conn, 'TBL_*', 'read', 'APP', '', '', 'role');
+    Assert.IsTrue(AllNotes(P).Contains('does nothing until'),
+      'a role plan that is inert must say so in the first line of its notes: ' + AllNotes(P));
+    Assert.IsTrue(AllNotes(P).Contains('grant_to=user'), 'and it must name the way out');
+  finally Conn.Free; end;
+end;
+
+{ The whole point, proved rather than asserted: run the statements the tool produced, connect as
+  the account they created, and check that it can read what the plan granted and cannot read what
+  it did not. ORDERS is the negative case rather than CUSTOMERS, which PUBLIC can read. }
+procedure TGrantPlannerTests.The_Plan_Actually_Grants_What_It_Claims;
+const APP_USER = 'MCPFB_TESTAPP';
+var
+  Conn, AppConn: TFirebirdConnection;
+  P: TGrantPlan;
+  S: string;
+  Cfg: TFirebirdConnectionConfig;
+  Q: TObject;
+  lDenied: Boolean;
+begin
+  Conn := NewTestConnection;
+  try
+    TryExec(Conn, 'REVOKE ALL ON ALL FROM ' + APP_USER);
+    TryExec(Conn, 'DROP USER ' + APP_USER);
+    TryExec(Conn, 'DROP ROLE ' + APP_USER + '_ROLE');
+    try
+      P := PlanGrants(Conn, APP_USER, 'TBL_*', 'read', '', '', '');
+      for S in P.Statements do
+        if not S.TrimLeft.StartsWith('--') then
+          Conn.ExecSQL(S);
+
+      Cfg := TestConfig;
+      Cfg.User := APP_USER;
+      Cfg.Password := PASSWORD_PLACEHOLDER;
+      AppConn := TFirebirdConnection.Create(Cfg);
+      try
+        { No role is passed here on purpose: whatever shape the plan chose, it has to work for
+          an application that just connects. }
+        AppConn.Connect;
+        Assert.AreEqual('0', AppConn.ScalarStr('SELECT COUNT(*) FROM TBL_ORDERS'),
+          'the account cannot read what the plan granted it');
+        lDenied := False;
+        try
+          AppConn.ScalarStr('SELECT COUNT(*) FROM ORDERS');
+        except
+          on E: Exception do
+            lDenied := True;
+        end;
+        Assert.IsTrue(lDenied, 'the account can read ORDERS, which the plan never granted');
+      finally
+        AppConn.Free;
+      end;
+    finally
+      TryExec(Conn, 'REVOKE ALL ON ALL FROM ' + APP_USER);
+      TryExec(Conn, 'DROP USER ' + APP_USER);
+      TryExec(Conn, 'DROP ROLE ' + APP_USER + '_ROLE');
+    end;
+  finally
+    Conn.Free;
+  end;
 end;
 
 end.

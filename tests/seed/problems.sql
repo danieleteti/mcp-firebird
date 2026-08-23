@@ -131,4 +131,7 @@ GRANT SELECT ON ORDERS TO REPORT_USER WITH GRANT OPTION;
 CREATE ROLE DEAD_ROLE;
 CREATE ROLE REPORT_ROLE;
 GRANT REPORT_ROLE TO REPORT_USER;
+/* ...and the role carries something, so "what can REPORT_USER reach" has a via-role row and
+   not only its direct grants. */
+GRANT SELECT ON BRANCHES TO REPORT_ROLE;
 COMMIT;

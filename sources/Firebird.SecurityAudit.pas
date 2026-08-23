@@ -37,6 +37,22 @@ type
     Grantor: string;
   end;
 
+  { One thing an account can reach, and how it got there. A privilege list per grantee answers
+    "who was granted what"; this answers the question a DBA actually asks, which is "what can
+    this account reach", and the two are different as soon as PUBLIC or a role is involved. }
+  TEffectiveGrant = record
+    ObjectName: string;
+    ObjectKind: string;
+    Privileges: string;
+    { 'direct', 'PUBLIC', or 'role <NAME>'. }
+    Via: string;
+    { True for anything reached through a role. A Firebird role is inactive unless the connection
+      names it — or unless it was granted as a DEFAULT role, which lives in the security database
+      and cannot be seen from an ordinary connection. So a role row is what the account *may*
+      reach, and this flag is the difference between the two readings. }
+    Conditional: Boolean;
+  end;
+
   TRoleInfo = record
     RoleName: string;
     Owner: string;
@@ -58,6 +74,14 @@ type
     function Grants: TArray<TGrantSummary>;
     { User-defined roles and who is a member of each. }
     function Roles: TArray<TRoleInfo>;
+    { The roles AUser is a member of. }
+    function RolesOf(const AUser: string): TArray<string>;
+    { Everything AUser can reach: granted to it directly, granted to PUBLIC, or granted to a role
+      it belongs to. Ordered by object. }
+    function EffectivePrivileges(const AUser: string): TArray<TEffectiveGrant>;
+    { How many user objects AUser owns. An owner is not subject to the privileges on its own
+      objects, so a non-zero answer means the list above is not the whole story. }
+    function OwnedObjectCount(const AUser: string): Integer;
     function Analyze: TArray<TAdvisory>;
   end;
 
@@ -238,6 +262,88 @@ begin
     finally
       Q.Free;
     end;
+  end;
+end;
+
+function TFirebirdSecurityAudit.RolesOf(const AUser: string): TArray<string>;
+var Q: TFDQuery; L: TList<string>;
+begin
+  L := TList<string>.Create;
+  try
+    Q := FConn.OpenQuery(Format(
+      'SELECT TRIM(p.rdb$relation_name) FROM rdb$user_privileges p ' +
+      'WHERE p.rdb$object_type = %d AND TRIM(p.rdb$user) = %s ORDER BY 1',
+      [OBJ_ROLE, QuotedStr(AUser)]));
+    try
+      while not Q.Eof do
+      begin
+        L.Add(Q.Fields[0].AsString);
+        Q.Next;
+      end;
+    finally
+      Q.Free;
+    end;
+    Result := L.ToArray;
+  finally
+    L.Free;
+  end;
+end;
+
+function TFirebirdSecurityAudit.OwnedObjectCount(const AUser: string): Integer;
+begin
+  Result := StrToIntDef(FConn.ScalarStr(Format(
+    'SELECT COUNT(*) FROM rdb$relations WHERE COALESCE(rdb$system_flag, 0) = 0 ' +
+    'AND TRIM(rdb$owner_name) = %s', [QuotedStr(AUser)])), 0);
+end;
+
+function TFirebirdSecurityAudit.EffectivePrivileges(const AUser: string): TArray<TEffectiveGrant>;
+var
+  lUser: string;
+  lRoles: TArray<string>;
+  lAll: TArray<TGrantSummary>;
+  G: TGrantSummary;
+  R: TEffectiveGrant;
+  L: TList<TEffectiveGrant>;
+  lRole: string;
+
+  procedure Add(const AGrant: TGrantSummary; const AVia: string; AConditional: Boolean);
+  begin
+    R := Default(TEffectiveGrant);
+    R.ObjectName := AGrant.ObjectName;
+    R.ObjectKind := AGrant.ObjectKind;
+    R.Privileges := AGrant.Privileges;
+    R.Via := AVia;
+    R.Conditional := AConditional;
+    L.Add(R);
+  end;
+
+begin
+  lUser := AUser.Trim.ToUpper;
+  lRoles := RolesOf(lUser);
+  lAll := Grants;
+  L := TList<TEffectiveGrant>.Create;
+  try
+    for G in lAll do
+    begin
+      { Role membership is not access to anything: it is the reason some other row is here. }
+      if G.ObjectKind = 'role' then
+        Continue;
+      if SameText(G.Grantee, lUser) then
+        Add(G, 'direct', False)
+      else if G.Grantee = 'PUBLIC' then
+        { PUBLIC needs no membership and no activation: everyone who can attach has it. }
+        Add(G, 'PUBLIC', False)
+      else
+        for lRole in lRoles do
+          if SameText(G.Grantee, lRole) then
+          begin
+            Add(G, 'role ' + lRole, True);
+            Break;
+          end;
+    end;
+    Result := L.ToArray;
+  finally
+    L.Free;
   end;
 end;
 

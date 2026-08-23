@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   application must pass the role at connect time or every statement above is inert. Then it
   checks the claim: PUBLIC grants and grants the account already holds outside the plan come
   back as findings, each with the `REVOKE` that closes it.
+- **`fb_audit_security` also answers for one account.** Given `user_name` it reports what that
+  account can reach and how — granted directly, granted to PUBLIC, or granted to a role it
+  belongs to — which is the question a privilege list does not answer as soon as either of those
+  is involved. A role row is marked as conditional, because a Firebird role is inactive unless
+  the connection names it or it was granted as DEFAULT (4.0+), and which of the two applies is
+  recorded in the security database where an ordinary connection cannot look. It also says when
+  the account is SYSDBA or owns objects, neither of which is subject to the privileges listed.
 - **`fb_audit_security`: who may do what, and which of those is a mistake.** Every grant recorded
   in the database, merged to one line per grantee and object, plus three findings: privileges
   held by **PUBLIC** (`critical` when they include INSERT, UPDATE or DELETE — PUBLIC is not a

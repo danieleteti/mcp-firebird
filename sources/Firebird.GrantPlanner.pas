@@ -17,8 +17,14 @@ unit Firebird.GrantPlanner;
   - **"And nothing else" is a claim about the grants that already exist.** A plan that grants APP
     exactly the TBL_* tables gives it the whole database anyway if PUBLIC holds SELECT on the
     rest. That check is the reason this is a tool and not a sentence in a prompt.
-  - **Privileges go to a role, and the role to the account.** One place to look, one place to
-    revoke, and the next account that needs the same access is one statement, not nine.
+  - **Privileges go to a role, and the role to the account — where that works.** One place to
+    look, one place to revoke, and the next account that needs the same access is one statement,
+    not nine. But a Firebird role is inactive unless the connection asks for it by name, and
+    before 4.0 there is no way to make it automatic: an application that connects without its
+    role gets `no permission for SELECT access` from a plan whose every statement succeeded.
+    4.0 added DEFAULT roles and removes the trap. So below 4.0 the privileges go straight to the
+    account by default — a plan that works as printed beats a better-shaped plan that silently
+    does nothing — and `grant_to` overrides it either way.
 
   What it cannot do is see accounts: whether APP already exists lives in the security database,
   which an ordinary SQL connection does not attach to. So the CREATE USER is offered as a
@@ -42,6 +48,9 @@ type
     { The pattern subtracted from it, empty when nothing was excluded. }
     ExcludePattern: string;
     Access: string;   // 'read' | 'readwrite'
+    { Where the privileges land: 'role' (and the role on the account) or 'user' (straight on the
+      account). Defaulted from the engine version, overridable. }
+    GrantTo: string;
     Targets: TArray<TGrantTarget>;
     { The plan, in the order it must be run. }
     Statements: TArray<string>;
@@ -58,6 +67,8 @@ type
 const
   ACCESS_READ = 'read';
   ACCESS_READWRITE = 'readwrite';
+  GRANT_TO_ROLE = 'role';
+  GRANT_TO_USER = 'user';
   { Never a usable password. A plan that a DBA can run without reading it is a plan that puts a
     known password on a new account. }
   PASSWORD_PLACEHOLDER = 'change-this-before-running';
@@ -85,7 +96,8 @@ function QuoteIfNeeded(const AName: string): string;
   Raises nothing for an empty match: a pattern that matches no object is an answer, and the plan
   says so in Notes. }
 function PlanGrants(AConn: TFirebirdConnection;
-  const AUserName, APattern, AAccess, ARoleName, AExcludePattern: string): TGrantPlan;
+  const AUserName, APattern, AAccess, ARoleName, AExcludePattern: string;
+  const AGrantTo: string = ''): TGrantPlan;
 
 implementation
 
@@ -241,7 +253,8 @@ begin
 end;
 
 function PlanGrants(AConn: TFirebirdConnection;
-  const AUserName, APattern, AAccess, ARoleName, AExcludePattern: string): TGrantPlan;
+  const AUserName, APattern, AAccess, ARoleName, AExcludePattern: string;
+  const AGrantTo: string = ''): TGrantPlan;
 var
   lStatements: TList<string>;
   lNotes: TList<string>;
@@ -252,10 +265,13 @@ var
   G: TGrantSummary;
   lTables, lViews, lProcs, lMatched: Integer;
   lAccessWasUnderstood: Boolean;
+  lGrantee: string;
+  lRoleWasNamed: Boolean;
   lExcluded: TArray<TGrantTarget>;
   lCaps: TFirebirdCapabilities;
 begin
   Result := Default(TGrantPlan);
+  lRoleWasNamed := False;
   Result.UserName := AUserName.Trim.ToUpper;
   if Result.UserName = '' then
     raise Exception.Create('A grant plan needs an account name: pass user_name.');
@@ -265,6 +281,9 @@ begin
   Result.RoleName := ARoleName.Trim.ToUpper;
   if Result.RoleName = '' then
     Result.RoleName := Result.UserName + '_ROLE';
+  { An explicit role name is a request for a role, whatever the engine would have defaulted to. }
+  if (ARoleName.Trim <> '') and (AGrantTo.Trim = '') then
+    lRoleWasNamed := True;
   Result.Pattern := TranslatePattern(APattern);
   Result.Targets := MatchTargets(AConn, Result.Pattern);
   if AExcludePattern.Trim <> '' then
@@ -278,6 +297,17 @@ begin
     SetLength(Result.Targets, MAX_PLAN_TARGETS);
   Result.RoleExists := RoleAlreadyExists(AConn, Result.RoleName);
   lCaps := TFirebirdCapabilities.Detect(AConn);
+  { The default is the shape that works without touching anything outside the database. }
+  if SameText(AGrantTo.Trim, GRANT_TO_USER) then
+    Result.GrantTo := GRANT_TO_USER
+  else if SameText(AGrantTo.Trim, GRANT_TO_ROLE) then
+    Result.GrantTo := GRANT_TO_ROLE
+  else if lCaps.HasDefaultRoles or lRoleWasNamed then
+    Result.GrantTo := GRANT_TO_ROLE
+  else
+    Result.GrantTo := GRANT_TO_USER;
+  if Result.GrantTo = GRANT_TO_USER then
+    Result.RoleName := '';
 
   if Result.Access = ACCESS_READWRITE then
     lPrivileges := WRITE_PRIVILEGES
@@ -312,10 +342,13 @@ begin
       lStatements.Add(Format('CREATE USER %s PASSWORD ''%s'';',
         [QuoteIfNeeded(Result.UserName), PASSWORD_PLACEHOLDER]));
     end;
-    if Result.RoleExists then
-      lStatements.Add(Format('-- Role %s already exists; the grants below add to it.', [Result.RoleName]))
-    else
-      lStatements.Add(Format('CREATE ROLE %s;', [QuoteIfNeeded(Result.RoleName)]));
+    if Result.GrantTo = GRANT_TO_ROLE then
+      if Result.RoleExists then
+        lStatements.Add(Format('-- Role %s already exists; the grants below add to it.',
+          [Result.RoleName]))
+      else
+        lStatements.Add(Format('CREATE ROLE %s;', [QuoteIfNeeded(Result.RoleName)]));
+    lGrantee := QuoteIfNeeded(IfThen(Result.GrantTo = GRANT_TO_ROLE, Result.RoleName, Result.UserName));
 
     lTables := 0; lViews := 0; lProcs := 0;
     for T in Result.Targets do
@@ -323,27 +356,25 @@ begin
       if T.Kind = 'procedure' then
       begin
         Inc(lProcs);
-        lStatements.Add(Format('GRANT EXECUTE ON %s TO %s;',
-          [GrantRef(T), QuoteIfNeeded(Result.RoleName)]));
+        lStatements.Add(Format('GRANT EXECUTE ON %s TO %s;', [GrantRef(T), lGrantee]));
       end
       else
       begin
         if T.Kind = 'view' then Inc(lViews) else Inc(lTables);
-        lStatements.Add(Format('GRANT %s ON %s TO %s;',
-          [lPrivileges, GrantRef(T), QuoteIfNeeded(Result.RoleName)]));
+        lStatements.Add(Format('GRANT %s ON %s TO %s;', [lPrivileges, GrantRef(T), lGrantee]));
       end;
     end;
 
-    { The statement that decides whether any of the above has an effect. A Firebird role is
-      inactive unless the connection asks for it by name, so on 3.0 and below the application's
-      connection string has to carry it; 4.0 added DEFAULT roles, which is the same intent
-      expressed where it cannot be forgotten. }
-    if lCaps.HasDefaultRoles then
-      lStatements.Add(Format('GRANT DEFAULT %s TO USER %s;',
-        [QuoteIfNeeded(Result.RoleName), QuoteIfNeeded(Result.UserName)]))
-    else
-      lStatements.Add(Format('GRANT %s TO %s;',
-        [QuoteIfNeeded(Result.RoleName), QuoteIfNeeded(Result.UserName)]));
+    { The statement that decides whether any of the above has an effect — when there is a role
+      at all. A Firebird role is inactive unless the connection asks for it by name; 4.0 added
+      DEFAULT roles, which is the same intent expressed where it cannot be forgotten. }
+    if Result.GrantTo = GRANT_TO_ROLE then
+      if lCaps.HasDefaultRoles then
+        lStatements.Add(Format('GRANT DEFAULT %s TO USER %s;',
+          [QuoteIfNeeded(Result.RoleName), QuoteIfNeeded(Result.UserName)]))
+      else
+        lStatements.Add(Format('GRANT %s TO %s;',
+          [QuoteIfNeeded(Result.RoleName), QuoteIfNeeded(Result.UserName)]));
 
     lNotes.Add(Format('%d table(s), %d view(s) and %d procedure(s) matched %s%s.',
       [lTables, lViews, lProcs, Result.Pattern,
@@ -356,18 +387,30 @@ begin
         [lMatched, MAX_PLAN_TARGETS]));
     lNotes.Add('Run these as SYSDBA or as the owner of the objects; CREATE USER needs an ' +
       'administrator whatever database you are attached to.');
-    if lCaps.HasDefaultRoles then
+    if Result.GrantTo = GRANT_TO_USER then
+      lNotes.Add(Format('The privileges are granted straight to %s, not through a role, so they ' +
+        'apply to every connection it makes and nothing outside the database has to change. %s ' +
+        'A role is the better shape when you can use one: it is a single place to look and a ' +
+        'single place to revoke. Ask for it with grant_to=role.',
+        [Result.UserName,
+         IfThen(lCaps.HasDefaultRoles,
+           'You asked for it explicitly.',
+           Format('That is the default on %s, where a role is inactive unless the connection ' +
+             'names it and there is no way to make it automatic — DEFAULT roles arrived in 4.0.',
+             [lCaps.EngineVersion]))]))
+    else if lCaps.HasDefaultRoles then
       lNotes.Add(Format('%0:s is granted as a DEFAULT role (%1:s), so it is active on every ' +
         'connection %2:s makes without the application asking for it. If you would rather the ' +
         'application ask, use GRANT %0:s TO %2:s instead and pass the role at connect time.',
         [Result.RoleName, lCaps.EngineVersion, Result.UserName]))
     else
-      lNotes.Add(Format('On %s a role is active only when the connection asks for it: the ' +
-        'application must pass %s as its role (FireDAC: add RoleName=%s to the connection ' +
-        'parameters; isql: -role %s). Without it %s connects with no privileges at all and ' +
-        'every statement above has no effect. DEFAULT roles, which remove this step, arrived ' +
-        'in 4.0.',
-        [lCaps.EngineVersion, Result.RoleName, Result.RoleName, Result.RoleName, Result.UserName]));
+      lNotes.Add(Format('**On %s this plan does nothing until the application passes the role.** ' +
+        'A role is active only when the connection names it: FireDAC needs RoleName=%s in the ' +
+        'connection parameters, isql needs -role %s. Until then %s connects with no privileges ' +
+        'at all and every statement above has succeeded and changed nothing. If the connection ' +
+        'string cannot be changed, re-run with grant_to=user and the privileges go straight on ' +
+        'the account instead.',
+        [lCaps.EngineVersion, Result.RoleName, Result.RoleName, Result.UserName]));
     if Result.UserName <> 'SYSDBA' then
       lNotes.Add(Format('The password above is a placeholder, not a suggestion. Replace it ' +
         'before you run the statement, and if %s already exists, drop that line instead.',
