@@ -231,3 +231,19 @@ the MCP transport itself.
   `service_mgr` reference. The nine locked tools in `providers/FirebirdStubsU.pas` announce the
   Enterprise edition; their names are a contract — the Python compliance suite is shared with the
   Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.
+
+## Testi per esseri umani
+
+Ogni testo destinato a un lettore (articoli, README, documentazione, release notes: tutto tranne
+il codice) va ripulito con lo skill `clean-user-facing-text`
+([watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover)) prima di essere
+consegnato o pubblicato:
+
+```bash
+S="C:/Users/dteti/.claude/skills/clean-user-facing-text/scripts"
+py "$S/inspect_text.py" --json FILE     # suspicious_total deve essere 0
+```
+
+Trova in modo deterministico gli Unicode invisibili (zero-width, bidi, tag characters, spazi
+omoglifi). Non rileva i watermark statistici, che si attenuano solo riscrivendo: per quelli
+restano `humanizer` e `stop-slop`.

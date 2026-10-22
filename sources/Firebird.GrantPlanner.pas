@@ -406,10 +406,11 @@ begin
     else
       lNotes.Add(Format('**On %s this plan does nothing until the application passes the role.** ' +
         'A role is active only when the connection names it: FireDAC needs RoleName=%s in the ' +
-        'connection parameters, isql needs -role %s. Until then %s connects with no privileges ' +
-        'at all and every statement above has succeeded and changed nothing. If the connection ' +
-        'string cannot be changed, re-run with grant_to=user and the privileges go straight on ' +
-        'the account instead.',
+        'connection parameters, isql needs -role %s. Until then none of the privileges above ' +
+        'reach %s, and every statement has succeeded and changed nothing for it. What the ' +
+        'account can still do is whatever it was granted directly and whatever PUBLIC holds, ' +
+        'which is what the findings below report. If the connection string cannot be changed, ' +
+        're-run with grant_to=user and the privileges go straight on the account instead.',
         [lCaps.EngineVersion, Result.RoleName, Result.RoleName, Result.UserName]));
     if Result.UserName <> 'SYSDBA' then
       lNotes.Add(Format('The password above is a placeholder, not a suggestion. Replace it ' +
