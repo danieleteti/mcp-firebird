@@ -87,6 +87,22 @@ begin
       'not from the running workload. It cannot tell you whether this table is where the system ' +
       'actually spends its time, and an index that helps this query may hurt three others that ' +
       'were not asked about — every index costs every INSERT into that table.'
+  else if SameText(AToolName, 'fb_query') then
+    LLimit := 'what these rows cost. They are what the query returns now, through a read-only ' +
+      'snapshot; nothing here says what the query cost to answer (fb_analyze_query does), and a ' +
+      'capped answer is a sample of the result, not the result.'
+  else if SameText(AToolName, 'fb_suggest_grants') then
+    LLimit := 'whether these statements will run, or whether the account exists. They are ' +
+      'generated from the catalogue and never executed — this server does not write — and the ' +
+      'account list lives in the security database, which it does not attach to. Two things ' +
+      'this plan cannot bind at all: SYSDBA and the owner of an object are not subject to its ' +
+      'privileges, so an application still connecting as either of them is unaffected by every ' +
+      'statement above.'
+  else if SameText(AToolName, 'fb_audit_security') then
+    LLimit := 'anything outside this database. Grants are recorded here; accounts, admin roles, ' +
+      'password policy and who can reach the port at all live in the security database and the ' +
+      'server configuration, which an ordinary SQL connection cannot attach to. A database whose ' +
+      'grants are all correct can still be reachable by an account nobody remembers creating.'
   else if SameText(AToolName, 'fb_audit_table') then
     LLimit := 'This audit reads structure only. A table can pass every check here and still be ' +
       'the hot spot: nothing in the schema records how much concurrent work converges on it.'

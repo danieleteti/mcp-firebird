@@ -112,6 +112,8 @@ la base de datos.
 |---|---|---|
 | Esquema, documentación, planes, consejo sobre índices, auditoría del esquema | ✅ | ✅ |
 | Salud de transacciones y sweep (`MON$`) | ✅ | ✅ |
+| Permisos registrados en la base de datos (`fb_audit_security`): PUBLIC, grant options, roles sin uso | ✅ | ✅ |
+| Permisos de una cuenta de aplicación (`app_user_plan` + `fb_suggest_grants`): la entrevista y el SQL generado desde el catálogo | ✅ | ✅ |
 | `fb_diagnose`: el punto de entrada, lo que ya se sabe y la ruta ordenada a seguir | ✗ | ✅ |
 | `fb_analyze_config`: `firebird.conf` / `databases.conf`, leídos contra este motor, esta arquitectura, esta carga | ✗ | ✅ |
 | `fb_analyze_storage`: profundidad de los índices, llenado de las páginas, cadenas de versiones de registro, distribución de páginas | ✗ | ✅ |

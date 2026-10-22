@@ -27,7 +27,7 @@ column really holds before claiming an index on it would pay off. Every answer a
 worked). Nothing is written to your database: the server attaches read-only, and the SQL it hands
 you is yours to run, if and when you decide to.
 
-- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.5.0`
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.6.0`
 - **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — capability-detected at runtime
 - **Free** on your own databases, at any scale, no key and no expiry. A licence is needed only to
   pass the software on to somebody else ([details](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md))
@@ -95,6 +95,9 @@ That is the whole setup. If the client lists the server but shows no tools, see
 | *"Keep optimizing until this query stops scanning NATURAL"* | The goal loop: it changes, re-measures on the database, and stops when the measurement says the goal is met — not when the assistant thinks so |
 | *"It crawls every afternoon and nobody changed anything"* | Classifies the symptom before touching a tool, then samples `MON$` across a window to show what accumulates |
 | *"Who is connected, and what are they running?"* | Every attachment with its user, address and process, the statement it is running now, and how long it has been running it |
+| *"Show me the rows that are actually in there"* | `fb_query` runs the SELECT and returns the rows, capped so an answer stays an answer. Nothing else is accepted: not an UPDATE, not a DELETE, not a DDL |
+| *"Our app connects as SYSDBA. What should it use instead?"* | `app_user_plan` asks what the application actually does — a handful of questions, each of which changes the statements — then `fb_suggest_grants` writes them from the catalogue: the account, a role, the grants, and the role activated the way your engine version needs |
+| *"Who can read this table?"* | Every grant recorded in the database, and the three that are usually mistakes: PUBLIC, `WITH GRANT OPTION`, and roles nobody is a member of |
 | *"Back the database up"* | Runs `gbak` in the background and **restores what it wrote into a scratch database**, so the answer is "this backup restores", not "a file exists" |
 
 Every analysis also closes with **what it does not rule out**: a plan cannot see contention, and a
@@ -106,19 +109,20 @@ snapshot cannot see accumulation.
 
 ## The tools
 
-Thirteen tools, three prompts, one resource. Full reference — arguments, what each one decides, the
+Sixteen tools, four prompts, one resource. Full reference — arguments, what each one decides, the
 raw `tools/call` shapes — in **[docs/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md)**.
 
-`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_analyze_query` ·
-`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_evaluate_goal` ·
-`fb_monitor_transactions` · `fb_sample_activity` · `fb_monitor_attachments` ·
-`fb_backup_start` · `fb_backup_status`
+`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
+`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
+`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` returns before the backup does — poll `fb_backup_status`. It needs
 `firebird.backup_dir` set in the `.env`, `gbak.exe` beside your `fbclient.dll`, and room on that
 disk for a second copy of the database while the verification restore runs.
 
-Prompts: `optimization_goal` (iterate until met) · `health_check` · `classify_problem`.
+Prompts: `optimization_goal` (iterate until met) · `health_check` · `classify_problem` ·
+`app_user_plan` (work out what an application account should be allowed to do, and produce the SQL).
 Resource: `firebird://schema`.
 
 Nine further tools appear in `tools/list` and belong to the [Enterprise edition](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md#enterprise-edition):
@@ -147,7 +151,7 @@ when the schema is in order and the database is still slow.
 |---|---|
 | [Setup](https://github.com/danieleteti/mcp-firebird/blob/master/docs/setup.md) | Prerequisites, the `.env` reference, `--env <dir>`, several databases from one build, per-client snippets, manual smoke test |
 | [Worked examples](https://github.com/danieleteti/mcp-firebird/blob/master/docs/usage.md) | The conversations, verbatim tool output, an optimization round-trip |
-| [Tool reference](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md) | All ten tools, how the index advisor decides, prompts, resources, Enterprise tools |
+| [Tool reference](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md) | Every tool, how the index advisor decides, prompts, resources, Enterprise tools |
 | [Editions & licensing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md) | What is free, what needs a licence, what Enterprise adds |
 | [Building & testing](https://github.com/danieleteti/mcp-firebird/blob/master/docs/development.md) | Delphi build, the 2.5→5.0 test matrix, how it uses mcp-server-delphi |  <!-- release:drop -->
 | [Problem catalog](https://github.com/danieleteti/mcp-firebird/blob/master/docs/firebird-problem-catalog.md) | Every problem detected, the fixture that provokes it, the milestone |
@@ -171,12 +175,19 @@ when the schema is in order and the database is still slow.
 
 - **Read-only, and not on the honour system.** The server opens its transactions read-only, so
   an INSERT, UPDATE, DELETE or DDL is refused by Firebird, not by a check of ours that could
-  be wrong about what a statement does. It matters because three tools execute SQL that arrives
-  as text from the caller — `fb_analyze_query` measures the SELECT it analyzes,
-  `fb_suggest_indexes` measures the one it advises on, and `fb_evaluate_goal` times one. All
-  three also refuse anything that is not a plain SELECT before running it, and refuse to execute
-  a statement whose parameters nobody bound; the read-only transaction is what holds if a
-  refusal is ever wrong. The SQL
+  be wrong about what a statement does. It matters because four tools execute SQL that arrives
+  as text from the caller — `fb_query` returns its rows, `fb_analyze_query` measures the SELECT
+  it analyzes, `fb_suggest_indexes` measures the one it advises on, and `fb_evaluate_goal` times
+  one. All four also refuse anything that is not a plain SELECT before running it, and refuse to
+  execute a statement whose parameters nobody bound; the read-only transaction is what holds if
+  a refusal is ever wrong.
+
+  That order matters, and it is the opposite of a keyword blocklist. A list of forbidden words —
+  no `INSERT`, no `DROP` — is a guess about text: it does not know that `EXECUTE PROCEDURE` can
+  write, that a statement can be assembled to spell nothing on the list, or that the next release
+  adds a keyword nobody added to the list. The read-only TPB is not a guess. Whatever text
+  arrives, whatever it means, the transaction it runs in cannot write, and the engine is the one
+  saying so. The SQL
   an advisory hands you is yours to run, when and if you decide to. Tools that apply a change
   themselves are planned, and when they arrive they will be off unless you turn them on.
 - **Cross-version.** Capability detection adapts feature use (MON$ tables, explained plans,

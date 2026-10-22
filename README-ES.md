@@ -27,7 +27,7 @@ como **Finding** (qué falla), **SQL** (la sentencia que lo arregla) y **Verify*
 funcionó). En tu base de datos no se escribe nada: el servidor se conecta en solo lectura, y el SQL
 que te entrega lo ejecutas tú, si decides hacerlo.
 
-- **Transporte:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Identidad del servidor:** `mcp-firebird` v`0.5.0`
+- **Transporte:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Identidad del servidor:** `mcp-firebird` v`0.6.0`
 - **Motores:** Firebird 2.5, 3.0, 4.0, 5.0 — detectados en tiempo de ejecución
 - **Gratis** en tus propias bases de datos, a cualquier escala, sin clave y sin caducidad. La
   licencia solo hace falta para que el software salga de tus manos
@@ -98,6 +98,9 @@ La instalación es esto. Si el cliente muestra el servidor pero ninguna herramie
 | *"Sigue optimizando hasta que esta query deje de hacer NATURAL"* | El bucle por objetivo: cambia, vuelve a medir sobre la base de datos, y para cuando lo dice la medida — no cuando lo cree el asistente |
 | *"Cada tarde se arrastra y nadie ha tocado nada"* | Clasifica el síntoma antes de tocar una herramienta, y luego muestrea `MON$` sobre una ventana para enseñar qué se acumula |
 | *"¿Quién está conectado, y qué está ejecutando?"* | Cada conexión con su usuario, dirección y proceso, la sentencia que ejecuta ahora mismo y desde cuándo |
+| *"Enséñame las filas que hay de verdad"* | `fb_query` ejecuta el SELECT y devuelve las filas, con un tope para que una respuesta siga siendo una respuesta. No pasa nada más: ni UPDATE, ni DELETE, ni DDL |
+| *"Nuestra aplicación se conecta como SYSDBA. ¿Qué debería usar?"* | `app_user_plan` pregunta qué hace de verdad la aplicación — pocas preguntas, y cada una cambia las sentencias — y `fb_suggest_grants` las escribe desde el catálogo: la cuenta, un rol, los permisos y el rol activado como pide tu versión del motor |
+| *"¿Quién puede leer esta tabla?"* | Todos los permisos registrados en la base de datos, y los tres que suelen ser un error: PUBLIC, `WITH GRANT OPTION` y roles sin ningún miembro |
 | *"Haz una copia de seguridad"* | Ejecuta `gbak` en segundo plano y **restaura lo que ha escrito en una base de datos desechable**: la respuesta no es "existe un fichero" sino "este backup se restaura" |
 
 Cada análisis cierra además diciendo **qué no ha descartado**: un plan no ve la contención, y una
@@ -109,14 +112,14 @@ instantánea no ve la acumulación.
 
 ## Las herramientas
 
-Trece herramientas, tres prompts, un recurso. Referencia completa — argumentos, qué decide cada una,
+Dieciséis herramientas, cuatro prompts, un recurso. Referencia completa — argumentos, qué decide cada una,
 las llamadas `tools/call` en crudo — en
 **[docs/es/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/tools.md)**.
 
-`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_analyze_query` ·
-`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_evaluate_goal` ·
-`fb_monitor_transactions` · `fb_sample_activity` · `fb_monitor_attachments` ·
-`fb_backup_start` · `fb_backup_status`
+`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
+`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
+`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` vuelve antes que el backup — luego haz polling con `fb_backup_status`. Necesita
 `firebird.backup_dir` en el `.env`, `gbak.exe` junto a tu `fbclient.dll`, y sitio en ese disco para
@@ -153,7 +156,7 @@ cuando el esquema está en orden y la base de datos sigue lenta.
 |---|---|
 | [Instalación](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/setup.md) | Requisitos, referencia del `.env`, `--env <dir>`, varias bases de datos desde una instalación, fragmentos por cliente, prueba manual |
 | [Ejemplos reales](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/usage.md) | Las conversaciones, la salida literal de las herramientas, una vuelta de optimización |
-| [Referencia de herramientas](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/tools.md) | Las trece herramientas, cómo decide el asesor de índices, prompts, recursos, Enterprise |
+| [Referencia de herramientas](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/tools.md) | Las quince herramientas, cómo decide el asesor de índices, prompts, recursos, Enterprise |
 | [Ediciones y licencias](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/editions.md) | Qué es gratis, qué necesita licencia, qué añade Enterprise |
 | [Compilar y probar](https://github.com/danieleteti/mcp-firebird/blob/master/docs/es/development.md) | Compilación Delphi, la matriz de pruebas 2.5→5.0, cómo usa mcp-server-delphi |  <!-- release:drop -->
 | [Catálogo de problemas](https://github.com/danieleteti/mcp-firebird/blob/master/docs/firebird-problem-catalog.md) | Cada problema detectado, la fixture que lo provoca, el milestone (en inglés) |
@@ -177,12 +180,20 @@ cuando el esquema está en orden y la base de datos sigue lenta.
 
 - **Solo lectura, y no por confianza.** El servidor abre sus transacciones en solo lectura: un
   INSERT, UPDATE, DELETE o DDL lo rechaza Firebird, no una comprobación nuestra que podría
-  equivocarse sobre lo que hace una sentencia. Importa porque tres herramientas ejecutan SQL que
-  llega como texto de quien llama: `fb_analyze_query` mide el SELECT que analiza,
-  `fb_suggest_indexes` mide aquel sobre el que aconseja y `fb_evaluate_goal` cronometra uno. Las
-  tres rechazan ya todo lo que no sea un SELECT simple antes de ejecutarlo, y se niegan a ejecutar
-  una sentencia con parámetros que nadie ha rellenado; la transacción de solo lectura es lo que
-  aguanta si un rechazo falla. El SQL
+  equivocarse sobre lo que hace una sentencia. Importa porque cuatro herramientas ejecutan SQL
+  que llega como texto de quien llama: `fb_query` devuelve sus filas, `fb_analyze_query` mide el
+  SELECT que analiza, `fb_suggest_indexes` mide aquel sobre el que aconseja y `fb_evaluate_goal`
+  cronometra uno. Las cuatro rechazan ya todo lo que no sea un SELECT simple antes de ejecutarlo,
+  y se niegan a ejecutar una sentencia con parámetros que nadie ha rellenado; la transacción de
+  solo lectura es lo que aguanta si un rechazo falla.
+
+  Ese orden importa, y es lo contrario de una lista negra de palabras clave. Una lista de
+  palabras prohibidas — nada de `INSERT`, nada de `DROP` — es una suposición sobre el texto: no
+  sabe que `EXECUTE PROCEDURE` puede escribir, que una sentencia puede componerse sin contener
+  ninguna de esas palabras, ni que la próxima versión añade una palabra clave que nadie añadió a
+  la lista. El TPB de solo lectura no es una suposición. Llegue el texto que llegue y signifique
+  lo que signifique, la transacción en la que corre no puede escribir, y quien lo dice es el
+  motor. El SQL
   que te entrega una recomendación lo ejecutas tú, cuando y si lo decides. Están previstas
   herramientas que apliquen el cambio por su cuenta y, cuando lleguen, vendrán desactivadas
   hasta que tú las actives.

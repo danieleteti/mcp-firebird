@@ -13,6 +13,9 @@ type
     function FbListTables: TMCPToolResult;
     [MCPTool('fb_generate_documentation', 'Markdown documentation for one table (columns, primary key, indexes, triggers with the event they fire on), or for the whole database when table_name is empty — which also lists stored procedures with their parameters, functions and packages (3.0+)')]
     function FbGenerateDocumentation([MCPParam('Table name; leave empty for the whole database', TMCPParamPresence.Optional)] const table_name: string): TMCPToolResult;
+    [MCPTool('fb_query', 'Runs a read-only SELECT and returns the rows as a Markdown table. Capped at max_rows (default 100, ceiling 1000); anything that is not a plain SELECT is refused, and so is a statement with unbound placeholders')]
+    function FbQuery([MCPParam('The SELECT to run')] const sql: string;
+      [MCPParam('Maximum rows to return (default 100, ceiling 1000)', TMCPParamPresence.Optional)] const max_rows: Integer): TMCPToolResult;
     [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported')]
     function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
     [MCPTool('fb_suggest_indexes', 'Index advice for one query, as ready-to-run DDL: plain B-tree, expression (COMPUTED BY) or partial (5.0+), whichever the predicate calls for — and no index at all when the scan is the correct plan. Refreshes stale statistics before proposing anything structural. Executes the query once to measure what the scan reads against what it returns, so on a large table this costs a full scan')]
@@ -21,6 +24,17 @@ type
     function FbSuggestIndexDrops([MCPParam('Table name')] const table_name: string): TMCPToolResult;
     [MCPTool('fb_audit_table', 'Schema-health audit of a table: missing PK, over-indexing, stale statistics')]
     function FbAuditTable([MCPParam('Table name')] const table_name: string): TMCPToolResult;
+    [MCPTool('fb_audit_security', 'Who holds which privileges inside this database, and which grant is a mistake: privileges held by PUBLIC, delegation via WITH GRANT OPTION, roles nobody is a member of. Given user_name it answers the other question instead — everything that one account can reach, and how: directly, through PUBLIC, or through a role it belongs to')]
+    function FbAuditSecurity(
+      [MCPParam('Report what this one account can reach, instead of auditing the whole database', TMCPParamPresence.Optional)] const user_name: string): TMCPToolResult;
+    [MCPTool('fb_suggest_grants', 'Builds the statements that give one account access to the objects matching a pattern and nothing else: a conditional CREATE USER, a role, the GRANTs generated from the catalogue, and the role granted to the account in the form this engine version needs. Then checks the claim: PUBLIC grants and grants the account already holds outside the plan are reported with the REVOKE that closes them')]
+    function FbSuggestGrants(
+      [MCPParam('The account the access is for, e.g. APP')] const user_name: string;
+      [MCPParam('Which objects: a glob or LIKE pattern such as TBL_* (* and % both mean any sequence, _ is literal). Default: every user object', TMCPParamPresence.Optional)] const object_pattern: string;
+      [MCPParam('read (SELECT) or readwrite (SELECT/INSERT/UPDATE/DELETE). Default read', TMCPParamPresence.Optional)] const access: string;
+      [MCPParam('Role that carries the privileges. Default <USER>_ROLE', TMCPParamPresence.Optional)] const role_name: string;
+      [MCPParam('Objects to subtract from the match, same pattern syntax — the audit log inside the application prefix, for instance', TMCPParamPresence.Optional)] const exclude_pattern: string;
+      [MCPParam('Where the privileges land: role (a role, granted to the account) or user (straight on the account). Default: role on 4.0+, where a DEFAULT role needs nothing from the application; user below 4.0, where a role is inactive unless the connection names it', TMCPParamPresence.Optional)] const grant_to: string): TMCPToolResult;
     [MCPTool('fb_evaluate_goal', 'Deterministically measures an optimization goal and returns whether it is met')]
     function FbEvaluateGoal(
       [MCPParam('Goal type: query_no_natural_scan | query_time_ms | no_redundant_indexes | no_stale_index_statistics')] const goal_type: string;
@@ -48,10 +62,13 @@ uses
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
   Firebird.SchemaAudit, Firebird.Goal, Firebird.TransactionMonitor, Firebird.Activity,
-  Firebird.Attachments,
+  Firebird.Attachments, Firebird.Query, Firebird.SecurityAudit, Firebird.GrantPlanner,
   FirebirdToolRuntimeU, FirebirdConfigU, FirebirdBackupJobU,
   MVCFramework.MCP.Server, MVCFramework.Logger;
 
+{ Enough rows to see the shape of who holds what. Past this the table is not read, it is
+  scrolled, and the findings underneath it are what matters anyway. }
+const GRANT_ROWS_SHOWN = 200;
 const DEFAULT_STALE_MINUTES = 5;
 const DEFAULT_SAMPLE_SECONDS = 5;
 const DEFAULT_IDLE_MINUTES = 30;
@@ -109,6 +126,166 @@ begin
         if LTable.Trim.IsEmpty then Result := TMCPToolResult.Text(D.DatabaseMarkdown)
         else Result := TMCPToolResult.Text(D.TableMarkdown(LTable.ToUpper));
       finally D.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbQuery(const sql: string; const max_rows: Integer): TMCPToolResult;
+var LSql: string; LMaxRows: Integer;
+begin
+  LSql := sql;
+  // Same optional-Integer caveat as fb_monitor_transactions: 0 means "not passed", and
+  // Firebird.Query turns it into the documented default.
+  LMaxRows := max_rows;
+  Result := Guard('fb_query', Format('sql=%s max_rows=%d', [LSql, LMaxRows]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    begin
+      Result := TMCPToolResult.Text(
+        WithLimits(RunSelect(Conn, LSql, LMaxRows).ToMarkdown, 'fb_query'));
+    end);
+end;
+
+{ "What can APP actually reach?" — the question a privilege list does not answer, because the
+  answer is spread across grants to the account, grants to PUBLIC and grants to every role the
+  account belongs to. Firebird will not tell you whether a role is automatic for that account
+  (a DEFAULT role is recorded in the security database, not here), so a role row says what the
+  account may reach and says why it is conditional. }
+function EffectivePrivilegesReport(const AUser: string): TMCPToolResult;
+begin
+  Result := Guard('fb_audit_security', 'user_name=' + AUser,
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      A: TFirebirdSecurityAudit;
+      E: TEffectiveGrant;
+      lRows: TArray<TEffectiveGrant>;
+      lRoles: TArray<string>;
+      lOwned: Integer;
+      lConditional: Boolean;
+      SB: TStringBuilder;
+    begin
+      A := TFirebirdSecurityAudit.Create(Conn);
+      SB := TStringBuilder.Create;
+      try
+        lRows := A.EffectivePrivileges(AUser);
+        lRoles := A.RolesOf(AUser);
+        lOwned := A.OwnedObjectCount(AUser);
+
+        SB.AppendLine(Format('**What %s can reach.**', [AUser])).AppendLine;
+        if AUser = 'SYSDBA' then
+          SB.AppendLine('SYSDBA is not subject to privileges. It reaches everything in this ' +
+            'database whatever the table below says, and so does the owner of an object on its ' +
+            'own objects. Granting SYSDBA less does not restrict it; giving the application its ' +
+            'own account does.').AppendLine;
+        if lOwned > 0 then
+          SB.AppendLine(Format('%s owns %d user object(s), and an owner is not subject to the ' +
+            'privileges on what it owns: it reaches those whether or not they appear below.',
+            [AUser, lOwned])).AppendLine;
+
+        if Length(lRows) = 0 then
+          SB.AppendLine('No privilege reaches this account: nothing granted to it, nothing held ' +
+            'by PUBLIC, and no role it belongs to carries anything.').AppendLine
+        else
+        begin
+          SB.AppendLine('| Object | Privileges | Reached through |');
+          SB.AppendLine('|---|---|---|');
+          lConditional := False;
+          for E in lRows do
+          begin
+            if E.Conditional then
+              lConditional := True;
+            SB.AppendLine(Format('| %s%s | %s | %s%s |',
+              [E.ObjectName, IfThen(E.ObjectKind = 'table', '', ' *(' + E.ObjectKind + ')*'),
+               E.Privileges, E.Via, IfThen(E.Conditional, ' *(only when active)*', '')]));
+          end;
+          SB.AppendLine;
+          if lConditional then
+            SB.AppendLine('A row marked *(only when active)* comes through a role, and a ' +
+              'Firebird role is inactive unless the connection names it — or unless it was ' +
+              'granted to this account as a DEFAULT role (4.0+). Which of the two applies is ' +
+              'recorded in the security database, which this server does not attach to, so it ' +
+              'cannot be read from here: check the connection string, or grant the privileges ' +
+              'to the account directly (fb_suggest_grants with grant_to=user).').AppendLine;
+        end;
+
+        if Length(lRoles) > 0 then
+          SB.AppendLine(Format('**Member of:** %s', [string.Join(', ', lRoles)])).AppendLine
+        else
+          SB.AppendLine('**Member of:** no roles.').AppendLine;
+
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_audit_security'));
+      finally
+        SB.Free;
+        A.Free;
+      end;
+    end);
+end;
+
+function TFirebirdTools.FbAuditSecurity(const user_name: string): TMCPToolResult;
+var
+  LUser: string;
+begin
+  LUser := user_name.Trim.ToUpper;
+  if LUser <> '' then
+    Exit(EffectivePrivilegesReport(LUser));
+  Result := Guard('fb_audit_security', '',
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      A: TFirebirdSecurityAudit;
+      G: TGrantSummary;
+      R: TRoleInfo;
+      lGrants: TArray<TGrantSummary>;
+      lRoles: TArray<TRoleInfo>;
+      SB: TStringBuilder;
+    begin
+      A := TFirebirdSecurityAudit.Create(Conn);
+      SB := TStringBuilder.Create;
+      try
+        lGrants := A.Grants;
+        lRoles := A.Roles;
+        if Length(lGrants) = 0 then
+          SB.AppendLine('**No grants on user objects.** Every object is reachable only by its ' +
+            'owner and by SYSDBA.').AppendLine
+        else
+        begin
+          SB.AppendLine(Format('**%d grant(s) on user objects.** Owners are not listed: every ' +
+            'object''s owner holds everything on it by definition.',
+            [Length(lGrants)])).AppendLine;
+          SB.AppendLine('| Grantee | Object | Privileges | Grant option | Granted by |');
+          SB.AppendLine('|---|---|---|---|---|');
+          for var lRow := 0 to High(lGrants) do
+          begin
+            if lRow >= GRANT_ROWS_SHOWN then
+            begin
+              SB.AppendLine(Format('| … | *and %d more, not listed* | | | |',
+                [Length(lGrants) - GRANT_ROWS_SHOWN]));
+              Break;
+            end;
+            G := lGrants[lRow];
+            SB.AppendLine(Format('| %s%s | %s%s | %s | %s | %s |',
+              [G.Grantee, IfThen(G.GranteeIsRole, ' *(role)*', ''),
+               G.ObjectName, IfThen(G.ObjectKind = 'table', '', ' *(' + G.ObjectKind + ')*'),
+               G.Privileges, IfThen(G.WithGrantOption, 'yes', 'no'),
+               IfThen(G.Grantor = '', '—', G.Grantor)]));
+          end;
+          SB.AppendLine;
+          { The listing is capped; the findings below it are not. Whatever was left out of the
+            table, anything wrong with it is still reported. }
+        end;
+
+        SB.AppendLine(Format('**%d user-defined role(s).**', [Length(lRoles)]));
+        for R in lRoles do
+          SB.AppendLine(Format('- `%s` (owner %s) — %s', [R.RoleName,
+            IfThen(R.Owner = '', 'unknown', R.Owner),
+            IfThen(Length(R.Members) = 0, 'no members', string.Join(', ', R.Members))]));
+        SB.AppendLine;
+
+        SB.Append(AdvisoriesToText(A.Analyze,
+          'No grant issues found: nothing is held by PUBLIC, nothing carries a grant option, ' +
+          'and every role has members.'));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_audit_security'));
+      finally
+        SB.Free;
+        A.Free;
+      end;
     end);
 end;
 
@@ -212,6 +389,67 @@ begin
       try Result := TMCPToolResult.Text(WithLimits(AdvisoriesToText(A.AuditTable(LTable.ToUpper),
         'No schema-health issues found on ' + LTable + '.'), 'fb_audit_table'));
       finally A.Free; end;
+    end);
+end;
+
+function TFirebirdTools.FbSuggestGrants(const user_name, object_pattern, access, role_name,
+  exclude_pattern, grant_to: string): TMCPToolResult;
+var
+  LUser, LPattern, LAccess, LRole, LExclude, LGrantTo: string;
+begin
+  LUser := user_name; LPattern := object_pattern; LAccess := access;
+  LRole := role_name; LExclude := exclude_pattern; LGrantTo := grant_to;
+  Result := Guard('fb_suggest_grants',
+    Format('user_name=%s object_pattern=%s access=%s role_name=%s exclude_pattern=%s grant_to=%s',
+      [LUser, LPattern, LAccess, LRole, LExclude, LGrantTo]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      P: TGrantPlan;
+      SB: TStringBuilder;
+      T: TGrantTarget;
+      S: string;
+    begin
+      P := PlanGrants(Conn, LUser, LPattern, LAccess, LRole, LExclude, LGrantTo);
+      SB := TStringBuilder.Create;
+      try
+        if P.RoleName = '' then
+          SB.AppendLine(Format('**%s access for %s**, granted straight to the account.',
+            [P.Access, P.UserName])).AppendLine
+        else
+          SB.AppendLine(Format('**%s access for %s**, through role %s.',
+            [P.Access, P.UserName, P.RoleName])).AppendLine;
+
+        if Length(P.Statements) > 0 then
+        begin
+          SB.AppendLine('```sql');
+          for S in P.Statements do
+            SB.AppendLine(S);
+          SB.AppendLine('```').AppendLine;
+        end;
+
+        if Length(P.Targets) > 0 then
+        begin
+          SB.AppendLine(Format('**%d object(s) in the plan:**', [Length(P.Targets)]));
+          for T in P.Targets do
+            SB.AppendLine(Format('- `%s` *(%s)*', [T.Name, T.Kind]));
+          SB.AppendLine;
+        end;
+
+        for S in P.Notes do
+          SB.AppendLine('- ' + S);
+        SB.AppendLine;
+
+        { The conflicts are the half that makes "and nothing else" true or false, so they are
+          rendered as findings rather than prose: severity, statement, verification. }
+        SB.AppendLine('### Does the plan hold?').AppendLine;
+        SB.Append(AdvisoriesToText(P.Conflicts,
+          Format('Nothing outside this plan is reachable by %s through an existing grant: no ' +
+            'PUBLIC privileges on other objects, and no grants this account already holds ' +
+            'elsewhere.', [P.UserName])));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_suggest_grants'));
+      finally
+        SB.Free;
+      end;
     end);
 end;
 

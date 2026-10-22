@@ -5,17 +5,20 @@
 Il catalogo completo: cosa fa ogni tool, come decide l'advisor degli indici, i prompt e la
 risorsa, più le chiamate `tools/call` grezze se piloti il server da solo.
 
-## I tool (13 free, più i 9 Enterprise annunciati in `tools/list`)
+## I tool (16 free, più i 9 Enterprise annunciati in `tools/list`)
 
 | Tool | Argomenti | A cosa serve |
 |---|---|---|
 | `fb_info` | *(nessuno)* | Versione del motore e funzionalità rilevate (JSON) |
 | `fb_list_tables` | *(nessuno)* | Elenca le tabelle utente |
-| `fb_generate_documentation` | `table_name?` | Documentazione Markdown (colonne, PK, indici) di una tabella o dell'intero database |
+| `fb_generate_documentation` | `table_name?` | Documentazione Markdown di una tabella — colonne (con il **dominio** su cui poggiano), PK, indici, **vincoli CHECK**, trigger con l'evento su cui scattano — o dell'intero database, che elenca anche le **view con la loro SELECT**, le stored procedure con i parametri, le funzioni e i package (3.0+). Se il nome è quello di una view, documenta la view |
+| `fb_query` | `sql`, `max_rows?` | Esegue una SELECT in sola lettura e restituisce le righe come tabella Markdown, con un tetto a `max_rows` (default 100, massimo 1000) **e a ~20 000 caratteri**, perché un tetto sulle righe limita le righe e non la larghezza. Tutto ciò che non è una SELECT semplice viene rifiutato, e così uno statement con placeholder non valorizzati |
 | `fb_analyze_query` | `sql` | Analisi del piano di accesso (scansioni NATURAL e SORT esterni), il **piano esteso** del motore su 3.0+ (nomi degli indici, quanta parte dell'indice la query ha usato, strategia di join) **e costo misurato**: una SELECT viene eseguita una volta e si riportano i record e le pagine che ha davvero toccato |
 | `fb_suggest_indexes` | `sql` | Consiglia l'indice per una query: B-tree normale, **su espressione** (`COMPUTED BY`), **parziale** (5.0+) oppure un indice per l'**ordinamento** — e **nessun indice** quando la scansione è il piano giusto. Prima di proporre qualcosa di strutturale aggiorna le statistiche vecchie |
 | `fb_suggest_index_drops` | `table_name` | Segnala indici duplicati, con prefisso ridondante, inattivi o poco selettivi |
 | `fb_audit_table` | `table_name` | Stato di salute dello schema: PK assente, troppi indici, statistiche vecchie |
+| `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | Gli statement che danno a un'utenza l'accesso agli oggetti che corrispondono a un pattern **e a nient'altro**: un `CREATE USER` condizionale, un ruolo, i `GRANT` generati dal catalogo con gli identificatori quotati solo dove Firebird lo richiede, e il ruolo concesso nella forma che questa versione supporta (`GRANT DEFAULT` da 4.0; sotto, la nota che la connessione deve passare il ruolo o i grant restano inerti). Poi verifica l'affermazione: i grant a PUBLIC e quelli che l'utenza già possiede fuori dal piano tornano come rilievi, con la `REVOKE` che li chiude |
+| `fb_audit_security` | `user_name?` | Tutti i grant registrati nel database, una riga per beneficiario e oggetto, più i tre rilievi che di solito sono errori: privilegi in mano a **PUBLIC** (critical se comprendono la scrittura), delega tramite **WITH GRANT OPTION**, e ruoli di cui non è membro nessuno |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Verifica deterministica dell'obiettivo (è il motore del ciclo di ottimizzazione) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salute di transazioni e sweep **in questo istante**: distanza fra OIT/OAT/Next, transazioni lunghe che bloccano (con il loro ultimo statement SQL) |
 | `fb_sample_activity` | `seconds?` | Legge i contatori MON$ due volte su una finestra e riporta la differenza: record letti in sequenza e per indice, pagine movimentate, versioni raccolte, e se l'orizzonte delle transazioni è avanzato |
@@ -87,12 +90,52 @@ misure su cui si basa sono in
 > arrivano al motore come NULL, non corrispondono a niente e produrrebbero la misura di una query
 > che nessuno esegue.
 
-## Prompt (3)
+## Cosa vede `fb_audit_security`, e cosa non può vedere
+
+I grant stanno nel database: `RDB$USER_PRIVILEGES` e `RDB$ROLES`, leggibili da una normale
+connessione SQL — che è esattamente ciò che è l'edizione free. Quindi il report è completo sui
+*grant*, e muto su tutto ciò che un grant non è. Due categorie di riga restano fuori, perché
+nessuno le ha concesse e elencarle seppellisce quelle che qualcuno ha concesso davvero: i
+privilegi del motore su `RDB$`/`MON$` e quelli che ogni owner ha sui propri oggetti.
+
+Non vede l'**elenco degli account**, i **ruoli amministrativi**, la policy delle password né chi
+riesce ad arrivare alla porta: stanno nel security database e nella configurazione del server, e
+leggerli richiede un attach amministrativo che questa edizione non fa. Un database con tutti i
+grant a posto può comunque essere raggiungibile da un account che nessuno ricorda di aver creato.
+
+Con `user_name` risponde invece all'altra domanda: **cosa riesce a raggiungere quell'utenza, e
+come** — concesso a lei direttamente, concesso a PUBLIC, o concesso a un ruolo di cui è membro.
+Una riga che passa da un ruolo è marcata *(only when active)*, perché in Firebird un ruolo è
+inattivo se la connessione non lo nomina o se non è stato concesso come ruolo DEFAULT (4.0+) — e
+quale dei due valga è registrato nel security database, dove questo server non può guardare. Il
+report dice anche quando l'utenza è SYSDBA o possiede oggetti, perché nessuno dei due è soggetto
+ai privilegi elencati.
+
+Tre rilievi, nell'ordine in cui contano:
+
+1. **PUBLIC.** Non è un gruppo a cui qualcuno è stato aggiunto: è chiunque riesca a
+   connettersi, compresi gli account creati dopo il grant. `critical` se i privilegi comprendono
+   INSERT, UPDATE o DELETE, `warning` altrimenti.
+2. **WITH GRANT OPTION.** Chi lo detiene può allargare gli accessi senza che nessun DBA lo veda,
+   e il grant che ne esce è indistinguibile da uno fatto da un amministratore.
+3. **Un ruolo senza membri.** O i privilegi che porta non servono, o gli account che dovrebbero
+   averli stanno usando grant diretti.
+
+## Prompt (4)
 
 - **`optimization_goal`**: il ciclo guidato da un obiettivo. Lo fissi, l'assistente itera sui tool
   `fb_*` e richiama `fb_evaluate_goal` finché non ottiene `met: true`. Si ferma da solo dopo troppe
   iterazioni o se smette di fare progressi.
-- **`health_check`**: esame guidato della salute dell'intero database.
+- **`app_user_plan`**: l'unico prompt che parte da una decisione che nessuno ha ancora preso. La
+  maggior parte delle applicazioni Firebird si collega come SYSDBA, e quello non è un problema di
+  privilegi: è un database in cui i privilegi non si applicano, perché SYSDBA non ne è soggetto e
+  nemmeno il proprietario di un oggetto. Quindi il prompt prima guarda (versione del motore, nomi
+  degli oggetti, cosa ha già PUBLIC), poi chiede solo ciò che il catalogo non sa, e finisce in
+  `fb_suggest_grants` invece che in GRANT inventati. Se le risposte non arrivano non si blocca:
+  propone il ripiego, che un'utenza con DML su tutte le tabelle comunque non può fare DROP,
+  cambiare lo schema, leggere il security database, creare utenze o fermare il server.
+- **`health_check`**: esame guidato della salute dell'intero database — gli indici tabella per
+  tabella, poi i grant in una sola passata, dicendo dove la parte sui grant si ferma.
 - **`classify_problem`**: si parte dal sintomo, non da un tool. Colloca il problema su sei
   assi (forma temporale, volume contro concorrenza, località, coordinamento contro esecuzione,
   sensibilità all'osservazione, ambiente), nomina la classe dominante fra le sette e dice

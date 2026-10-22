@@ -5,17 +5,20 @@
 The full catalogue: what every tool does, how the index advisor decides, the prompts and the
 resource, plus the raw `tools/call` shapes if you drive the server yourself.
 
-## The tools (13 free, plus 9 Enterprise announced in `tools/list`)
+## The tools (16 free, plus 9 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
 | `fb_info` | *(none)* | Engine version + detected capabilities (JSON) |
 | `fb_list_tables` | *(none)* | List user tables |
-| `fb_generate_documentation` | `table_name?` | Markdown docs (columns, PK, indexes, triggers with the event they fire on) for one table, or the whole database — which also lists stored procedures with their parameters, functions and packages (3.0+) |
+| `fb_generate_documentation` | `table_name?` | Markdown docs for one table — columns (with the **domain** each is built on), PK, indexes, **CHECK constraints**, triggers with the event they fire on — or for the whole database, which also lists **views with their SELECT**, stored procedures with their parameters, functions and packages (3.0+). Given a view's name it documents the view |
+| `fb_query` | `sql`, `max_rows?` | Runs a read-only SELECT and returns the rows as a Markdown table, capped at `max_rows` (default 100, ceiling 1000) **and at ~20 000 characters**, because a row cap bounds rows and not width. Anything that is not a plain SELECT is refused, and so is a statement with unbound placeholders |
 | `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection), the engine's **explained plan** on 3.0+ (index names, match quality, join strategy) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
 | `fb_suggest_indexes` | `sql` | Index advice for one query: plain B-tree, **expression** (`COMPUTED BY`), **partial** (5.0+) or an index for the **sort** — and **no index at all** when the scan is the correct plan. Refreshes stale statistics before proposing anything structural |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
+| `fb_suggest_grants` | `user_name`, `object_pattern?`, `access?`, `role_name?`, `exclude_pattern?` | The statements that give one account access to the objects matching a pattern **and nothing else**: a conditional `CREATE USER`, a role, the `GRANT`s generated from the catalogue with identifiers quoted only where Firebird needs it, and the role granted in the form this version supports (`GRANT DEFAULT` on 4.0+; below that, a note that the connection must pass the role or the grants are inert). Then it checks the claim: PUBLIC grants and grants the account already holds outside the plan come back as findings with the `REVOKE` that closes them |
+| `fb_audit_security` | `user_name?` | Every grant recorded in the database, one line per grantee and object, plus the three findings that are usually mistakes: privileges held by **PUBLIC** (critical when they include writes), delegation via **WITH GRANT OPTION**, and roles nobody is a member of |
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 | `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
 | `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
@@ -86,12 +89,51 @@ measurements behind it are in
 > not execute a statement with unbound parameters at all: those bind as NULL, match nothing, and
 > would produce a measurement of a query nobody runs.
 
-## Prompts (3)
+## What `fb_audit_security` sees, and what it cannot
+
+Grants live in the database: `RDB$USER_PRIVILEGES` and `RDB$ROLES`, readable over an ordinary
+SQL connection, which is exactly what the free edition is. So the report is complete about
+*grants* — and silent about everything a grant is not. Two kinds of row are left out, because
+nobody granted them and listing them buries the ones somebody did: the engine's own privileges
+on `RDB$`/`MON$`, and what every object's owner holds on its own objects.
+
+It cannot see the **account list**, the **admin roles**, the password policy or who can reach the
+port at all: those live in the security database and in the server configuration, and reading
+them means an administrative attach this edition does not make. A database whose every grant is
+correct can still be reachable by an account nobody remembers creating.
+
+Given `user_name` it answers the other question instead: **what can this one account reach, and
+how** — granted to it directly, granted to PUBLIC, or granted to a role it belongs to. A row that
+comes through a role is marked *(only when active)*, because a Firebird role is inactive unless
+the connection names it or it was granted as a DEFAULT role (4.0+) — and which of the two applies
+is recorded in the security database, where this server cannot look. The report also says when the
+account is SYSDBA or owns objects, because neither is subject to the privileges listed.
+
+Three findings, in the order they matter:
+
+1. **PUBLIC.** Not a group somebody was added to: everyone who can attach, including accounts
+   created after the grant was made. `critical` when the privileges include INSERT, UPDATE or
+   DELETE, `warning` otherwise.
+2. **WITH GRANT OPTION.** The holder can widen access with no DBA involved, and the grant that
+   results is indistinguishable from one an administrator made.
+3. **A role with no members.** Either the privileges it carries are unused, or the accounts that
+   should hold them are holding direct grants instead.
+
+## Prompts (4)
 
 - **`optimization_goal`**, the goal-driven loop: set an objective, the assistant iterates the
   `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
   max-iterations / no-progress safety stop).
-- **`health_check`**: guided whole-database health review.
+- **`app_user_plan`**: the one prompt that starts from a decision nobody has made yet. Most
+  Firebird applications connect as SYSDBA, and that is not a privilege problem — it is a database
+  where privileges do not apply, because SYSDBA is not subject to them and neither is the owner
+  of an object. So the prompt looks first (engine version, object names, what PUBLIC already
+  holds), asks only what the catalogue cannot answer, and ends in `fb_suggest_grants` rather than
+  in GRANTs an assistant made up. If the answers do not come, it offers the fallback instead of
+  stalling: an account with DML on every table still cannot drop a table, alter the schema, read
+  the security database, create accounts or shut the server down.
+- **`health_check`**: guided whole-database health review — indexes table by table, then the
+  grants in one pass, and it says where the grant half stops.
 - **`classify_problem`**: starts from the symptom, not from a tool. Places the problem on six
   axes (temporal shape, volume vs concurrency, locality, coordination vs execution,
   sensitivity to observation, environment), names the dominant class of the seven, and says

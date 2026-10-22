@@ -4,7 +4,7 @@ Each row is a known Firebird problem, the fixture that provokes it, the tool tha
 detects it, and the milestone the detection lands in. Fixtures live in
 `tests/seed/seed.sql` and `tests/seed/problems.sql`.
 
-**Every problem below is detected by the free edition.** All twenty are visible from inside
+**Every problem below is detected by the free edition.** All twenty-six are visible from inside
 the database, and that is exactly what defines the free edition (see `README.md` § Editions &
 licensing). The Enterprise problems — a misconfigured `firebird.conf`, a page size fighting the
 hardware, a sweep that never runs, a bugcheck buried in `firebird.log` — are not in this catalog:
@@ -35,3 +35,6 @@ they need a fixture on the host, not in the schema, and they live in the private
 | 21 | Attachments connected and idle far longer than the work they did | *(no fixture: a pool that never shrinks cannot be seeded, only observed on a live server)* | fb_monitor_attachments (idle_minutes, default 30) | **M2** |
 | 22 | One statement running far longer than the rest of the workload | *(no fixture: the suite's own connection runs nothing long, and a seeded slow statement would be a sleep, not a symptom)* | fb_monitor_attachments (long_statement_seconds, default 60) | **M2** |
 | 23 | A backup that has never been restored, and so is not known to be one | *(no fixture: the check is the restore itself — covered end-to-end in `test_mcp_firebird_full.py`)* | fb_backup_start / fb_backup_status (verification restore) | **M2** |
+| 24 | Privileges held by PUBLIC — everyone who can attach, including accounts created after the grant | CUSTOMERS (SELECT), NOPK_LOG (INSERT/UPDATE) | fb_audit_security | **M2** |
+| 25 | A grantee that can pass its privileges on with nobody watching | ORDERS granted to REPORT_USER `WITH GRANT OPTION` | fb_audit_security | **M2** |
+| 26 | A role nobody is a member of — dead, or bypassed by direct grants | DEAD_ROLE | fb_audit_security | **M2** |

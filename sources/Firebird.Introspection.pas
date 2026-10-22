@@ -5,7 +5,15 @@ unit Firebird.Introspection;
 interface
 uses System.Generics.Collections, Firebird.Connection, Firebird.Capabilities;
 type
-  TColumnInfo = record FieldName, DataType: string; Position: Integer; Nullable: Boolean; end;
+  TColumnInfo = record
+    FieldName, DataType: string;
+    Position: Integer;
+    Nullable: Boolean;
+    { The named domain the column is built on, empty when the column carries its own type.
+      A schema whose columns come from domains says something a resolved type does not: that
+      the same rule holds everywhere the domain is used, and that changing it is one statement. }
+    Domain: string;
+  end;
   TIndexInfo = record
     IndexName: string; Columns: TArray<string>;
     Unique, Inactive, IsSystem: Boolean; Selectivity: Double; ConstraintType: string;
@@ -50,6 +58,12 @@ type
     HasBody: Boolean;
   end;
 
+  { A CHECK constraint, with the source text the engine kept — `CHECK (...)`, verbatim. }
+  TCheckInfo = record
+    ConstraintName: string;
+    Source: string;
+  end;
+
   TFirebirdIntrospection = class
   private
     FConn: TFirebirdConnection;
@@ -59,6 +73,15 @@ type
   public
     constructor Create(AConn: TFirebirdConnection);
     function ListTables(AIncludeViews: Boolean = True): TArray<string>;
+    { Views only — the complement of ListTables(False), so a caller can document both without
+      guessing which relation is which. }
+    function ListViews: TArray<string>;
+    { The SELECT a view stands for, empty for a table. A plan that reads three tables for a
+      query that names one is explained here and nowhere else. }
+    function GetViewSource(const AView: string): string;
+    { CHECK constraints on ATable. Firebird implements each one as a pair of triggers; those
+      triggers are hidden from ListTriggers, and the rule is reported here instead. }
+    function GetChecks(const ATable: string): TArray<TCheckInfo>;
     function GetColumns(const ATable: string): TArray<TColumnInfo>;
     function GetPrimaryKey(const ATable: string): TArray<string>;
     function GetIndexes(const ATable: string): TArray<TIndexInfo>;
@@ -75,11 +98,16 @@ type
 function QuoteIdent(const S: string): string;
 
 implementation
-uses System.SysUtils, Data.DB, FireDAC.Comp.Client;
+uses System.SysUtils, System.Classes, Data.DB, FireDAC.Comp.Client;
 
 function QuoteIdent(const S: string): string;
 begin Result := '"' + S.Replace('"', '""') + '"'; end;
 
+{ ALen is a length in characters, never in bytes: RDB$FIELD_LENGTH counts bytes, so under a
+  UTF8 database every VARCHAR(n) would be documented as VARCHAR(n*4) — a column four times the
+  size of the one that is really there. Every caller passes
+  COALESCE(RDB$CHARACTER_LENGTH, RDB$FIELD_LENGTH), which is the character count where the
+  engine keeps one and the byte count where the two are the same thing. }
 function MapFieldType(AType, ALen, AScale: Integer): string;
 begin
   case AType of
@@ -150,13 +178,15 @@ begin
 end;
 
 function TFirebirdIntrospection.GetColumns(const ATable: string): TArray<TColumnInfo>;
-var Q: TFDQuery; L: TList<TColumnInfo>; Rec: TColumnInfo;
+var Q: TFDQuery; L: TList<TColumnInfo>; Rec: TColumnInfo; lSource: string;
 begin
   L := TList<TColumnInfo>.Create;
   try
     Q := FConn.OpenQuery(
       'SELECT TRIM(rf.rdb$field_name), rf.rdb$field_position, ' +
-      '       COALESCE(rf.rdb$null_flag,0), f.rdb$field_type, f.rdb$field_length, f.rdb$field_scale ' +
+      '       COALESCE(rf.rdb$null_flag,0), f.rdb$field_type, ' +
+      '       COALESCE(f.rdb$character_length, f.rdb$field_length), f.rdb$field_scale, ' +
+      '       TRIM(rf.rdb$field_source) ' +
       'FROM rdb$relation_fields rf ' +
       'JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source ' +
       'WHERE rf.rdb$relation_name = ' + QuotedStr(ATable) +
@@ -168,11 +198,72 @@ begin
         Rec.Position  := Q.Fields[1].AsInteger;
         Rec.Nullable  := Q.Fields[2].AsInteger = 0;
         Rec.DataType  := MapFieldType(Q.Fields[3].AsInteger, Q.Fields[4].AsInteger, Q.Fields[5].AsInteger);
+        { Every column has a field source. A column declared inline gets a generated one named
+          RDB$<n>, which is an implementation detail; only a name somebody chose is a domain. }
+        lSource := Q.Fields[6].AsString;
+        if not lSource.StartsWith('RDB$') then
+          Rec.Domain := lSource;
         L.Add(Rec); Q.Next;
       end;
     finally Q.Free; end;
     Result := L.ToArray;
   finally L.Free; end;
+end;
+
+function TFirebirdIntrospection.ListViews: TArray<string>;
+var Q: TFDQuery; L: TList<string>;
+begin
+  L := TList<string>.Create;
+  try
+    Q := FConn.OpenQuery(
+      'SELECT TRIM(rdb$relation_name) FROM rdb$relations ' +
+      'WHERE (rdb$system_flag IS NULL OR rdb$system_flag = 0) AND rdb$view_blr IS NOT NULL ' +
+      'ORDER BY 1');
+    try while not Q.Eof do begin L.Add(Q.Fields[0].AsString); Q.Next; end; finally Q.Free; end;
+    Result := L.ToArray;
+  finally L.Free; end;
+end;
+
+function TFirebirdIntrospection.GetViewSource(const AView: string): string;
+begin
+  Result := FConn.ScalarStr(
+    'SELECT rdb$view_source FROM rdb$relations WHERE rdb$relation_name = ' + QuotedStr(AView)).Trim;
+end;
+
+function TFirebirdIntrospection.GetChecks(const ATable: string): TArray<TCheckInfo>;
+var Q: TFDQuery; L: TList<TCheckInfo>; Rec: TCheckInfo; lSeen: TStringList;
+begin
+  L := TList<TCheckInfo>.Create;
+  lSeen := TStringList.Create;
+  try
+    lSeen.Sorted := True;
+    lSeen.Duplicates := dupIgnore;
+    { One CHECK is two triggers (before insert, before update) carrying the same source, so the
+      constraint would be reported twice. SELECT DISTINCT cannot do the deduplication here:
+      RDB$TRIGGER_SOURCE is a BLOB and Firebird refuses to compare one. }
+    Q := FConn.OpenQuery(
+      'SELECT TRIM(rc.rdb$constraint_name), t.rdb$trigger_source ' +
+      'FROM rdb$relation_constraints rc ' +
+      'JOIN rdb$check_constraints cc ON cc.rdb$constraint_name = rc.rdb$constraint_name ' +
+      'JOIN rdb$triggers t ON t.rdb$trigger_name = cc.rdb$trigger_name ' +
+      'WHERE rc.rdb$constraint_type = ''CHECK'' AND rc.rdb$relation_name = ' + QuotedStr(ATable) +
+      ' ORDER BY 1', []);
+    try
+      while not Q.Eof do
+      begin
+        Rec := Default(TCheckInfo);
+        Rec.ConstraintName := Q.Fields[0].AsString;
+        Rec.Source := Q.Fields[1].AsString.Trim;
+        if lSeen.IndexOf(Rec.ConstraintName) < 0 then
+        begin
+          lSeen.Add(Rec.ConstraintName);
+          L.Add(Rec);
+        end;
+        Q.Next;
+      end;
+    finally Q.Free; end;
+    Result := L.ToArray;
+  finally L.Free; lSeen.Free; end;
 end;
 
 function TFirebirdIntrospection.GetPrimaryKey(const ATable: string): TArray<string>;
@@ -270,7 +361,7 @@ begin
   lSQL :=
     'SELECT TRIM(p.RDB$PARAMETER_NAME) AS PNAME, p.RDB$PARAMETER_NUMBER AS PNUM, ' +
     '       p.RDB$PARAMETER_TYPE AS PTYPE, f.RDB$FIELD_TYPE AS FTYPE, ' +
-    '       f.RDB$FIELD_LENGTH AS FLEN, f.RDB$FIELD_SCALE AS FSCALE ' +
+    '       COALESCE(f.RDB$CHARACTER_LENGTH, f.RDB$FIELD_LENGTH) AS FLEN, f.RDB$FIELD_SCALE AS FSCALE ' +
     'FROM RDB$PROCEDURE_PARAMETERS p ' +
     'JOIN RDB$FIELDS f ON f.RDB$FIELD_NAME = p.RDB$FIELD_SOURCE ' +
     'WHERE p.RDB$PROCEDURE_NAME = ' + QuotedStr(ARoutine);
@@ -355,12 +446,17 @@ var
   lSQL: string;
 begin
   lSQL :=
-    'SELECT TRIM(RDB$TRIGGER_NAME) AS TNAME, COALESCE(TRIM(RDB$RELATION_NAME), '''') AS TBL, ' +
-    '       RDB$TRIGGER_TYPE AS TTYPE, COALESCE(RDB$TRIGGER_SEQUENCE, 0) AS TSEQ, ' +
-    '       COALESCE(RDB$TRIGGER_INACTIVE, 0) AS TINACT ' +
-    'FROM RDB$TRIGGERS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0';
+    'SELECT TRIM(t.RDB$TRIGGER_NAME) AS TNAME, COALESCE(TRIM(t.RDB$RELATION_NAME), '''') AS TBL, ' +
+    '       t.RDB$TRIGGER_TYPE AS TTYPE, COALESCE(t.RDB$TRIGGER_SEQUENCE, 0) AS TSEQ, ' +
+    '       COALESCE(t.RDB$TRIGGER_INACTIVE, 0) AS TINACT ' +
+    'FROM RDB$TRIGGERS t WHERE COALESCE(t.RDB$SYSTEM_FLAG, 0) = 0 ' +
+    { A CHECK constraint is enforced by two triggers the user never wrote and cannot alter.
+      Listing them as triggers reports an implementation detail as a schema object, twice per
+      constraint; GetChecks reports the constraint itself instead. }
+    '  AND NOT EXISTS (SELECT 1 FROM RDB$CHECK_CONSTRAINTS cc ' +
+    '                  WHERE cc.RDB$TRIGGER_NAME = t.RDB$TRIGGER_NAME)';
   if ATable <> '' then
-    lSQL := lSQL + ' AND RDB$RELATION_NAME = ' + QuotedStr(ATable);
+    lSQL := lSQL + ' AND t.RDB$RELATION_NAME = ' + QuotedStr(ATable);
   lSQL := lSQL + ' ORDER BY 2, 4, 1';
 
   L := TList<TTriggerInfo>.Create;
@@ -401,7 +497,8 @@ begin
     Q := FConn.OpenQuery(
       'SELECT TRIM(f.RDB$FUNCTION_NAME) AS FNAME, ' +
       '       COALESCE(TRIM(f.RDB$PACKAGE_NAME), '''') AS PKG, ' +
-      '       fl.RDB$FIELD_TYPE AS FTYPE, fl.RDB$FIELD_LENGTH AS FLEN, ' +
+      '       fl.RDB$FIELD_TYPE AS FTYPE, ' +
+      '       COALESCE(fl.RDB$CHARACTER_LENGTH, fl.RDB$FIELD_LENGTH) AS FLEN, ' +
       '       fl.RDB$FIELD_SCALE AS FSCALE ' +
       'FROM RDB$FUNCTIONS f ' +
       'LEFT JOIN RDB$FUNCTION_ARGUMENTS a ' +

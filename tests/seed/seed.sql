@@ -54,3 +54,37 @@ BEGIN
 END^
 SET TERM ; ^
 COMMIT;
+
+/* A domain, a view and a CHECK constraint: the schema features fb_generate_documentation
+   reports and no other tool reads. 2.5-safe. */
+CREATE DOMAIN D_CITY AS VARCHAR(60);
+CREATE TABLE BRANCHES (
+  BRANCH_ID INTEGER NOT NULL PRIMARY KEY,
+  CITY      D_CITY,
+  STAFF     INTEGER,
+  CONSTRAINT CHK_BRANCH_STAFF CHECK (STAFF >= 0)
+);
+CREATE VIEW V_CUSTOMER_ORDERS AS
+  SELECT c.CUSTOMER_ID, c.NAME, o.ORDER_ID, o.TOTAL
+  FROM CUSTOMERS c JOIN ORDERS o ON o.CUSTOMER_ID = c.CUSTOMER_ID;
+COMMIT;
+
+/* An application schema behind one prefix, for the grant planner. TBLX_OTHER exists so that a
+   pattern of TBL_* has something to wrongly match if the underscore is treated as the LIKE
+   wildcard it is in SQL, and "tbl_Mixed" so the quoting rule has something to get wrong. */
+CREATE TABLE TBL_ORDERS (ID INTEGER NOT NULL PRIMARY KEY, DESCR VARCHAR(50));
+CREATE TABLE TBL_ITEMS  (ID INTEGER NOT NULL PRIMARY KEY, QTY INTEGER);
+CREATE TABLE TBLX_OTHER (ID INTEGER NOT NULL PRIMARY KEY);
+CREATE TABLE "tbl_Mixed" (ID INTEGER NOT NULL PRIMARY KEY);
+CREATE VIEW TBL_V_ORDERS AS SELECT ID, DESCR FROM TBL_ORDERS;
+COMMIT;
+
+SET TERM ^ ;
+CREATE PROCEDURE TBL_SP_COUNT RETURNS (N INTEGER)
+AS
+BEGIN
+  SELECT COUNT(*) FROM TBL_ORDERS INTO :N;
+  SUSPEND;
+END^
+SET TERM ; ^
+COMMIT;

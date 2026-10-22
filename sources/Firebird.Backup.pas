@@ -35,6 +35,7 @@ type
     FConfig: TFirebirdConnectionConfig;
     function GbakPath: string;
     function ConnectString: string;
+    function ServerPath(const APath: string): string;
     procedure RunAndWait(const ACmd: string; ATimeoutMs: Cardinal; const AWhat: string);
   public
     { Takes the connection parameters by value, not a connection: this runs on a
@@ -99,7 +100,20 @@ end;
 
 function TFirebirdBackup.ConnectString: string;
 begin
-  Result := Format('%s/%d:%s', [FConfig.Host, FConfig.Port, FConfig.Database]);
+  Result := ServerPath(FConfig.Database);
+end;
+
+{ A database path addressed at the configured server, rather than left bare.
+
+  A bare path tells gbak "create this wherever the local default instance is", and on a machine
+  with more than one Firebird — a developer's, a server that was upgraded in place, anywhere the
+  test matrix runs — that is not the engine the backup came from. The restore then lands on a
+  stranger, and what comes back is that stranger's error rendered by this gbak's message file:
+  `unknown ISC error 335545106`, which is how a 5.0 refusal reads when 2.5's gbak tries to print
+  it. Verifying a 2.5 backup against a 5.0 engine proves nothing even when it works. }
+function TFirebirdBackup.ServerPath(const APath: string): string;
+begin
+  Result := Format('%s/%d:%s', [FConfig.Host, FConfig.Port, APath]);
 end;
 
 procedure TFirebirdBackup.RunAndWait(const ACmd: string; ATimeoutMs: Cardinal; const AWhat: string);
@@ -197,12 +211,31 @@ begin
   SW := TStopwatch.StartNew;
   try
     try
+      { The scratch database is created by the same server the backup came from — see
+        ServerPath. The .fbk stays a bare local path: gbak reads that itself. }
       RunAndWait(Format('"%s" -c -v -y "%s" -user %s -password %s "%s" "%s"',
         [GbakPath, lLogFile, FConfig.User, FConfig.Password,
-         ABackupFile, lScratch]), BACKUP_TIMEOUT_MS, 'Verification restore');
-      Result.Restored := TFile.Exists(lScratch) and (TFile.GetSize(lScratch) > 0);
-      if not Result.Restored then
-        Result.Detail := 'The restore reported success but produced no database.';
+         ABackupFile, ServerPath(lScratch)]), BACKUP_TIMEOUT_MS, 'Verification restore');
+      { Two cases, and the difference is where the server is.
+
+        A server on this machine writes the scratch database where this process can see it, and
+        then "gbak said it worked" is worth checking against a file that exists and has a size.
+        A server somewhere else writes it on its own disk, where there is nothing to stat: the
+        restore's own verdict is the evidence, and the file has to be removed over there, so the
+        report says where it is instead of pretending it is gone. }
+      if TFile.Exists(lScratch) then
+      begin
+        Result.Restored := TFile.GetSize(lScratch) > 0;
+        if not Result.Restored then
+          Result.Detail := 'The restore reported success but produced an empty database file.';
+      end
+      else
+      begin
+        Result.Restored := True;
+        Result.Detail := Format('The scratch database was created by the server at %s:%s, ' +
+          'which is not this machine, so it could not be deleted from here. Remove it there.',
+          [FConfig.Host, lScratch]);
+      end;
     except
       on E: Exception do
       begin

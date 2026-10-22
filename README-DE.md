@@ -28,7 +28,7 @@ als **Finding** (was nicht stimmt), **SQL** (das Statement, das es behebt) und *
 prüfst, dass es gewirkt hat). In deine Datenbank wird nichts geschrieben: der Server verbindet sich
 nur lesend, und das SQL, das er dir gibt, führst du selbst aus — wenn du willst.
 
-- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server-Identität:** `mcp-firebird` v`0.5.0`
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server-Identität:** `mcp-firebird` v`0.6.0`
 - **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — zur Laufzeit erkannt
 - **Kostenlos** auf deinen eigenen Datenbanken, in jeder Größe, ohne Schlüssel und ohne Ablauf. Eine
   Lizenz brauchst du erst, wenn die Software deine Hände verlässt
@@ -99,6 +99,9 @@ Mehr ist die Installation nicht. Zeigt der Client den Server, aber keine Tools, 
 | *„Optimiere weiter, bis diese Query keinen NATURAL-Scan mehr macht“* | Die Ziel-Schleife: ändern, auf der Datenbank neu messen, und aufhören, wenn die Messung es sagt — nicht wenn der Assistent es meint |
 | *„Jeden Nachmittag kriecht es, und niemand hat etwas geändert“* | Ordnet das Symptom ein, bevor ein Tool angefasst wird, und misst dann `MON$` über ein Fenster, um zu zeigen, was sich anhäuft |
 | *„Wer ist verbunden, und was läuft dort?“* | Jede Verbindung mit Benutzer, Adresse und Prozess, dem Statement, das gerade läuft, und seit wann |
+| *„Zeig mir die Zeilen, die wirklich drinstehen“* | `fb_query` führt das SELECT aus und gibt die Zeilen zurück, gedeckelt, damit eine Antwort eine Antwort bleibt. Sonst kommt nichts durch: kein UPDATE, kein DELETE, kein DDL |
+| *„Unsere Anwendung verbindet sich als SYSDBA. Was soll sie stattdessen nehmen?“* | `app_user_plan` fragt, was die Anwendung wirklich tut — wenige Fragen, von denen jede die Statements ändert — und `fb_suggest_grants` schreibt sie aus dem Katalog: das Konto, eine Rolle, die Rechte, und die Rolle so aktiviert, wie es diese Engine-Version verlangt |
+| *„Wer darf diese Tabelle lesen?“* | Jede in der Datenbank verzeichnete Berechtigung, und die drei, die meist ein Fehler sind: PUBLIC, `WITH GRANT OPTION` und Rollen ohne Mitglieder |
 | *„Mach ein Backup der Datenbank“* | Führt `gbak` im Hintergrund aus und **spielt das Geschriebene in eine Wegwerf-Datenbank zurück**: die Antwort ist nicht „eine Datei existiert“, sondern „dieses Backup lässt sich zurückspielen“ |
 
 Jede Analyse schließt außerdem damit, **was sie nicht ausschließt**: ein Plan sieht keine Konkurrenz,
@@ -110,14 +113,14 @@ und eine Momentaufnahme sieht keine Anhäufung.
 
 ## Die Tools
 
-Dreizehn Tools, drei Prompts, eine Ressource. Vollständige Referenz — Argumente, was jedes
+Sechzehn Tools, vier Prompts, eine Ressource. Vollständige Referenz — Argumente, was jedes
 entscheidet, die rohen `tools/call`-Aufrufe — in
 **[docs/de/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/tools.md)**.
 
-`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_analyze_query` ·
-`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_evaluate_goal` ·
-`fb_monitor_transactions` · `fb_sample_activity` · `fb_monitor_attachments` ·
-`fb_backup_start` · `fb_backup_status`
+`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
+`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
+`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` kehrt zurück, bevor das Backup fertig ist — danach `fb_backup_status` pollen. Es
 braucht `firebird.backup_dir` in der `.env`, `gbak.exe` neben deiner `fbclient.dll` und Platz auf
@@ -154,7 +157,7 @@ Speicherbericht. Du willst sie, wenn das Schema in Ordnung ist und die Datenbank
 |---|---|
 | [Installation](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/setup.md) | Voraussetzungen, `.env`-Referenz, `--env <dir>`, mehrere Datenbanken aus einer Installation, Snippets je Client, manueller Test |
 | [Beispiele](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/usage.md) | Die Gespräche, wörtliche Tool-Ausgaben, eine komplette Optimierungsrunde |
-| [Tool-Referenz](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/tools.md) | Alle dreizehn Tools, wie der Index-Berater entscheidet, Prompts, Ressourcen, Enterprise |
+| [Tool-Referenz](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/tools.md) | Alle fünfzehn Tools, wie der Index-Berater entscheidet, Prompts, Ressourcen, Enterprise |
 | [Editionen & Lizenzierung](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/editions.md) | Was kostenlos ist, was eine Lizenz braucht, was Enterprise dazugibt |
 | [Bauen und testen](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/development.md) | Delphi-Build, die Testmatrix 2.5→5.0, wie es mcp-server-delphi nutzt |  <!-- release:drop -->
 | [Problemkatalog](https://github.com/danieleteti/mcp-firebird/blob/master/docs/firebird-problem-catalog.md) | Jedes erkannte Problem, die Fixture, die es auslöst, der Meilenstein (auf Englisch) |
@@ -178,13 +181,21 @@ Speicherbericht. Du willst sie, wenn das Schema in Ordnung ist und die Datenbank
 
 - **Nur lesend, und nicht auf Treu und Glauben.** Der Server öffnet seine Transaktionen nur
   lesend: ein INSERT, UPDATE, DELETE oder DDL weist Firebird ab, nicht eine Prüfung von uns,
-  die sich darüber irren könnte, was ein Statement tut. Das zählt, weil drei Tools SQL
-  ausführen, das als Text vom Aufrufer kommt: `fb_analyze_query` misst das SELECT, das es
-  analysiert, `fb_suggest_indexes` misst jenes, zu dem es rät, und `fb_evaluate_goal` stoppt
-  eines. Alle drei weisen alles zurück, was kein reines SELECT ist, bevor sie es ausführen, und
-  sie führen ein Statement mit ungebundenen Parametern gar nicht erst aus; die nur lesende
-  Transaktion ist das, was hält, falls eine Zurückweisung einmal danebenliegt. Das SQL, das ein
-  Befund dir gibt, führst du selbst
+  die sich darüber irren könnte, was ein Statement tut. Das zählt, weil vier Tools SQL
+  ausführen, das als Text vom Aufrufer kommt: `fb_query` gibt dessen Zeilen zurück,
+  `fb_analyze_query` misst das SELECT, das es analysiert, `fb_suggest_indexes` misst jenes, zu
+  dem es rät, und `fb_evaluate_goal` stoppt eines. Alle vier weisen alles zurück, was kein reines
+  SELECT ist, bevor sie es ausführen, und sie führen ein Statement mit ungebundenen Parametern
+  gar nicht erst aus; die nur lesende Transaktion ist das, was hält, falls eine Zurückweisung
+  einmal danebenliegt.
+
+  Diese Reihenfolge zählt, und sie ist das Gegenteil einer Schlüsselwort-Blockliste. Eine Liste
+  verbotener Wörter — kein `INSERT`, kein `DROP` — ist eine Vermutung über Text: sie weiß nicht,
+  dass `EXECUTE PROCEDURE` schreiben kann, dass ein Statement so zusammengesetzt sein kann, dass
+  es keines dieser Wörter enthält, und auch nicht, dass die nächste Version ein Schlüsselwort
+  hinzufügt, das niemand in die Liste eingetragen hat. Das nur lesende TPB ist keine Vermutung.
+  Welcher Text auch ankommt und was er auch bedeutet: die Transaktion, in der er läuft, kann
+  nicht schreiben, und das sagt die Engine. Das SQL, das ein Befund dir gibt, führst du selbst
   aus, wann und ob du willst. Tools, die eine Änderung selbst anwenden, sind geplant; wenn sie
   kommen, sind sie aus, bis du sie einschaltest.
 - **Versionsübergreifend.** Die Fähigkeitserkennung passt die Nutzung der Features (MON$-Tabellen,

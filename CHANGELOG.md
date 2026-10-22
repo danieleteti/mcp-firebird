@@ -6,6 +6,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-23
+
+### Added
+
+- **`fb_query`: the rows themselves.** Every other tool executes a query to say something *about*
+  it — a plan, a cost, a goal — and throws the rows away. That is the right default for a server
+  that advises, and the wrong one at the end of every advice loop: "the index is used now" is a
+  claim about a plan, and the question that follows it is always what the query actually returns.
+  `fb_query` runs a read-only SELECT and returns the rows as a Markdown table, capped at
+  `max_rows` (default 100, ceiling 1000) by *not fetching* past the cap — a `SELECT *` over
+  twenty million rows costs the rowset it was capped at, not the table — and at ~20 000
+  characters, because a row cap bounds rows and not width: a hundred rows of a forty-column
+  table is a hundred rows and half a megabyte of Markdown. Anything that is not a plain SELECT
+  is refused before it reaches the engine, and so is a statement with placeholders nobody
+  bound.
+- **`fb_suggest_grants` + the `app_user_plan` prompt: an application account that is not SYSDBA.**
+  Most Firebird applications connect as SYSDBA. That is not a database with a privilege problem;
+  it is a database where privileges do not apply, because SYSDBA is not subject to them and
+  neither is the owner of an object. Nothing you grant or revoke changes what such an application
+  can do, so there is no analysis to run — the work is deciding what it actually needs, and that
+  is a set of questions.
+
+  `app_user_plan` asks them. It looks first (engine version, object names, what PUBLIC already
+  holds), asks only what the catalogue cannot answer, and ends in generated SQL rather than in
+  GRANTs an assistant wrote from memory. When the answers do not come it offers the fallback
+  instead of stalling: an account with DML on every table still cannot drop a table, alter the
+  schema, read the security database, create accounts or shut the server down.
+
+  `fb_suggest_grants` writes the statements: a conditional `CREATE USER`, a role, the grants for
+  every object matching a pattern (`tbl_*` and `TBL_%` both mean the same thing, and `_` is a
+  literal underscore rather than the wildcard SQL would make of it), identifiers quoted only
+  where Firebird needs them, and the role granted in the form the connected engine supports —
+  `GRANT DEFAULT` on 4.0 and up, and below that a plain role grant plus the warning that the
+  application must pass the role at connect time or every statement above is inert. Then it
+  checks the claim: PUBLIC grants and grants the account already holds outside the plan come
+  back as findings, each with the `REVOKE` that closes it.
+- **`fb_audit_security` also answers for one account.** Given `user_name` it reports what that
+  account can reach and how — granted directly, granted to PUBLIC, or granted to a role it
+  belongs to — which is the question a privilege list does not answer as soon as either of those
+  is involved. A role row is marked as conditional, because a Firebird role is inactive unless
+  the connection names it or it was granted as DEFAULT (4.0+), and which of the two applies is
+  recorded in the security database where an ordinary connection cannot look. It also says when
+  the account is SYSDBA or owns objects, neither of which is subject to the privileges listed.
+- **`fb_audit_security`: who may do what, and which of those is a mistake.** Every grant recorded
+  in the database, merged to one line per grantee and object, plus three findings: privileges
+  held by **PUBLIC** (`critical` when they include INSERT, UPDATE or DELETE — PUBLIC is not a
+  group somebody joined, it is everyone who can attach, including accounts created after the
+  grant), delegation via **WITH GRANT OPTION**, and **roles nobody is a member of**.
+
+  It reads `RDB$USER_PRIVILEGES` and `RDB$ROLES` over an ordinary SQL connection, and says what
+  that cannot reach: the account list, the admin roles and the authentication settings live in
+  the security database, which this edition does not attach to.
+- **Views, domains and CHECK constraints in the generated documentation.**
+  `fb_generate_documentation` now prints the **domain** a column is built on (one named rule, one
+  place to change it), the table's **CHECK constraints**, and — for a view — the **SELECT behind
+  it**, which is the only place a view's cost is visible. The whole-database document gained a
+  `# Views` section, and asking for a view by name documents the view instead of pretending it is
+  a table.
+
+### Fixed
+
+- **`VARCHAR(n)` was documented as `VARCHAR(n*4)` on a UTF8 database.** `RDB$FIELD_LENGTH` counts
+  bytes; the character count lives in `RDB$CHARACTER_LENGTH`. Every column, procedure parameter
+  and function return type in the generated documentation now reports the length that was
+  declared.
+- **The backup verification restored into the wrong engine.** `VerifyRestore` gave `gbak -c` a
+  bare local path for the scratch database, which means "whichever Firebird owns the local
+  default instance" — not necessarily the one the backup came from. On a machine running more
+  than one Firebird the restore landed on a stranger, and a 2.5 backup verified against a 5.0
+  engine proves nothing even when it succeeds; when it failed, it failed as
+  `unknown ISC error 335545106`, which is what a 5.0 refusal looks like printed by 2.5's message
+  file. The scratch database is now created through the configured server, and when that server
+  is not this machine the report says where the scratch was left instead of reporting a failure
+  it cannot see.
+- **CHECK-constraint triggers are no longer listed as triggers.** Firebird enforces one CHECK
+  with a pair of triggers the user never wrote and cannot alter; they were reported as schema
+  objects, twice per constraint. The constraint itself is reported instead.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added

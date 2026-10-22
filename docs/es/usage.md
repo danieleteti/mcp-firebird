@@ -12,7 +12,7 @@ adecuada, la ejecuta contra la base de datos que configuraste y convierte el res
 para ejecutar. Los intercambios de abajo dan por hecha la base de datos de demostración; cambia los
 nombres de tablas y columnas por los tuyos.
 
-> En **Claude Desktop** las herramientas aparecen solas y los dos prompts salen como comandos (el
+> En **Claude Desktop** las herramientas aparecen solas y los cuatro prompts salen como comandos (el
 > menú 🔌 / "+"). En **Claude Code**, `/mcp` inspecciona el servidor y los prompts están disponibles
 > como comandos de barra. Siempre puedes empujarlo de forma explícita: *"usa las herramientas de
 > firebird"*.
@@ -85,7 +85,8 @@ estadísticas obsoletas, con la corrección `SET STATISTICS INDEX …`.
 > **Tú:** Haz una revisión completa de salud de la base de datos.
 
 → Claude usa el prompt **`health_check`**: `fb_info` → `fb_list_tables` → `fb_suggest_index_drops` por
-tabla → un único resumen agrupado por tabla con todo el SQL listo para ejecutar.
+tabla → `fb_audit_security` una vez → un resumen en dos partes: el SQL de los índices agrupado por
+tabla y luego los hallazgos de permisos, los critical primero.
 
 ### 6. Optimización por objetivos (iterar hasta cumplirlo)
 

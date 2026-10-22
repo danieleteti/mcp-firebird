@@ -17,12 +17,17 @@ type
     [MCPPrompt('health_check', 'Run a read-only health review of the configured Firebird database')]
     function HealthCheck(const Arguments: TJDOJsonObject): TMCPPromptResult;
 
+    [MCPPrompt('app_user_plan', 'Work out what privileges an application account should have, by asking what the application actually does — for the very common case of an application that connects as SYSDBA')]
+    [MCPPromptArg('application', 'What the application is and what it does, in your words', TMCPParamPresence.Optional)]
+    [MCPPromptArg('user_name', 'The account you want it to use (default APP)', TMCPParamPresence.Optional)]
+    function AppUserPlan(const Arguments: TJDOJsonObject): TMCPPromptResult;
+
     [MCPPrompt('classify_problem', 'Classify a performance symptom before investigating it: which kind of problem this is, which reasoning converges on it, and which of these tools can and cannot answer it')]
     [MCPPromptArg('symptom', 'What the users actually observe, in their words', TMCPParamPresence.Required)]
     function ClassifyProblem(const Arguments: TJDOJsonObject): TMCPPromptResult;
   end;
 implementation
-uses System.SysUtils, MVCFramework.MCP.Server;
+uses System.SysUtils, System.StrUtils, MVCFramework.MCP.Server;
 
 function TFirebirdPrompts.OptimizationGoal(const Arguments: TJDOJsonObject): TMCPPromptResult;
 var GT, Target, Thr, MaxIt: string;
@@ -66,7 +71,119 @@ begin
         '1. Call fb_info and report the engine version and capabilities.' + sLineBreak +
         '2. Call fb_list_tables.' + sLineBreak +
         '3. For each table, call fb_suggest_index_drops and collect the findings.' + sLineBreak +
-        '4. Summarize: redundant/duplicate/inactive indexes, with the ready-to-run SQL grouped by table.')
+        { A health review that never asks who may read the data is a review of half the database.
+          One call, whatever the schema size: the grants are one report, not one per table. }
+        '4. Call fb_audit_security once and collect the grant findings.' + sLineBreak +
+        '5. Summarize in two parts: redundant/duplicate/inactive indexes with the ready-to-run ' +
+        'SQL grouped by table, then the grant findings, criticals first. Say plainly that the ' +
+        'grant half stops at the database: accounts, admin roles and authentication live in the ' +
+        'security database, which this server does not attach to.')
+    ]);
+end;
+
+{ The one prompt here that starts from a decision nobody has made yet.
+
+  A Firebird application that connects as SYSDBA is not a database with a privilege problem. It
+  is a database where privileges do not apply: SYSDBA is not subject to them, so nothing anybody
+  grants or revokes changes what that application can do. There is no analysis to run and no
+  finding to report — the work is deciding what the application actually needs, and that is a
+  set of questions, not a query.
+
+  So the prompt asks. It looks first (the engine version decides how a role is activated, the
+  table names suggest the bundles, the existing PUBLIC grants can void the whole plan), then
+  asks only what the catalogue cannot answer, and only questions whose answers change the SQL.
+  The fallback matters as much as the interview: somebody who cannot classify their own schema
+  still gets a real improvement, because an account with DML on every table is a different thing
+  from SYSDBA. }
+function TFirebirdPrompts.AppUserPlan(const Arguments: TJDOJsonObject): TMCPPromptResult;
+var
+  lApplication, lUser: string;
+begin
+  lApplication := Arguments.S['application'];
+  lUser := Arguments.S['user_name'];
+  if lUser.IsEmpty then
+    lUser := 'APP';
+  Result := TMCPPromptResult.Create(
+    'Privileges for an application account',
+    [
+      PromptMessage('user',
+        'Design the privileges for an application account on this Firebird database, and produce ' +
+        'the SQL that establishes them.' + sLineBreak +
+        'application = ' + IfThen(lApplication = '', '(not described yet — ask)', lApplication) + sLineBreak +
+        'user_name = ' + lUser + sLineBreak + sLineBreak +
+
+        'Start from what is true of most Firebird installations: the application connects as ' +
+        'SYSDBA. Say this plainly, once, before anything else — SYSDBA is not subject to ' +
+        'privilege checks, and neither is the owner of an object. While the application connects ' +
+        'as either, no GRANT or REVOKE changes anything it can do. The work is not tightening ' +
+        'grants; it is moving the application onto an account that grants apply to.' + sLineBreak + sLineBreak +
+
+        'STEP 1 — look, so you do not ask what you can see.' + sLineBreak +
+        '- fb_info: the engine version decides how the role is activated (4.0+ can make it ' +
+        'DEFAULT; below that the application must pass the role at connect time or it gets ' +
+        'nothing).' + sLineBreak +
+        '- fb_list_tables: read the names and propose the groupings you can see — a common ' +
+        'prefix, an obvious log or audit table, tables that look like reference data.' + sLineBreak +
+        '- fb_audit_security: whatever PUBLIC already holds is held by every account, including ' +
+        'the new one. A plan that ignores it is not a plan.' + sLineBreak +
+        '- fb_audit_security(user_name) once you have a name: it answers what that one account ' +
+        'can reach today and how — directly, through PUBLIC, or through a role — which is also ' +
+        'how you check the plan afterwards.' + sLineBreak + sLineBreak +
+
+        'STEP 2 — ask. Few questions, in this order, and skip any you have already answered from ' +
+        'STEP 1. Ask two or three at a time, not as a form. Each one changes the statements:' + sLineBreak +
+        '1. Which objects belong to this application? Offer the prefixes you found; "all of ' +
+        'them" is a valid answer and you must accept it without pushing back.' + sLineBreak +
+        '2. Does it write to all of them, or only read some? Reference and lookup tables it only ' +
+        'reads are a separate, read-only bundle.' + sLineBreak +
+        '3. Is there anything it must never touch — an audit trail, payroll, another tenant''s ' +
+        'tables? That becomes an exclusion, not a promise.' + sLineBreak +
+        '4. Does it call stored procedures that live outside those names?' + sLineBreak +
+        '5. Does it create or alter objects while it runs — migrations at startup, a table built ' +
+        'on first use? If yes, that is the one requirement that needs DDL rights, and it belongs ' +
+        'to a separate account a person runs deliberately, not to the account the application ' +
+        'uses all day.' + sLineBreak +
+        '6. Can the application''s connection string be changed? Ask this only if fb_info says ' +
+        'the engine is below 4.0. There a role is inactive unless the connection names it, so ' +
+        'privileges on a role do nothing until the application sends RoleName=... — if that ' +
+        'string cannot be touched, the privileges have to go straight on the account ' +
+        '(grant_to=user, which is what fb_suggest_grants defaults to below 4.0).' + sLineBreak +
+        '7. Does anything else connect with the same account — reports, a nightly job, an ' +
+        'integration? Each of those is its own account and its own role, otherwise the ' +
+        'privileges of the application become the union of every job that shares its password.' + sLineBreak +
+        '8. Who creates the objects? If this account creates them it owns them, and an owner can ' +
+        'drop what it owns whatever you granted. Schema ownership stays with SYSDBA or a ' +
+        'dedicated owner account.' + sLineBreak + sLineBreak +
+
+        'STEP 3 — generate. Call fb_suggest_grants once per bundle, passing the same role_name ' +
+        'every time so the role is created once and the privileges accumulate on it: ' +
+        'fb_suggest_grants(user_name, object_pattern, access, role_name, exclude_pattern). ' +
+        'Do not write GRANT statements yourself — the tool reads the catalogue, quotes ' +
+        'identifiers the way this engine needs them, and emits the role grant in the form this ' +
+        'version supports. Show its SQL verbatim.' + sLineBreak + sLineBreak +
+
+        'STEP 4 — hand it over honestly. Along with the SQL, say:' + sLineBreak +
+        '- What has to change outside the database: the connection string moves to ' + lUser +
+        ', and below 4.0 it must also carry the role name or every grant above is inert.' + sLineBreak +
+        '- What to test before switching production: the application against a restored copy, ' +
+        'not against the live database. A privilege change breaks whatever quietly depended on ' +
+        'being SYSDBA — reading MON$ tables, running utilities, creating something at startup.' + sLineBreak +
+        '- What this does not do: SYSDBA still exists and is still needed for backups and ' +
+        'administration. The point is that it stops being what the application uses.' + sLineBreak +
+        '- If the application only reads, its connection can also open read-only transactions, ' +
+        'which is a second, independent guarantee.' + sLineBreak + sLineBreak +
+
+        'Two rules for the whole exchange. Never claim the application will still work — you ' +
+        'cannot know that, and say so. And if the answers do not arrive or the user does not ' +
+        'know their own schema, do not stall: propose the fallback, which is a real improvement ' +
+        'and not a compromise. An account with SELECT, INSERT, UPDATE and DELETE on every user ' +
+        'table still cannot drop a table, alter the schema, read the security database, create ' +
+        'accounts or shut the server down. Offer it, name what it does not solve, and produce it.'),
+      PromptMessage('assistant',
+        'Understood. I will check the engine version, the object names and what PUBLIC already ' +
+        'holds first, then ask only what those cannot tell me, and produce the statements with ' +
+        'fb_suggest_grants rather than writing GRANTs by hand. I will start by saying what ' +
+        'connecting as SYSDBA means for privileges.')
     ]);
 end;
 

@@ -113,6 +113,8 @@ The database tells you the number.
 |---|---|---|
 | Schema, docs, plans, index advice, schema audit | ✅ | ✅ |
 | Transaction & sweep health (`MON$`) | ✅ | ✅ |
+| Grants recorded in the database (`fb_audit_security`): PUBLIC, grant options, unused roles | ✅ | ✅ |
+| Privileges for an application account (`app_user_plan` + `fb_suggest_grants`): the interview, and the SQL generated from the catalogue | ✅ | ✅ |
 | `fb_diagnose`: the entry point, what is already known and the ordered route to run next | ❌ | ✅ |
 | `fb_analyze_config`: `firebird.conf` / `databases.conf`, read against this engine, this architecture, this workload | ❌ | ✅ |
 | `fb_analyze_storage`: index depth, page fill ratios, record-version chains, page distribution | ❌ | ✅ |
