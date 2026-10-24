@@ -1,5 +1,10 @@
 # Access-Plan Retrieval Decision (Task 10 spike)
 
+> **Superseded.** Plans now come from a FireDAC prepare (`sql_get_plan` / `sql_explain_plan` on
+> the statement's `TIBStatement`); `isql` is no longer involved. The over-read that sank
+> mechanism A below came from the hand-rolled binding of the spike, not from the information
+> item. The rest of this page is kept as the record of that first decision.
+
 **Chosen mechanism: B — shell out to `isql.exe` with `SET PLANONLY ON`.**
 
 Why B over A: Mechanism A (legacy `isc_dsql_sql_info` / `isc_info_sql_get_plan=22` via `fbclient.dll`)

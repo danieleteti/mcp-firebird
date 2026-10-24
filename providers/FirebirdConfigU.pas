@@ -22,8 +22,8 @@ begin
   Result.Host      := dotEnv.Env('firebird.host', 'localhost');
   Result.Port      := dotEnv.Env('firebird.port', 3050);
   Result.Database  := dotEnv.Env('firebird.database', '');
-  Result.User      := dotEnv.Env('firebird.user', 'SYSDBA');
-  Result.Password  := dotEnv.Env('firebird.password', 'masterkey');
+  Result.User      := dotEnv.Env('firebird.user', '');
+  Result.Password  := dotEnv.Env('firebird.password', '');
   Result.Charset   := dotEnv.Env('firebird.charset', 'UTF8');
   Result.ClientLib := dotEnv.Env('firebird.client_lib', '');
   { Not a setting. Every tool in this edition reads, and the engine is a better keeper of that
@@ -52,6 +52,13 @@ procedure ValidateFirebirdConfig(const AConfig: TFirebirdConnectionConfig);
 begin
   if Trim(AConfig.Database) = '' then
     raise EFirebirdConfig.Create('Firebird database path is empty. ' + EnvHint);
+
+  // No default login: an .env that forgot these must fail here, not quietly try SYSDBA with the
+  // password every Firebird kit ships.
+  if Trim(AConfig.User) = '' then
+    raise EFirebirdConfig.CreateFmt('"firebird.user" is not set in %s.', [EnvFile]);
+  if AConfig.Password = '' then
+    raise EFirebirdConfig.CreateFmt('"firebird.password" is not set in %s.', [EnvFile]);
 
   if (AConfig.ClientLib <> '') and not TFile.Exists(AConfig.ClientLib) then
     raise EFirebirdConfig.CreateFmt(

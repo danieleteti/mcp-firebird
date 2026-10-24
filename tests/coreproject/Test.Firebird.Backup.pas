@@ -12,6 +12,8 @@ type
     [Test] procedure VerifyRestore_Accepts_A_Backup_It_Just_Made;
     [Test] procedure Backup_Rejects_A_Destination_That_Does_Not_Exist;
     [Test] procedure A_Failed_Backup_Carries_Gbaks_Own_Words;
+    [Test] procedure A_Failed_Backup_Leaves_No_File_Behind;
+    [Test] procedure Credentials_Travel_In_The_Environment_Not_On_The_Command_Line;
   end;
 
 implementation
@@ -83,6 +85,44 @@ begin
   finally
     B.Free;
   end;
+end;
+
+procedure TBackupTests.A_Failed_Backup_Leaves_No_File_Behind;
+var
+  B: TFirebirdBackup;
+  lConfig: TFirebirdConnectionConfig;
+  lDir: string;
+begin
+  lDir := NewTempDir;
+  try
+    lConfig := TestConfig;
+    lConfig.Database := 'C:\no\such\database\NOPE.FDB';
+    B := TFirebirdBackup.Create(lConfig);
+    try
+      try
+        B.Backup(TFirebirdBackup.ProposeBackupFile(lConfig.Database, lDir));
+      except
+        on Exception do ;   // the raise is the other test's business
+      end;
+      Assert.AreEqual(0, Integer(Length(TDirectory.GetFiles(lDir, '*.fbk'))),
+        'a failed backup must not leave a .fbk that looks like a good one');
+    finally
+      B.Free;
+    end;
+  finally
+    TDirectory.Delete(lDir, True);
+  end;
+end;
+
+procedure TBackupTests.Credentials_Travel_In_The_Environment_Not_On_The_Command_Line;
+var lEnv: string;
+begin
+  { A space and a quote: the two characters that, unquoted on a command line, become gbak switches. }
+  lEnv := GbakEnvironment('SYS DBA', 'pa ss"word');
+  Assert.IsTrue(lEnv.Contains('ISC_USER=SYS DBA' + #0), 'user missing');
+  Assert.IsTrue(lEnv.Contains('ISC_PASSWORD=pa ss"word' + #0), 'password missing');
+  Assert.IsTrue(lEnv.EndsWith(#0#0), 'the block must end with an empty entry');
+  Assert.IsTrue(lEnv.ToUpper.Contains('PATH='), 'the rest of the environment must survive');
 end;
 
 procedure TBackupTests.A_Failed_Backup_Carries_Gbaks_Own_Words;

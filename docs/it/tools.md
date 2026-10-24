@@ -37,8 +37,7 @@ Gli servono tre cose, tutte a carico tuo:
 
 - **`firebird.backup_dir`** nel `.env`. La destinazione si dichiara una volta sola, lì, e non arriva
   mai dal chiamante — i tool prendono istruzioni da chiunque stia parlando col server.
-- **`gbak.exe` accanto al tuo `fbclient.dll`.** Il server pilota un tool client *locale*, come
-  l'analisi dei piani pilota un `isql.exe` locale. Non si attacca mai al Services Manager.
+- **`gbak.exe` accanto al tuo `fbclient.dll`.** Il server pilota un tool client *locale*. Non si attacca mai al Services Manager.
 - **Spazio per una seconda copia del database** su quel disco, per tutta la durata del ripristino
   di verifica.
 

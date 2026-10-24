@@ -8,6 +8,7 @@ type
     [Test] procedure NaturalScan_On_City_Filter_IsDetected;
     [Test] procedure Pk_Lookup_HasNoNaturalScan;
     [Test] procedure ExplainedPlan_Names_The_Table_The_Alias_And_The_Index;
+    [Test] procedure Inner_Semicolon_Is_Refused;
   end;
 implementation
 uses System.SysUtils, Firebird.Connection, Firebird.Capabilities, Firebird.PlanAnalyzer, TestFixtureU;
@@ -70,4 +71,18 @@ begin
     finally PA.Free; end;
   finally Conn.Free; end;
 end;
+procedure TPlanAnalyzerTests.Inner_Semicolon_Is_Refused;
+var Conn: TFirebirdConnection; PA: TFirebirdPlanAnalyzer;
+begin
+  Conn := NewTestConnection;
+  try
+    PA := TFirebirdPlanAnalyzer.Create(Conn, TFirebirdCapabilities.Detect(Conn).EngineVersion);
+    try
+      Assert.WillRaise(procedure begin PA.Analyze('SELECT 1 FROM RDB$DATABASE; SELECT 2 FROM RDB$DATABASE'); end);
+      // a trailing ";" and a ";" inside a literal are both fine
+      PA.Analyze('SELECT * FROM CUSTOMERS WHERE CITY = ''a;b'';');
+    finally PA.Free; end;
+  finally Conn.Free; end;
+end;
+
 end.

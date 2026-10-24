@@ -16,9 +16,28 @@ type
     [Test] procedure A_Pipe_In_The_Data_Does_Not_Break_The_Table;
     [Test] procedure A_Wide_Result_Stops_On_Size_Before_It_Stops_On_Rows;
     [Test] procedure A_Narrow_Result_Is_Never_Stopped_By_Size;
+    [Test] procedure A_Query_That_Outlives_Its_Deadline_Is_Cancelled_And_Says_So;
   end;
 implementation
-uses System.SysUtils, Firebird.Connection, Firebird.Query, TestFixtureU;
+uses System.SysUtils, Firebird.Connection, Firebird.Capabilities, Firebird.Query, TestFixtureU;
+
+procedure TQueryTests.A_Query_That_Outlives_Its_Deadline_Is_Cancelled_And_Says_So;
+var Conn: TFirebirdConnection; R: TQueryResult; Caps: TFirebirdCapabilities;
+begin
+  Conn := NewTestConnection;
+  try
+    Caps := TFirebirdCapabilities.Detect(Conn);
+    if not Caps.HasStatementTimeout then
+    begin
+      Assert.Pass('statement timeouts need Firebird 4.0; ' + Caps.EngineVersion + ' runs a statement to the end');
+      Exit;
+    end;
+    R := RunSelect(Conn, 'SELECT COUNT(*) FROM CUSTOMERS A, CUSTOMERS B, CUSTOMERS C', 0, 1000);
+    Assert.IsFalse(R.Executed);
+    Assert.IsTrue(R.SkipReason.Contains('did not finish'), R.SkipReason);
+    Assert.AreEqual('5000', Conn.ScalarStr('SELECT COUNT(*) FROM CUSTOMERS'));
+  finally Conn.Free; end;
+end;
 
 procedure TQueryTests.Returns_The_Columns_And_The_Rows;
 var Conn: TFirebirdConnection; R: TQueryResult;

@@ -112,21 +112,14 @@ begin Result := (AOp = '<>') or (AOp = '!=') or AOp.ToUpper.StartsWith('NOT'); e
 { Parenthesis depth at a given offset, quoted text excluded. Used to tell an ORDER BY that
   belongs to the statement from one inside a window function or a subquery. }
 function DepthAt(const ASQL: string; APos: Integer): Integer;
-var I: Integer; Quote: Char;
+var I: Integer;
 begin
   Result := 0;
   I := 1;
   while (I < APos) and (I <= Length(ASQL)) do
   begin
     if CharInSet(ASQL[I], ['''', '"']) then
-    begin
-      Quote := ASQL[I];
-      Inc(I);
-      while I <= Length(ASQL) do
-        if ASQL[I] <> Quote then Inc(I)
-        else if (I < Length(ASQL)) and (ASQL[I + 1] = Quote) then Inc(I, 2)
-        else Break;
-    end
+      I := SkipLiteral(ASQL, I)
     else if ASQL[I] = '(' then Inc(Result)
     else if ASQL[I] = ')' then Dec(Result);
     Inc(I);
@@ -137,21 +130,14 @@ end;
   balance, which is the signal to stay silent: SUBSTRING(NAME FROM 1 FOR 3) is not f(a, b), and
   a matcher that counts commas mangles it. }
 function MatchingParen(const ASQL: string; AOpen: Integer): Integer;
-var I, Depth: Integer; Quote: Char;
+var I, Depth: Integer;
 begin
   Depth := 0;
   I := AOpen;
   while I <= Length(ASQL) do
   begin
     if CharInSet(ASQL[I], ['''', '"']) then
-    begin
-      Quote := ASQL[I];
-      Inc(I);
-      while I <= Length(ASQL) do
-        if ASQL[I] <> Quote then Inc(I)
-        else if (I < Length(ASQL)) and (ASQL[I + 1] = Quote) then Inc(I, 2)
-        else Break;
-    end
+      I := SkipLiteral(ASQL, I)
     else if ASQL[I] = '(' then Inc(Depth)
     else if ASQL[I] = ')' then
     begin

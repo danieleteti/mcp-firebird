@@ -24,6 +24,9 @@ type
       connection asks for it, so an application that does not pass its role gets none of the
       privileges that were granted to it, and the plan has to say so instead of assuming. }
     HasDefaultRoles: Boolean;
+    { fb_dsql_set_timeout: a statement can be given a deadline. 4.0 and up, and the client
+      library has to be 4.0+ as well; below that a limit is silently no limit. }
+    HasStatementTimeout: Boolean;
     class function Parse(const AVersion: string): TFirebirdCapabilities; static;
     class function Detect(AConn: TFirebirdConnection): TFirebirdCapabilities; static;
   end;
@@ -49,6 +52,7 @@ begin
   Result.HasRdbConfig       := Result.Ordinal >= 400;
   Result.HasParallelWorkers := Result.Ordinal >= 500;
   Result.HasDefaultRoles    := Result.Ordinal >= 400;
+  Result.HasStatementTimeout := Result.Ordinal >= 400;
   Result.HasExpressionIndexes := Result.Ordinal >= 200;
   Result.HasPartialIndexes    := Result.Ordinal >= 500;
 end;

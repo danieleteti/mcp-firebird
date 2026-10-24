@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-24
+
+### Fixed
+
+- **A read-only `SELECT` could still move a generator.** The read-only transaction stops every
+  write except this one: `SELECT GEN_ID(G, 1000) FROM RDB$DATABASE` advanced a sequence through
+  `fb_query`, `fb_analyze_query` or `fb_suggest_indexes`. `IsReadOnlySelect` now refuses
+  `GEN_ID(` and `NEXT VALUE FOR`.
+- **The `gbak` password no longer travels on the command line.** A password with a space or a
+  quote split into extra `gbak` switches, and any user of the machine could read it in the
+  process list. Backup and verification pass `ISC_USER` / `ISC_PASSWORD` in the child's
+  environment instead.
+- **A failed or timed-out backup leaves no `.fbk` behind.** The truncated file used to stay in the
+  backup folder under the name of a good one.
+- **A caller's query can no longer run forever.** `fb_analyze_query`, `fb_suggest_indexes`,
+  `fb_evaluate_goal` (`query_time_ms`) and `fb_query` give the statement 60 seconds; past that the
+  engine cancels it and the answer says so (the plan is still returned). Firebird 4.0 and up: on
+  2.5 and 3.0 the engine has no statement timeout and a statement still runs to the end.
+- **No more default login.** An `.env` without `firebird.user` or `firebird.password` is refused
+  with the key named, instead of quietly trying `SYSDBA` / `masterkey`.
+
+### Changed
+
+- **Plans come from a prepare, not from `isql`.** `Firebird.PlanAnalyzer` asks `fbclient` for the
+  legacy plan (and, from 3.0, the explained tree) through FireDAC's statement wrapper. Nothing is
+  executed, no script or temporary file exists, no `isql.exe` is needed beside the client library,
+  and the password no longer appears on a command line for this. A `;` inside the statement is
+  refused rather than planned as its first half. `gbak` is now the only local tool the server
+  drives.
+
 ## [0.6.0] - 2026-08-23
 
 ### Added

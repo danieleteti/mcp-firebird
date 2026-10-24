@@ -3,7 +3,7 @@
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.Backup;
 
-{ Drives a LOCAL gbak.exe, the way Firebird.PlanAnalyzer drives a local isql.exe:
+{ Drives a LOCAL gbak.exe:
   a client tool on this machine, through temp files, never the server's own files
   and never the Services Manager. That is what keeps it inside the free edition.
 
@@ -51,13 +51,19 @@ type
     function VerifyRestore(const ABackupFile, AScratchDir: string): TVerifyOutcome;
   end;
 
+{ The environment gbak is started with: this process's own, plus the credentials as ISC_USER and
+  ISC_PASSWORD. On the command line a password with a space or a quote would split into extra
+  gbak switches, and every other user of the machine could read it in the process list. Entries
+  are #0-terminated and the block ends with one more #0. Public so a test can read it. }
+function GbakEnvironment(const AUser, APassword: string): string;
+
 implementation
 
 uses
   Winapi.Windows, System.SysUtils, System.IOUtils, System.Diagnostics;
 
 const
-  BACKUP_TIMEOUT_MS = 30 * 60 * 1000;   // half an hour; a real database is not an isql plan
+  BACKUP_TIMEOUT_MS = 30 * 60 * 1000;   // half an hour; a real database is not a quick call
   LOG_TAIL_CHARS = 2000;
 
 { The end of gbak's own output. gbak -v narrates every table it writes, so the useful
@@ -116,11 +122,34 @@ begin
   Result := Format('%s/%d:%s', [FConfig.Host, FConfig.Port, APath]);
 end;
 
+function GbakEnvironment(const AUser, APassword: string): string;
+var P, Q: PChar; Entry: string; SB: TStringBuilder;
+begin
+  SB := TStringBuilder.Create;
+  P := GetEnvironmentStrings;
+  try
+    Q := P;
+    while Q^ <> #0 do
+    begin
+      Entry := string(Q);
+      Inc(Q, Entry.Length + 1);
+      if not (Entry.StartsWith('ISC_USER=', True) or Entry.StartsWith('ISC_PASSWORD=', True)) then
+        SB.Append(Entry).Append(#0);
+    end;
+    SB.Append('ISC_USER=').Append(AUser).Append(#0);
+    SB.Append('ISC_PASSWORD=').Append(APassword).Append(#0).Append(#0);
+    Result := SB.ToString;
+  finally
+    FreeEnvironmentStrings(P);
+    SB.Free;
+  end;
+end;
+
 procedure TFirebirdBackup.RunAndWait(const ACmd: string; ATimeoutMs: Cardinal; const AWhat: string);
 var
   SI: TStartupInfo;
   PI: TProcessInformation;
-  lCmd: string;
+  lCmd, lEnv: string;
   lExit: Cardinal;
 begin
   FillChar(SI, SizeOf(SI), 0);
@@ -129,7 +158,9 @@ begin
   SI.wShowWindow := SW_HIDE;
   lCmd := ACmd;
   UniqueString(lCmd);
-  if not CreateProcess(nil, PChar(lCmd), nil, nil, False, CREATE_NO_WINDOW, nil, nil, SI, PI) then
+  lEnv := GbakEnvironment(FConfig.User, FConfig.Password);
+  if not CreateProcess(nil, PChar(lCmd), nil, nil, False, CREATE_NO_WINDOW or CREATE_UNICODE_ENVIRONMENT,
+    PChar(lEnv), nil, SI, PI) then
     RaiseLastOSError;
   try
     if WaitForSingleObject(PI.hProcess, ATimeoutMs) = WAIT_TIMEOUT then
@@ -171,9 +202,8 @@ begin
   try
     SW := TStopwatch.StartNew;
     try
-      RunAndWait(Format('"%s" -b -v -y "%s" -user %s -password %s "%s" "%s"',
-        [GbakPath, lLogFile, FConfig.User, FConfig.Password,
-         ConnectString, Result.BackupFile]), BACKUP_TIMEOUT_MS, 'Backup');
+      RunAndWait(Format('"%s" -b -v -y "%s" "%s" "%s"',
+        [GbakPath, lLogFile, ConnectString, Result.BackupFile]), BACKUP_TIMEOUT_MS, 'Backup');
     except
       on E: Exception do
       begin
@@ -181,6 +211,9 @@ begin
           about to delete, so it leaves with the exception rather than with the file. }
         if TFile.Exists(lLogFile) then
           E.Message := E.Message + sLineBreak + Tail(TFile.ReadAllText(lLogFile));
+        { Whatever gbak had written is a truncated backup under the name of a good one. }
+        if TFile.Exists(Result.BackupFile) then
+          TFile.Delete(Result.BackupFile);
         raise;
       end;
     end;
@@ -213,9 +246,8 @@ begin
     try
       { The scratch database is created by the same server the backup came from — see
         ServerPath. The .fbk stays a bare local path: gbak reads that itself. }
-      RunAndWait(Format('"%s" -c -v -y "%s" -user %s -password %s "%s" "%s"',
-        [GbakPath, lLogFile, FConfig.User, FConfig.Password,
-         ABackupFile, ServerPath(lScratch)]), BACKUP_TIMEOUT_MS, 'Verification restore');
+      RunAndWait(Format('"%s" -c -v -y "%s" "%s" "%s"',
+        [GbakPath, lLogFile, ABackupFile, ServerPath(lScratch)]), BACKUP_TIMEOUT_MS, 'Verification restore');
       { Two cases, and the difference is where the server is.
 
         A server on this machine writes the scratch database where this process can see it, and

@@ -9,6 +9,7 @@ type
     [Test] procedure Sample_On_A_Quiet_Database_Reports_Nothing_And_Does_Not_Crash;
     [Test] procedure Measure_Reports_The_Records_The_Query_Actually_Read;
     [Test] procedure Measure_Refuses_To_Execute_Anything_But_A_Select;
+    [Test] procedure Measure_Cancels_A_Statement_That_Outlives_Its_Deadline;
     [Test] procedure Measure_Refuses_A_Statement_Whose_Parameters_Nobody_Bound;
     [Test] procedure IsReadOnlySelect_Accepts_Select_And_With_Only;
   end;
@@ -91,6 +92,30 @@ begin
       Assert.AreEqual(Int64(5000), C.Rows, 'every seeded row should have been fetched');
       Assert.IsTrue(C.Delta.SeqReads >= 5000,
         Format('expected at least 5000 sequential record reads, measured %d', [C.Delta.SeqReads]));
+    finally A.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TActivityTests.Measure_Cancels_A_Statement_That_Outlives_Its_Deadline;
+var Conn: TFirebirdConnection; A: TFirebirdActivity; C: TStatementCost; Caps: TFirebirdCapabilities;
+begin
+  Conn := NewTestConnection;
+  try
+    Caps := TFirebirdCapabilities.Detect(Conn);
+    if not Caps.HasStatementTimeout then
+    begin
+      Assert.Pass('statement timeouts need Firebird 4.0; ' + Caps.EngineVersion + ' runs a statement to the end');
+      Exit;
+    end;
+    A := TFirebirdActivity.Create(Conn, Caps);
+    try
+      A.TimeoutMs := 1000;
+      // 5000 customers cubed: hours of work for the engine, one second of patience for us.
+      C := A.Measure('SELECT COUNT(*) FROM CUSTOMERS A, CUSTOMERS B, CUSTOMERS C');
+      Assert.IsFalse(C.Executed, 'the statement cannot have finished');
+      Assert.IsTrue(C.SkipReason.Contains('did not finish'), C.SkipReason);
+      // The connection must be usable afterwards: the next tool call may share it.
+      Assert.AreEqual('5000', Conn.ScalarStr('SELECT COUNT(*) FROM CUSTOMERS'));
     finally A.Free; end;
   finally Conn.Free; end;
 end;

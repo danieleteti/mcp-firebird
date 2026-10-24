@@ -27,7 +27,7 @@ como **Finding** (qué falla), **SQL** (la sentencia que lo arregla) y **Verify*
 funcionó). En tu base de datos no se escribe nada: el servidor se conecta en solo lectura, y el SQL
 que te entrega lo ejecutas tú, si decides hacerlo.
 
-- **Transporte:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Identidad del servidor:** `mcp-firebird` v`0.6.0`
+- **Transporte:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Identidad del servidor:** `mcp-firebird` v`0.6.1`
 - **Motores:** Firebird 2.5, 3.0, 4.0, 5.0 — detectados en tiempo de ejecución
 - **Gratis** en tus propias bases de datos, a cualquier escala, sin clave y sin caducidad. La
   licencia solo hace falta para que el software salga de tus manos
