@@ -37,8 +37,7 @@ Three things it needs, all of them yours to arrange:
 
 - **`firebird.backup_dir`** in the `.env`. The destination is declared once, there, and is never
   taken from the caller — the tools take instructions from whatever is talking to the server.
-- **`gbak.exe` beside your `fbclient.dll`.** The server drives a *local* client tool, the same
-  way plan analysis drives a local `isql.exe`. It never attaches to the Services Manager.
+- **`gbak.exe` beside your `fbclient.dll`.** The server drives a *local* client tool. It never attaches to the Services Manager.
 - **Room for a second copy of the database** on that disk, for as long as the verification
   restore runs.
 

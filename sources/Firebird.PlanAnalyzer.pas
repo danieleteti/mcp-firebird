@@ -2,7 +2,7 @@
 // Copyright 2026 Daniele Teti — https://github.com/danieleteti/mcp-firebird
 // Part of MCP Firebird, a showcase for https://github.com/danieleteti/mcp-server-delphi
 unit Firebird.PlanAnalyzer;
-// Plan retrieval per Task 10 spike (docs/plan-retrieval-decision.md): isql + SET PLANONLY ON.
+// Plan retrieval: a prepare through FireDAC's IB wrapper (sql_get_plan / sql_explain_plan); nothing runs.
 interface
 uses Firebird.Connection;
 type
@@ -43,96 +43,46 @@ type
   end;
 implementation
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.IOUtils, System.Math,
-  System.RegularExpressions, Firebird.Capabilities;
+  System.SysUtils, System.Math, System.RegularExpressions, FireDAC.Comp.Client,
+  FireDAC.Phys.IBBase, FireDAC.Phys.IBWrapper, Firebird.Capabilities;
 
 constructor TFirebirdPlanAnalyzer.Create(AConn: TFirebirdConnection; const AEngineVersion: string);
 begin
   inherited Create;
   FConn := AConn;
   FEngineVersion := AEngineVersion;
-  // SET EXPLAIN does not exist in 2.5's isql, and an unknown SET aborts the script that carries
-  // it — including the statement whose plan we came for. Below 3.0 the script stays what it was.
+  // isc_info_sql_explain_plan is a 3.0 item; below that only the legacy plan is asked for.
   FWantExplained := TFirebirdCapabilities.Parse(AEngineVersion).HasExplainedPlan;
 end;
 
-procedure RunAndWait(const ACmd: string);
-var SI: TStartupInfo; PI: TProcessInformation; LCmd: string;
-begin
-  FillChar(SI, SizeOf(SI), 0); SI.cb := SizeOf(SI);
-  SI.dwFlags := STARTF_USESHOWWINDOW; SI.wShowWindow := SW_HIDE;
-  LCmd := ACmd; UniqueString(LCmd);
-  if not CreateProcess(nil, PChar(LCmd), nil, nil, False, CREATE_NO_WINDOW, nil, nil, SI, PI) then
-    RaiseLastOSError;
-  try
-    if WaitForSingleObject(PI.hProcess, 30000) = WAIT_TIMEOUT then
-    begin
-      TerminateProcess(PI.hProcess, 1);
-      raise Exception.Create('isql plan retrieval timed out after 30 seconds');
-    end;
-  finally
-    CloseHandle(PI.hThread); CloseHandle(PI.hProcess);
-  end;
-end;
-
 function TFirebirdPlanAnalyzer.GetPlanOutput(const ASQL: string; out AExplained: string): string;
-var
-  LIsql, LDir, LIn, LOut, LConn, LCmd, LScript, LOutput, LStmt, Line: string;
-  SL: TStringList; PlanLines, TreeLines: TStringBuilder; InTree: Boolean;
+var LStmt: string; Q: TFDQuery; Stmt: TIBStatement;
 begin
   AExplained := '';
-  LDir := ExtractFilePath(FConn.Config.ClientLib);
-  if LDir <> '' then LIsql := IncludeTrailingPathDelimiter(LDir) + 'isql.exe' else LIsql := 'isql.exe';
-  if not FileExists(LIsql) then LIsql := 'isql.exe';
-  LIn  := TPath.GetTempFileName;
-  LOut := TPath.GetTempFileName;
+  LStmt := ASQL.Trim;
+  while LStmt.EndsWith(';') do LStmt := LStmt.Substring(0, LStmt.Length - 1).TrimRight;
+  // One statement only: a prepare takes a single one, and a plan for the first half of
+  // "a; b" would describe a query nobody asked about.
+  if StripLiterals(LStmt).Contains(';') then
+    raise Exception.Create('Plan retrieval takes a single statement; remove the inner ";".');
+  { Both plans from one prepare, nothing executed: the legacy PLAN line the whole codebase
+    already reads and (3.0+) the explained tree with the index names, the match quality and the
+    aliases. They are the same two items isql prints, asked of fbclient directly. }
+  Q := TFDQuery.Create(nil);
   try
-    LStmt := ASQL.Trim;
-    if not LStmt.TrimRight.EndsWith(';') then LStmt := LStmt + ';';
-    { Both plans, one isql, two prepares and no execution. SET EXPLAIN ON replaces the legacy
-      PLAN line rather than adding to it, so the statement is prepared once before it is turned
-      on and once after: the terse line the whole codebase already reads, and the tree that
-      carries the index names, the match quality and the aliases. }
-    LScript := 'SET PLANONLY ON;' + sLineBreak + LStmt + sLineBreak;
-    if FWantExplained then
-      LScript := LScript + 'SET EXPLAIN ON;' + sLineBreak + LStmt + sLineBreak;
-    TFile.WriteAllBytes(LIn, TEncoding.UTF8.GetBytes(LScript)); // no BOM
-    LConn := Format('%s/%d:%s', [FConn.Config.Host, FConn.Config.Port, FConn.Config.Database]);
-    // -m merges stderr into stdout; -m2 redirects diagnostics (where the PLAN
-    // line is emitted under SET PLANONLY ON) into the -o output file.
-    LCmd := Format('"%s" -q -m -m2 -ch UTF8 -i "%s" -o "%s" -user %s -password %s "%s"',
-      [LIsql, LIn, LOut, FConn.Config.User, FConn.Config.Password, LConn]);
-    RunAndWait(LCmd);
-    LOutput := TFile.ReadAllText(LOut);
-    PlanLines := TStringBuilder.Create;
-    TreeLines := TStringBuilder.Create;
-    SL := TStringList.Create;
-    try
-      SL.Text := LOutput;
-      InTree := False;
-      for Line in SL do
-        if Line.TrimLeft.StartsWith('PLAN', True) then
-          PlanLines.AppendLine(Line.Trim)
-        else if Line.TrimLeft.StartsWith('Select Expression', True) then
-        begin
-          InTree := True;
-          TreeLines.AppendLine(Line.TrimRight);
-        end
-        else if InTree and (Line.Trim <> '') then
-          TreeLines.AppendLine(Line.TrimRight);
-      Result := PlanLines.ToString.Trim;
-      AExplained := TreeLines.ToString.Trim;
-      // isql prints "Statement failed, SQLSTATE = ..." into this same output when the engine
-      // refuses the statement. Harvesting only the PLAN lines would leave an empty plan, which
-      // every caller reads as "no NATURAL scan" — an all-clear on a query that never ran.
-      if Result = '' then
-        raise Exception.Create('Firebird produced no plan for this statement:' + sLineBreak +
-          LOutput.Trim);
-    finally SL.Free; TreeLines.Free; PlanLines.Free; end;
-  finally
-    if FileExists(LIn) then System.SysUtils.DeleteFile(LIn);
-    if FileExists(LOut) then System.SysUtils.DeleteFile(LOut);
-  end;
+    Q.Connection := FConn.FDConnection;
+    Q.ResourceOptions.MacroExpand := False;
+    Q.ResourceOptions.EscapeExpand := False;
+    Q.SQL.Text := LStmt;
+    Q.Prepare;
+    Stmt := (Q.Command.CommandIntf as TFDPhysIBCommandBase).IBStatement;
+    Result := Stmt.sql_get_plan.Trim;
+    if FWantExplained then AExplained := Stmt.sql_explain_plan.Trim;
+  finally Q.Free; end;
+  // An empty plan reads as "no NATURAL scan" to every caller: an all-clear on a statement
+  // Firebird gave no plan for (DDL, EXECUTE PROCEDURE).
+  if Result = '' then
+    raise Exception.Create('Firebird produced no plan for this statement.');
 end;
 
 { Reads the tree Firebird prints under SET EXPLAIN ON. Node keywords, not line positions: 3.0

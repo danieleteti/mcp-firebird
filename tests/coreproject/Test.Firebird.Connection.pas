@@ -9,6 +9,8 @@ type
     [Test] procedure ScalarStr_Returns_Engine_Version;
     [Test] procedure ReadOnly_Connection_Is_Refused_By_The_Engine_Not_By_Us;
     [Test] procedure ReadOnly_Connection_Still_Reads;
+    [Test] procedure A_Read_Only_Select_Can_Still_Move_A_Generator;
+    [Test] procedure IsReadOnlySelect_Refuses_What_Moves_A_Generator_And_Nothing_Else;
   end;
 implementation
 uses System.SysUtils, FireDAC.Comp.Client, Firebird.Connection, TestFixtureU;
@@ -63,6 +65,48 @@ begin
     try Rows := Q.Fields[0].AsLargeInt; finally Q.Free; end;
     Assert.AreEqual(Int64(5000), Rows, 'the refused DELETE must have changed nothing');
   finally Checker.Free; end;
+end;
+
+procedure TConnectionTests.A_Read_Only_Select_Can_Still_Move_A_Generator;
+var C, Admin: TFirebirdConnection; Before, After: string;
+begin
+  { The reason IsReadOnlySelect looks inside the statement: a generator is not transactional, so
+    the read-only TPB that stops every write leaves this one open. If a future engine closes it,
+    this test fails and the extra check can go. }
+  Admin := NewTestConnection;   // a test connection is not read-only: it may create the generator
+  try
+    Admin.ExecSQL('CREATE GENERATOR G_MCPFB_READONLY_PROBE');
+    try
+      C := NewReadOnlyConnection;
+      try
+        Before := C.ScalarStr('SELECT GEN_ID(G_MCPFB_READONLY_PROBE, 0) FROM RDB$DATABASE');
+        C.ScalarStr('SELECT GEN_ID(G_MCPFB_READONLY_PROBE, 7) FROM RDB$DATABASE');
+        After := C.ScalarStr('SELECT GEN_ID(G_MCPFB_READONLY_PROBE, 0) FROM RDB$DATABASE');
+        Assert.AreEqual('0', Before);
+        Assert.AreEqual('7', After, 'the engine let a read-only SELECT advance a generator');
+      finally C.Free; end;
+    finally
+      Admin.ExecSQL('DROP GENERATOR G_MCPFB_READONLY_PROBE');
+    end;
+  finally Admin.Free; end;
+end;
+
+procedure TConnectionTests.IsReadOnlySelect_Refuses_What_Moves_A_Generator_And_Nothing_Else;
+begin
+  Assert.IsFalse(IsReadOnlySelect('SELECT GEN_ID(G, 1) FROM RDB$DATABASE'));
+  Assert.IsFalse(IsReadOnlySelect('select gen_id (g, 1) from rdb$database'));
+  Assert.IsFalse(IsReadOnlySelect('SELECT NEXT VALUE FOR G FROM RDB$DATABASE'));
+  Assert.IsFalse(IsReadOnlySelect('WITH X AS (SELECT GEN_ID(G, 1) AS V FROM RDB$DATABASE) SELECT V FROM X'));
+  // Text that only mentions the words, or a column that merely contains them, is not a call.
+  Assert.IsTrue(IsReadOnlySelect('SELECT * FROM T WHERE NOTE = ''GEN_ID(G, 1)'''));
+  Assert.IsTrue(IsReadOnlySelect('SELECT "GEN_ID(", NAME FROM T'));
+  Assert.IsTrue(IsReadOnlySelect('SELECT MY_GEN_IDENTITY FROM T'));
+  Assert.IsTrue(IsReadOnlySelect('SELECT GEN_ID_COUNT FROM T'));
+  Assert.IsTrue(IsReadOnlySelect('WITH X AS (SELECT 1 AS V FROM RDB$DATABASE) SELECT V FROM X'));
+  // Still not a SELECT.
+  Assert.IsFalse(IsReadOnlySelect('DELETE FROM T'));
+  Assert.IsFalse(IsReadOnlySelect('EXECUTE BLOCK AS BEGIN END'));
+  Assert.IsFalse(IsReadOnlySelect('-- hi' + sLineBreak + 'SELECT 1 FROM RDB$DATABASE'));
 end;
 
 procedure TConnectionTests.ReadOnly_Connection_Still_Reads;

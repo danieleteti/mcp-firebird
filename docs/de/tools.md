@@ -38,8 +38,7 @@ Drei Dinge braucht es, und die stellst du:
 
 - **`firebird.backup_dir`** in der `.env`. Das Ziel wird dort einmal deklariert und kommt nie vom
   Aufrufer — die Tools nehmen Anweisungen von jedem entgegen, der mit dem Server spricht.
-- **`gbak.exe` neben deiner `fbclient.dll`.** Der Server steuert ein *lokales* Client-Werkzeug,
-  genau wie die Plan-Analyse ein lokales `isql.exe` steuert. Nie über den Services Manager.
+- **`gbak.exe` neben deiner `fbclient.dll`.** Der Server steuert ein *lokales* Client-Werkzeug. Nie über den Services Manager.
 - **Platz für eine zweite Kopie der Datenbank** auf dieser Platte, solange die Prüf-Rücksicherung
   läuft.
 

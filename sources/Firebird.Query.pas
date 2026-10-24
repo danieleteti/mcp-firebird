@@ -55,11 +55,13 @@ const
   above ROW_CEILING is clamped to it. Never raises for a refused statement — the reason comes
   back in the result; a genuine engine error (bad table name, syntax) still raises, so the tool
   layer reports it as one. }
-function RunSelect(AConn: TFirebirdConnection; const ASQL: string; AMaxRows: Integer): TQueryResult;
+function RunSelect(AConn: TFirebirdConnection; const ASQL: string; AMaxRows: Integer;
+  ATimeoutMs: Cardinal = STATEMENT_TIMEOUT_MS): TQueryResult;
 
 implementation
 
-uses System.SysUtils, System.Generics.Collections, System.Diagnostics, Data.DB, FireDAC.Comp.Client;
+uses System.SysUtils, System.Generics.Collections, System.Diagnostics, Data.DB, FireDAC.Comp.Client,
+  FireDAC.Stan.Error, Firebird.Capabilities;
 
 { A pipe is a column separator in a Markdown table and content everywhere else. Column names
   come from the caller's SELECT and can be quoted identifiers, so a header cell needs the same
@@ -85,13 +87,15 @@ begin
     Result := Result.Substring(0, CELL_LIMIT) + '…';
 end;
 
-function RunSelect(AConn: TFirebirdConnection; const ASQL: string; AMaxRows: Integer): TQueryResult;
+function RunSelect(AConn: TFirebirdConnection; const ASQL: string; AMaxRows: Integer;
+  ATimeoutMs: Cardinal): TQueryResult;
 var
   Q: TFDQuery;
   SW: TStopwatch;
   lRows: TList<TArray<string>>;
   lIdx: Integer;
   lBudget: Integer;
+  lLimit: Cardinal;
 begin
   Result := Default(TQueryResult);
   Result.MaxRows := AMaxRows;
@@ -118,36 +122,49 @@ begin
   lRows := TList<TArray<string>>.Create;
   try
     SW := TStopwatch.StartNew;
-    Q := AConn.OpenQuery(ASQL);
+    if TFirebirdCapabilities.Detect(AConn).HasStatementTimeout then lLimit := ATimeoutMs else lLimit := 0;
     try
-      SetLength(Result.Columns, Q.FieldCount);
-      for lIdx := 0 to Q.FieldCount - 1 do
-        Result.Columns[lIdx] := EscapePipes(Q.Fields[lIdx].FieldName);
-      lBudget := CHARACTER_BUDGET;
-      while (not Q.Eof) and (lRows.Count < Result.MaxRows) and (lBudget > 0) do
-      begin
-        { A fresh array per row, declared here on purpose. One variable reused across the loop
-          works only because SetLength copies an array the list already holds a reference to,
-          and that is not a rule anybody should have to remember while editing this. }
-        var lRow: TArray<string>;
-        SetLength(lRow, Q.FieldCount);
+      Q := AConn.OpenQueryLimited(ASQL, lLimit);
+      try
+        SetLength(Result.Columns, Q.FieldCount);
         for lIdx := 0 to Q.FieldCount - 1 do
+          Result.Columns[lIdx] := EscapePipes(Q.Fields[lIdx].FieldName);
+        lBudget := CHARACTER_BUDGET;
+        while (not Q.Eof) and (lRows.Count < Result.MaxRows) and (lBudget > 0) do
         begin
-          lRow[lIdx] := CellText(Q.Fields[lIdx]);
-          Dec(lBudget, Length(lRow[lIdx]) + 3);  // the cell, plus its ' | ' separator
+          { A fresh array per row, declared here on purpose. One variable reused across the loop
+            works only because SetLength copies an array the list already holds a reference to,
+            and that is not a rule anybody should have to remember while editing this. }
+          var lRow: TArray<string>;
+          SetLength(lRow, Q.FieldCount);
+          for lIdx := 0 to Q.FieldCount - 1 do
+          begin
+            lRow[lIdx] := CellText(Q.Fields[lIdx]);
+            Dec(lBudget, Length(lRow[lIdx]) + 3);  // the cell, plus its ' | ' separator
+          end;
+          lRows.Add(lRow);
+          Q.Next;
         end;
-        lRows.Add(lRow);
-        Q.Next;
+        { The row that spent the last of the budget is kept: it was read, and a result that ends
+          one row short of what it fetched is harder to reason about than one that says it
+          stopped. }
+        Result.TruncatedBySize := (lBudget <= 0) and (lRows.Count < Result.MaxRows);
+        { Eof is only meaningful after the loop has stopped fetching: at the cap the engine has
+          been asked for nothing beyond it, so "not Eof" is exactly "there was more". }
+        Result.Truncated := not Q.Eof;
+      finally
+        Q.Free;
       end;
-      { The row that spent the last of the budget is kept: it was read, and a result that ends
-        one row short of what it fetched is harder to reason about than one that says it
-        stopped. }
-      Result.TruncatedBySize := (lBudget <= 0) and (lRows.Count < Result.MaxRows);
-      { Eof is only meaningful after the loop has stopped fetching: at the cap the engine has
-        been asked for nothing beyond it, so "not Eof" is exactly "there was more". }
-      Result.Truncated := not Q.Eof;
-    finally
-      Q.Free;
+    except
+      on E: EFDDBEngineException do
+      begin
+        if E.Kind <> ekCmdAborted then raise;
+        Result.Columns := nil;
+        Result.SkipReason := Format('the statement did not finish within %d s and the engine ' +
+          'cancelled it. Narrow it with a WHERE, aggregate it, or select fewer columns',
+          [ATimeoutMs div 1000]);
+        Exit;
+      end;
     end;
     Result.ElapsedMs := SW.ElapsedMilliseconds;
     Result.Rows := lRows.ToArray;

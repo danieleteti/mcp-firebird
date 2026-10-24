@@ -160,8 +160,8 @@ eigenen Datenbank verbunden.
 | `firebird.host` | `localhost` | Server-Host (TCP). Für entfernte DBs den echten Host bzw. die IP eintragen |
 | `firebird.port` | `3050` | Server-Port |
 | `firebird.database` | *(leer)* | Vollständiger Pfad (oder Alias) der Datenbank auf dem Server |
-| `firebird.user` | `SYSDBA` | Benutzer für die Anmeldung |
-| `firebird.password` | `masterkey` | Passwort für die Anmeldung |
+| `firebird.user` | (erforderlich) | Benutzer für die Anmeldung |
+| `firebird.password` | (erforderlich) | Passwort für die Anmeldung |
 | `firebird.charset` | `UTF8` | Zeichensatz der Verbindung |
 | `firebird.client_lib` | *(leer)* | Vollständiger Pfad zur `fbclient.dll`, die geladen werden soll |
 | `logger.config.file` | `loggerpro.stdio.json` | Konfiguration des Datei-Loggers (Logs gehen nur in Dateien; stdout bleibt reines JSON-RPC) |

@@ -130,11 +130,11 @@ Key `sources/` units and what they own:
   INT128, timezones, parallel workers) keyed off engine version, so behavior adapts across 2.5-5.0
   instead of hardcoding one engine's SQL dialect.
 - `Firebird.Introspection` — schema reads: tables, columns, PK, indexes, FKs.
-- `Firebird.PlanAnalyzer` — drives a local `isql` for the plan. One script, two prepares: the
-  legacy `PLAN` line under `SET PLANONLY ON`, then (3.0+ only, `SET EXPLAIN ON`) the explained
-  tree, parsed for index names, per-index segment match quality, join strategy and the engine's
-  own alias→table map. 2.5 never sees the `SET EXPLAIN` line — an unknown `SET` aborts the script
-  carrying the statement.
+- `Firebird.PlanAnalyzer` — one `TFDQuery.Prepare` (nothing executes, read-only connection), then
+  `sql_get_plan` and (3.0+ only) `sql_explain_plan` off the statement's `TIBStatement`
+  (`TFDPhysIBCommandBase.IBStatement`, FireDAC-internal). The explained tree is parsed for index
+  names, per-index segment match quality, join strategy and the engine's own alias→table map.
+  A `;` inside the statement is refused: a prepare takes one, and the plan would be a false one.
 - `Firebird.IndexAdvisor` — the remedy ladder: `SET STATISTICS` (refresh, leaves nothing behind)
   → `ALTER INDEX ACTIVE` (an index that already exists) → `CREATE INDEX` (paid for on every
   write, forever), always the lowest rung that explains the plan. Executes the query once through
@@ -225,9 +225,8 @@ the MCP transport itself.
   (`firebird.conf`, RAM/CPU), and anything needing an **administrative attach to the Services
   Manager** (`firebird.log`, the Trace API, the storage report — note these stream back over the
   wire and touch no file, so a filesystem-only rule would miss them). `invoke boundary` fails the
-  build on both: file reads / process spawning in `sources/` (`Firebird.PlanAnalyzer`, which drives
-  a local `isql`, and `Firebird.Backup`, which drives a local `gbak`, are the two sanctioned
-  exceptions — the allowlist in `tests/check_core_boundary.ps1`), and any `isc_service_*` / `TFDPhysFBService` /
+  build on both: file reads / process spawning in `sources/` (`Firebird.Backup`, which drives
+  a local `gbak`, is the one sanctioned exception — the allowlist in `tests/check_core_boundary.ps1`), and any `isc_service_*` / `TFDPhysFBService` /
   `service_mgr` reference. The nine locked tools in `providers/FirebirdStubsU.pas` announce the
   Enterprise edition; their names are a contract — the Python compliance suite is shared with the
   Enterprise repo, which runs it with `MCP_FB_EDITION=enterprise`.

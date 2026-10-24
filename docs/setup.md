@@ -162,8 +162,8 @@ its own database.
 | `firebird.host` | `localhost` | Server host (TCP). Use the real host/IP for remote DBs |
 | `firebird.port` | `3050` | Server port |
 | `firebird.database` | *(empty)* | Full path (or alias) of the database on the server |
-| `firebird.user` | `SYSDBA` | Login user |
-| `firebird.password` | `masterkey` | Login password |
+| `firebird.user` | (required) | Login user |
+| `firebird.password` | (required) | Login password |
 | `firebird.charset` | `UTF8` | Connection character set |
 | `firebird.client_lib` | *(empty)* | Full path to `fbclient.dll` to load |
 | `firebird.backup_dir` | *(empty)* | Folder `fb_backup_database` may write backups into. Never accepted from the caller — required only when that tool runs |

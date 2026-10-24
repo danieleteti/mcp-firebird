@@ -312,7 +312,7 @@ def matrix(c):
 
 @task
 def boundary(c):
-    """Enforce the boundaries: no MVCFramework in sources/, and no host access outside PlanAnalyzer."""
+    """Enforce the boundaries: no MVCFramework in sources/, and no host access outside Backup."""
     _pwsh(c, BOUNDARY)
 
 

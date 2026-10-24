@@ -27,7 +27,7 @@ column really holds before claiming an index on it would pay off. Every answer a
 worked). Nothing is written to your database: the server attaches read-only, and the SQL it hands
 you is yours to run, if and when you decide to.
 
-- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.6.0`
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.6.1`
 - **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — capability-detected at runtime
 - **Free** on your own databases, at any scale, no key and no expiry. A licence is needed only to
   pass the software on to somebody else ([details](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md))

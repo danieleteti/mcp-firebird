@@ -37,8 +37,7 @@ Necesita tres cosas, todas de tu parte:
 
 - **`firebird.backup_dir`** en el `.env`. El destino se declara una sola vez, ahí, y nunca lo pone
   quien llama: las herramientas reciben instrucciones de cualquiera que hable con el servidor.
-- **`gbak.exe` junto a tu `fbclient.dll`.** El servidor pilota una herramienta cliente *local*, igual
-  que el análisis de planes pilota un `isql.exe` local. Nunca se conecta al Services Manager.
+- **`gbak.exe` junto a tu `fbclient.dll`.** El servidor pilota una herramienta cliente *local*. Nunca se conecta al Services Manager.
 - **Sitio para una segunda copia de la base de datos** en ese disco, mientras dure la restauración
   de verificación.
 

@@ -61,6 +61,7 @@ type
   private
     FConn: TFirebirdConnection;
     FCaps: TFirebirdCapabilities;
+    FTimeoutMs: Cardinal;
     function ReadCounters(const AAttachmentOnly: Boolean): TActivityCounters;
   public
     constructor Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
@@ -69,6 +70,8 @@ type
     { Runs ASQL to completion on this attachment and reports what it cost. Refuses anything
       that is not a plain SELECT — see Firebird.Connection.IsReadOnlySelect. }
     function Measure(const ASQL: string): TStatementCost;
+    { The deadline Measure gives the statement, on engines that can enforce one. }
+    property TimeoutMs: Cardinal read FTimeoutMs write FTimeoutMs;
     { Findings a window can support, and only those. }
     function Analyze(const ASample: TActivitySample): TArray<TAdvisory>;
   end;
@@ -80,7 +83,7 @@ const
 implementation
 
 uses System.SysUtils, System.Classes, System.Diagnostics, System.Generics.Collections,
-  FireDAC.Comp.Client;
+  FireDAC.Comp.Client, FireDAC.Stan.Error;
 
 { Below these, a window says nothing worth a finding. A handful of sequential reads is a lookup
   on a small table, not a scan; a handful of purged versions is the engine keeping house. }
@@ -140,6 +143,7 @@ begin
   inherited Create;
   FConn := AConn;
   FCaps := ACaps;
+  FTimeoutMs := STATEMENT_TIMEOUT_MS;
 end;
 
 function TFirebirdActivity.ReadCounters(const AAttachmentOnly: Boolean): TActivityCounters;
@@ -235,7 +239,7 @@ begin
 end;
 
 function TFirebirdActivity.Measure(const ASQL: string): TStatementCost;
-var Q: TFDQuery; SW: TStopwatch; LBefore, LAfter: TActivityCounters;
+var Q: TFDQuery; SW: TStopwatch; LBefore, LAfter: TActivityCounters; LLimit: Cardinal;
 begin
   Result := Default(TStatementCost);
   if not FCaps.HasMonTables then
@@ -262,15 +266,29 @@ begin
   FConn.NewMonitoringSnapshot;
   LBefore := ReadCounters(True);
   SW := TStopwatch.StartNew;
-  Q := FConn.OpenQuery(ASQL);
   try
-    // Fetch everything: a dataset that stops at the first page measures the first page.
-    while not Q.Eof do
+    if FCaps.HasStatementTimeout then LLimit := FTimeoutMs else LLimit := 0;
+    Q := FConn.OpenQueryLimited(ASQL, LLimit);
+    try
+      // Fetch everything: a dataset that stops at the first page measures the first page.
+      while not Q.Eof do
+      begin
+        Inc(Result.Rows);
+        Q.Next;
+      end;
+    finally Q.Free; end;
+  except
+    on E: EFDDBEngineException do
     begin
-      Inc(Result.Rows);
-      Q.Next;
+      if E.Kind <> ekCmdAborted then raise;
+      // The plan is still the plan; only the number is missing, and it says why.
+      Result := Default(TStatementCost);
+      Result.SkipReason := Format('the statement did not finish within %d s and the engine ' +
+        'cancelled it, so its cost is unknown. A query this slow is the finding; narrow it ' +
+        '(a WHERE, a smaller join) before measuring it', [FTimeoutMs div 1000]);
+      Exit;
     end;
-  finally Q.Free; end;
+  end;
   Result.ElapsedMs := SW.ElapsedMilliseconds;
   FConn.NewMonitoringSnapshot;
   LAfter := ReadCounters(True);

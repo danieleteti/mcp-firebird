@@ -27,7 +27,7 @@ davvero una colonna prima di sostenere che indicizzarla convenga. Ogni risposta 
 abbia funzionato). Nel tuo database non viene scritto niente: il server si attacca in sola lettura,
 e l'SQL che ti consegna lo esegui tu, se e quando decidi.
 
-- **Trasporto:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Identità del server:** `mcp-firebird` v`0.6.0`
+- **Trasporto:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Identità del server:** `mcp-firebird` v`0.6.1`
 - **Motori:** Firebird 2.5, 3.0, 4.0, 5.0 — rilevati a runtime
 - **Gratis** sui tuoi database, a qualsiasi scala, senza chiavi e senza scadenze. La licenza serve
   solo per far uscire il software dalle tue mani ([dettagli](https://github.com/danieleteti/mcp-firebird/blob/master/docs/it/editions.md))

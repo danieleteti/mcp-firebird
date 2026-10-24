@@ -15,14 +15,14 @@ if ($bad) { $bad | ForEach-Object { Write-Host $_.Path ':' $_.Line }; throw 'Cor
 #      Trace API back over the wire, so it touches no file and spawns no process - and would
 #      have slipped straight through a filesystem-only check.
 #
-# Firebird.PlanAnalyzer and Firebird.Backup are the two sanctioned exceptions to (a): they drive
-# a LOCAL isql.exe / gbak.exe through temp files on the client machine. Neither touches the
-# server's own files, and neither is an administrative attach - which is what keeps them free.
+# Firebird.Backup is the one sanctioned exception to (a): it drives a LOCAL gbak.exe through temp
+# files on the client machine. It does not touch the server's own files, and it is not an
+# administrative attach - which is what keeps it free. (Plans come from a FireDAC prepare.)
 #
 # Naming server-side tooling inside advisory TEXT is fine and expected - TransactionMonitor
 # suggests `gfix -sweep` to the DBA. Only reaching for it in code is a violation.
 $hostAccess = 'System\.IOUtils|TFile\.|TDirectory\.|CreateProcess|ShellExecute'
-$allowed = @('Firebird.PlanAnalyzer.pas', 'Firebird.Backup.pas')
+$allowed = @('Firebird.Backup.pas')
 $bad = Select-String -Path $core -Pattern $hostAccess |
     Where-Object { (Split-Path $_.Path -Leaf) -notin $allowed }
 if ($bad) {

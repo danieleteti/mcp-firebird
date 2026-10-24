@@ -28,7 +28,7 @@ als **Finding** (was nicht stimmt), **SQL** (das Statement, das es behebt) und *
 prüfst, dass es gewirkt hat). In deine Datenbank wird nichts geschrieben: der Server verbindet sich
 nur lesend, und das SQL, das er dir gibt, führst du selbst aus — wenn du willst.
 
-- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server-Identität:** `mcp-firebird` v`0.6.0`
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server-Identität:** `mcp-firebird` v`0.6.1`
 - **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — zur Laufzeit erkannt
 - **Kostenlos** auf deinen eigenen Datenbanken, in jeder Größe, ohne Schlüssel und ohne Ablauf. Eine
   Lizenz brauchst du erst, wenn die Software deine Hände verlässt

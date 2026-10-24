@@ -33,6 +33,10 @@ type
     procedure Connect;
     function OpenQuery(const ASQL: string): TFDQuery; overload;
     function OpenQuery(const ASQL: string; const AParams: array of Variant): TFDQuery; overload;
+    { OpenQuery for SQL a caller wrote: the engine cancels it after ATimeoutMs (0 = no limit).
+      Only meaningful on 4.0+ (HasStatementTimeout); the caller decides, so a 3.0 server behind a
+      newer client is never asked for something it cannot do. }
+    function OpenQueryLimited(const ASQL: string; ATimeoutMs: Cardinal): TFDQuery;
     function ExecSQL(const ASQL: string): Integer;
     function ScalarStr(const ASQL: string): string;
     { The MON$ tables are a snapshot, frozen when the current transaction first reads them, so
@@ -63,6 +67,16 @@ function HasParameters(const ASQL: string): Boolean;
   escapes a quote inside a literal. }
 function StripLiterals(const ASQL: string): string;
 
+const
+  { How long the engine lets a caller's SELECT run before cancelling it. A measurement or a
+    fb_query that never ends holds this single-threaded server, and the database, for as long as
+    it likes; a minute is generous for a diagnosis and short for an accident. }
+  STATEMENT_TIMEOUT_MS = 60000;
+
+{ Index of the quote that closes the literal opened at AOpen (a ' or a "), or Length + 1 when it
+  never closes. The doubled quote that escapes a quote inside a literal is skipped. }
+function SkipLiteral(const ASQL: string; AOpen: Integer): Integer;
+
 implementation
 uses System.SysUtils, System.Classes, System.RegularExpressions;
 
@@ -74,10 +88,24 @@ begin
   // parsed — the wrong answer in that direction costs a measurement, not a table.
   S := ASQL.Trim.ToUpper;
   Result := S.StartsWith('SELECT') or S.StartsWith('WITH');
+  // A generator is not transactional: the read-only TPB does not stop a SELECT from moving one.
+  if Result then
+    Result := not TRegEx.IsMatch(StripLiterals(S), '\bGEN_ID\s*\(|\bNEXT\s+VALUE\s+FOR\b');
+end;
+
+function SkipLiteral(const ASQL: string; AOpen: Integer): Integer;
+var Quote: Char;
+begin
+  Quote := ASQL[AOpen];
+  Result := AOpen + 1;
+  while Result <= Length(ASQL) do
+    if ASQL[Result] <> Quote then Inc(Result)
+    else if (Result < Length(ASQL)) and (ASQL[Result + 1] = Quote) then Inc(Result, 2)
+    else Exit;
 end;
 
 function StripLiterals(const ASQL: string): string;
-var SB: TStringBuilder; I: Integer; Quote: Char;
+var SB: TStringBuilder; I: Integer;
 begin
   SB := TStringBuilder.Create;
   try
@@ -85,13 +113,7 @@ begin
     while I <= Length(ASQL) do
       if CharInSet(ASQL[I], ['''', '"']) then
       begin
-        Quote := ASQL[I];
-        Inc(I);
-        while I <= Length(ASQL) do
-          if ASQL[I] <> Quote then Inc(I)
-          else if (I < Length(ASQL)) and (ASQL[I + 1] = Quote) then Inc(I, 2)  // '' is a quote, not the end
-          else Break;
-        Inc(I);
+        I := SkipLiteral(ASQL, I) + 1;
         // One blank, not nothing: 'a' 'b' must not be spliced into a single token.
         SB.Append(' ');
       end
@@ -164,6 +186,18 @@ begin
   try
     Result.Connection := FConn;
     Result.Open(ASQL, AParams);
+  except
+    Result.Free; raise;
+  end;
+end;
+
+function TFirebirdConnection.OpenQueryLimited(const ASQL: string; ATimeoutMs: Cardinal): TFDQuery;
+begin
+  Result := TFDQuery.Create(nil);
+  try
+    Result.Connection := FConn;
+    if ATimeoutMs > 0 then Result.ResourceOptions.CmdExecTimeout := ATimeoutMs;
+    Result.Open(ASQL);
   except
     Result.Free; raise;
   end;
