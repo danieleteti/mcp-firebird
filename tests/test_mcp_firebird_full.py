@@ -55,7 +55,11 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.6.1"
+    assert res["serverInfo"]["version"] == "0.6.2"
+    if not IS_ENTERPRISE:  # the Enterprise server announces its own, longer, tool list
+        instr = res["instructions"]
+        assert "read-only" in instr and "fb_analyze_query" in instr
+        assert len(instr) < 1500  # a briefing, not a manual
     caps = res["capabilities"]
     assert "tools" in caps and "resources" in caps and "prompts" in caps
 
@@ -64,7 +68,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.6.1"
+    assert res["serverInfo"]["version"] == "0.6.2"
     assert res["protocolVersion"] == "2025-03-26"
 
 

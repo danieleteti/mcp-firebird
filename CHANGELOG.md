@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-24
+
+### Added
+
+- **Server instructions.** The `initialize` reply now carries the protocol's `instructions` field:
+  what the server is (read-only), the usual path for a slow query, that `fb_query` returns real
+  rows, and that a clean plan is not proof of a fast query. Clients that pass it to the model get
+  the briefing without a tool call; clients that ignore it lose nothing. It states facts and gives
+  no commands, because text that reads like an order is what clients learn to filter.
+
 ## [0.6.1] - 2026-10-24
 
 ### Fixed
