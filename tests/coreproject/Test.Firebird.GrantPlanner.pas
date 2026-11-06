@@ -1,4 +1,4 @@
-unit Test.Firebird.GrantPlanner;
+﻿unit Test.Firebird.GrantPlanner;
 interface
 uses DUnitX.TestFramework;
 type

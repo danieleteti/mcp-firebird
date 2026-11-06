@@ -1,4 +1,4 @@
-unit Test.Firebird.SecurityAudit;
+﻿unit Test.Firebird.SecurityAudit;
 interface
 uses DUnitX.TestFramework;
 type

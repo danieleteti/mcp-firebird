@@ -1,4 +1,4 @@
-unit Test.Firebird.DocGen;
+﻿unit Test.Firebird.DocGen;
 interface
 uses DUnitX.TestFramework;
 type
