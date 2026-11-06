@@ -103,6 +103,11 @@ begin
       'password policy and who can reach the port at all live in the security database and the ' +
       'server configuration, which an ordinary SQL connection cannot attach to. A database whose ' +
       'grants are all correct can still be reachable by an account nobody remembers creating.'
+  else if SameText(AToolName, 'fb_column_stats') then
+    LLimit := 'how the values are distributed. A distinct count says how many different values ' +
+      'a column holds, not that one of them accounts for nine rows in ten: a column with four ' +
+      'distinct values is a poor index for the common value and an excellent one for the rare ' +
+      'one, and nothing here separates the two.'
   else if SameText(AToolName, 'fb_audit_table') then
     LLimit := 'This audit reads structure only. A table can pass every check here and still be ' +
       'the hot spot: nothing in the schema records how much concurrent work converges on it.'

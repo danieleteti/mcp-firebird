@@ -5,15 +5,17 @@
 Der vollständige Katalog: was jedes Tool tut, wie der Index-Berater entscheidet, die
 Prompts und die Ressource, dazu die rohen `tools/call`-Aufrufe.
 
-## Die Tools (16 kostenlose, dazu 9 Enterprise-Tools, die in `tools/list` angekündigt werden)
+## Die Tools (18 kostenlose, dazu 9 Enterprise-Tools, die in `tools/list` angekündigt werden)
 
 | Tool | Argumente | Zweck |
 |---|---|---|
 | `fb_info` | *(keine)* | Engine-Version + erkannte Fähigkeiten (JSON) |
 | `fb_list_tables` | *(keine)* | Listet die Benutzertabellen auf |
-| `fb_generate_documentation` | `table_name?` | Markdown-Doku für eine Tabelle — Spalten (mit der **Domäne**, auf der sie beruhen), PK, Indizes, **CHECK-Constraints**, Trigger samt auslösendem Ereignis — oder für die ganze Datenbank, die zusätzlich **Views mit ihrem SELECT**, Stored Procedures mit ihren Parametern, Funktionen und Packages (3.0+) auflistet. Bei einem View-Namen dokumentiert es den View |
+| `fb_generate_documentation` | `table_name?` | Markdown-Doku für eine Tabelle — Spalten (mit der **Domäne**, auf der sie beruhen), PK, Indizes, **CHECK-Constraints**, Trigger samt auslösendem Ereignis — oder für die ganze Datenbank, die zusätzlich **Views mit ihrem SELECT**, Stored Procedures mit ihren Parametern, Funktionen und Packages (3.0+) auflistet. Bei einem View-Namen dokumentiert es den View. Listet außerdem die **Fremdschlüssel** (mit der Tabelle, auf die sie zeigen) und die **Spaltenbeschreibungen** (`COMMENT ON`) |
+| `fb_describe_object` | `name`, `kind?` | Der **PSQL-Quelltext** einer Stored Procedure, eines Triggers, einer Funktion oder eines Packages, so wie die Engine ihn gespeichert hat, mit Signatur oder dem Ereignis, bei dem er feuert. `kind` ist nur nötig, wenn ein Name zu mehr als einer Art gehört. Eine View dokumentiert `fb_generate_documentation`, wenn man ihren Namen angibt |
+| `fb_column_stats` | `table_name`, `columns?` | Was die Spalten wirklich enthalten, in **einem einzigen Scan**: Zeilen, NULL-Anteil, verschiedene Werte und Selektivität, neben der Selektivität des Index, der die Spalte anführt, und als **veraltet** markiert mit demselben Test wie `fb_audit_table`. Standard: alle Spalten außer BLOBs, die ersten 25. Scannt die ganze Tabelle: bei einer großen Tabelle kostet das einen vollständigen Lesedurchlauf |
 | `fb_query` | `sql`, `max_rows?` | Führt ein nur lesendes SELECT aus und gibt die Zeilen als Markdown-Tabelle zurück, gedeckelt auf `max_rows` (Standard 100, Obergrenze 1000) **und auf ~20 000 Zeichen**, denn ein Zeilendeckel begrenzt Zeilen und nicht Breite. Alles, was kein reines SELECT ist, wird abgewiesen, ebenso ein Statement mit ungebundenen Platzhaltern |
-| `fb_analyze_query` | `sql` | Analyse des Zugriffsplans (NATURAL-Scans und externe SORTs), der **erklärte Plan** der Engine ab 3.0 (Indexnamen, wie viel vom Index die Abfrage genutzt hat, Join-Strategie) **und gemessene Kosten**: ein reines SELECT wird einmal ausgeführt, berichtet werden die Datensätze und Seiten, die es tatsächlich angefasst hat |
+| `fb_analyze_query` | `sql`, `runs?` | Analyse des Zugriffsplans (NATURAL-Scans und externe SORTs), der **erklärte Plan** der Engine ab 3.0 (Indexnamen, wie viel vom Index die Abfrage genutzt hat, Join-Strategie) **und gemessene Kosten**: ein reines SELECT wird einmal ausgeführt, berichtet werden die Datensätze und Seiten, die es tatsächlich angefasst hat. Mit `runs` (1–10) wird das SELECT so oft ausgeführt und die schnellste, die mittlere und die langsamste Zeit gemeldet; Records und Seiten stammen vom ersten Lauf, und ein erster Lauf über 5 s wird nicht wiederholt |
 | `fb_suggest_indexes` | `sql` | Indexrat für eine Abfrage: gewöhnlicher B-Baum, **Ausdrucksindex** (`COMPUTED BY`), **partieller Index** (ab 5.0) oder ein Index für die **Sortierung** — und **gar kein Index**, wenn der Scan der richtige Plan ist. Vor jedem strukturellen Vorschlag werden veraltete Statistiken aufgefrischt |
 | `fb_suggest_index_drops` | `table_name` | Meldet doppelte, präfix-redundante, inaktive und wenig selektive Indizes |
 | `fb_audit_table` | `table_name` | Prüfung der Schema-Gesundheit: fehlender PK, zu viele Indizes, veraltete Statistiken |
@@ -22,7 +24,7 @@ Prompts und die Ressource, dazu die rohen `tools/call`-Aufrufe.
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministische Zielprüfung (treibt die Optimierungsschleife an) |
 | `fb_monitor_transactions` | `stale_minutes?` | Zustand von Transaktionen und Sweep **in diesem Augenblick**: Abstand zwischen OIT/OAT/Next, blockierende Langläufer (samt ihrem letzten SQL-Statement) |
 | `fb_sample_activity` | `seconds?` | Liest die MON$-Zähler zweimal über ein Zeitfenster und berichtet die Differenz: sequenziell und über Index gelesene Datensätze, bewegte Seiten, eingesammelte Versionen, und ob der Transaktionshorizont vorangekommen ist |
-| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Wer gerade verbunden ist, von wo, und was jede Verbindung ausführt; meldet Verbindungen, die länger als `idle_minutes` (Standard 30) untätig sind, und Statements, die länger als `long_statement_seconds` (Standard 60) laufen. Konkurrenz sieht es nicht: MON$ zählt geleistete Arbeit, nie die Wartezeit auf die Erlaubnis dazu |
+| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Wer gerade verbunden ist, von wo, und was jede Verbindung ausführt; meldet Verbindungen, die länger als `idle_minutes` (Standard 30) untätig sind, und Statements, die länger als `long_statement_seconds` (Standard 60) laufen. Konkurrenz sieht es nicht: MON$ zählt geleistete Arbeit, nie die Wartezeit auf die Erlaubnis dazu. Ab 4.0 sagt es auch, ob die Leitung jeder entfernten Verbindung **verschlüsselt** ist (`MON$WIRE_ENCRYPTED`), und markiert die im Klartext; `fb_audit_security` wiederholt den Befund |
 | `fb_backup_start` | *(keine)* | Startet ein `gbak`-Backup in `firebird.backup_dir` und **kehrt zurück, bevor das Backup fertig ist**. Danach stellt der Job das Geschriebene in eine Wegwerf-Datenbank zurück und löscht sie wieder |
 | `fb_backup_status` | *(keine)* | Das laufende oder letzte Backup: Phase, Größe, Dauer je Schritt, und ob das Backup nachweislich zurückspielbar ist |
 
@@ -125,7 +127,7 @@ Drei Befunde, in der Reihenfolge ihrer Bedeutung:
 3. **Eine Rolle ohne Mitglieder.** Entweder werden ihre Rechte nicht gebraucht, oder die Konten,
    die sie halten sollten, arbeiten mit direkten Berechtigungen.
 
-## Prompts (4)
+## Prompts (7)
 
 - **`optimization_goal`**, die zielgetriebene Schleife: du setzt ein Ziel, der Assistent iteriert über
   die `fb_*`-Tools und prüft `fb_evaluate_goal` erneut, bis dort `met: true` steht (mit Notbremse bei
@@ -141,6 +143,9 @@ Drei Befunde, in der Reihenfolge ihrer Bedeutung:
   lesen, Konten anlegen oder den Server anhalten.
 - **`health_check`**: geführte Gesundheitsprüfung der gesamten Datenbank — Indizes Tabelle für
   Tabelle, dann die Berechtigungen in einem Durchgang, und sie sagt, wo dieser Teil endet.
+- **`migration_planning`**: geht von dem aus, was die Datenbank enthält, nicht von einer allgemeinen Checkliste. Engine und Fähigkeiten (`fb_info`), jedes Objekt (`fb_generate_documentation`), das PSQL, das sich am ehesten anders verhält (`fb_describe_object`), welche Clients sich heute verbinden (`fb_monitor_attachments`), die Berechtigungen, die unversehrt ankommen müssen, und ein Backup, das durch Zurückspielen bewiesen ist. Was sich zwischen Versionen ändert, wird auf die Release Notes verwiesen, nicht aus dem Gedächtnis behauptet.
+- **`schema_design_review`**: Schlüssel, Typen, Indizes und Trigger einer Tabelle oder des ganzen Schemas, mit einem Blick auf die Daten (`fb_column_stats`), bevor der Entwurf kritisiert wird. Jeder Befund trägt den Beleg, das SQL und die Prüfung dazu; angewendet wird nichts.
+- **`security_audit`**: die Berechtigungen, dann wer verbunden ist und ob im Klartext, dann die Statements, die jede Lücke schließen (`fb_suggest_grants`); und es sagt, was eine SQL-Verbindung nicht sehen kann (Konten und Passwortrichtlinie liegen in der Sicherheitsdatenbank).
 - **`classify_problem`**: beginnt beim Symptom, nicht beim Werkzeug. Ordnet das Problem auf
   sechs Achsen ein (zeitliche Form, Volumen gegen Nebenläufigkeit, Lokalität, Koordination
   gegen Ausführung, Empfindlichkeit gegenüber Beobachtung, Umgebung), benennt die dominante

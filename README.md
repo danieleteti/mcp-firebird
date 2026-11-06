@@ -13,7 +13,13 @@
 
 # MCP Firebird
 
+**The Firebird MCP server built for DBAs: query tuning, index advice and database health.**
 **Ask your AI assistant why a query is slow, and get an answer worth acting on.**
+
+Most database MCP servers are a pipe. The assistant sends SQL, rows come back, and that is the whole
+job. MCP Firebird is designed for **optimization and DBA work**. Reading rows is a side feature
+(`fb_query`); the point is the work a DBA does: reading access plans, deciding which index to
+create and which to drop, auditing a schema, and finding what is slowing the database down.
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for **Firebird 2.5 to 5.0**.
 Point it at a database and your assistant can read the real access plans, tell you which index is
@@ -27,10 +33,29 @@ column really holds before claiming an index on it would pay off. Every answer a
 worked). Nothing is written to your database: the server attaches read-only, and the SQL it hands
 you is yours to run, if and when you decide to.
 
-- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.6.1`
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server identity:** `mcp-firebird` v`0.7.0`
 - **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — capability-detected at runtime
 - **Free** on your own databases, at any scale, no key and no expiry. A licence is needed only to
   pass the software on to somebody else ([details](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md))
+
+---
+
+## Built for the DBA, not for data access
+
+A SQL prompt gives an assistant rows in and rows out. MCP Firebird is organised around the DBA's
+questions instead, and checks each answer against your database before giving it:
+
+- **Why is this slow?** The real plan, the NATURAL scans and external sorts in it, and what the query
+  cost when executed once: records read against rows returned.
+- **Which index?** The cheapest fix that explains the plan: refresh statistics, reactivate an index,
+  or create one. When the scan is the right plan the answer is "no index", with the numbers.
+- **What is dead weight?** Duplicate, redundant, inactive and low-selectivity indexes, with the
+  `DROP INDEX` and how to verify it.
+- **Is the database healthy?** Stale statistics, missing keys, the transaction pinning garbage
+  collection, who is connected and what they are running, who can read what, a backup proved by
+  restoring it.
+- **Did the fix work?** Every answer is a **Finding**, the **SQL**, and a **Verify** step, and the
+  `optimization_goal` loop stops when the measurement says the goal is met.
 
 ---
 
@@ -92,9 +117,11 @@ That is the whole setup. If the client lists the server but shows no tools, see
 | *"Suggest an index"* | The cheapest remedy that explains the plan — refresh stale statistics, wake an inactive index, or create one — and **"no index, the scan is right here"** with the numbers, when that is the answer |
 | *"Which indexes can I drop?"* | Duplicates, redundant prefixes, inactive and low-selectivity indexes, with the `DROP INDEX` and a verify step |
 | *"Audit this table"* | Missing primary key, over-indexing, stale statistics |
+| *"What is really in these columns?"* | `fb_column_stats`: rows, NULLs, distinct values and selectivity from one scan, beside what the index believes. Stale figures are marked |
+| *"Show me the source of this procedure / trigger"* | `fb_describe_object`: the PSQL as the engine stored it, with its signature or the event it fires on |
 | *"Keep optimizing until this query stops scanning NATURAL"* | The goal loop: it changes, re-measures on the database, and stops when the measurement says the goal is met — not when the assistant thinks so |
 | *"It crawls every afternoon and nobody changed anything"* | Classifies the symptom before touching a tool, then samples `MON$` across a window to show what accumulates |
-| *"Who is connected, and what are they running?"* | Every attachment with its user, address and process, the statement it is running now, and how long it has been running it |
+| *"Who is connected, and what are they running?"* | Every attachment with its user, address and process, the statement it is running now, how long it has been running it, and (4.0+) whether the connection is encrypted |
 | *"Show me the rows that are actually in there"* | `fb_query` runs the SELECT and returns the rows, capped so an answer stays an answer. Nothing else is accepted: not an UPDATE, not a DELETE, not a DDL |
 | *"Our app connects as SYSDBA. What should it use instead?"* | `app_user_plan` asks what the application actually does — a handful of questions, each of which changes the statements — then `fb_suggest_grants` writes them from the catalogue: the account, a role, the grants, and the role activated the way your engine version needs |
 | *"Who can read this table?"* | Every grant recorded in the database, and the three that are usually mistakes: PUBLIC, `WITH GRANT OPTION`, and roles nobody is a member of |
@@ -109,12 +136,13 @@ snapshot cannot see accumulation.
 
 ## The tools
 
-Sixteen tools, four prompts, one resource. Full reference — arguments, what each one decides, the
+Eighteen tools, seven prompts, one resource. Full reference — arguments, what each one decides, the
 raw `tools/call` shapes — in **[docs/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/tools.md)**.
 
-`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
-`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
-`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_describe_object` ·
+`fb_column_stats` · `fb_query` · `fb_analyze_query` · `fb_suggest_indexes` ·
+`fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` · `fb_suggest_grants` ·
+`fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
 `fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` returns before the backup does — poll `fb_backup_status`. It needs
@@ -122,7 +150,9 @@ raw `tools/call` shapes — in **[docs/tools.md](https://github.com/danieleteti/
 disk for a second copy of the database while the verification restore runs.
 
 Prompts: `optimization_goal` (iterate until met) · `health_check` · `classify_problem` ·
-`app_user_plan` (work out what an application account should be allowed to do, and produce the SQL).
+`app_user_plan` (work out what an application account should be allowed to do, and produce the SQL) ·
+`migration_planning` (move to another Firebird version, working from what the database contains) ·
+`schema_design_review` · `security_audit`.
 Resource: `firebird://schema`.
 
 Nine further tools appear in `tools/list` and belong to the [Enterprise edition](https://github.com/danieleteti/mcp-firebird/blob/master/docs/editions.md#enterprise-edition):

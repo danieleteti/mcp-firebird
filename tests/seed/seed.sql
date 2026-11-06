@@ -55,6 +55,9 @@ END^
 SET TERM ; ^
 COMMIT;
 
+COMMENT ON COLUMN CUSTOMERS.CITY IS 'City of residence | as typed at sign-up';
+COMMIT;
+
 /* A domain, a view and a CHECK constraint: the schema features fb_generate_documentation
    reports and no other tool reads. 2.5-safe. */
 CREATE DOMAIN D_CITY AS VARCHAR(60);

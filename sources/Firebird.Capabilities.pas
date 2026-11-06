@@ -27,6 +27,10 @@ type
     { fb_dsql_set_timeout: a statement can be given a deadline. 4.0 and up, and the client
       library has to be 4.0+ as well; below that a limit is silently no limit. }
     HasStatementTimeout: Boolean;
+    { MON$ATTACHMENTS.MON$WIRE_ENCRYPTED: 4.0 and up. 3.0 has wire encryption and
+      MON$AUTH_METHOD, but no column that says whether an attachment is using it. Measured on
+      the 3.0.14, 4.0.7 and 5.0.4 kits, not taken from release notes. }
+    HasWireEncryptionMon: Boolean;
     class function Parse(const AVersion: string): TFirebirdCapabilities; static;
     class function Detect(AConn: TFirebirdConnection): TFirebirdCapabilities; static;
   end;
@@ -53,6 +57,7 @@ begin
   Result.HasParallelWorkers := Result.Ordinal >= 500;
   Result.HasDefaultRoles    := Result.Ordinal >= 400;
   Result.HasStatementTimeout := Result.Ordinal >= 400;
+  Result.HasWireEncryptionMon := Result.Ordinal >= 400;
   Result.HasExpressionIndexes := Result.Ordinal >= 200;
   Result.HasPartialIndexes    := Result.Ordinal >= 500;
 end;

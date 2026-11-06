@@ -11,6 +11,8 @@ type
     [Test] procedure List_Includes_This_Very_Connection;
     [Test] procedure List_Reports_The_Connected_User;
     [Test] procedure Analyze_Is_Quiet_On_A_Healthy_Server;
+    [Test] procedure Wire_Encryption_Is_Reported_Only_Where_The_Engine_Can_Say;
+    [Test] procedure WireAdvisories_Fire_Exactly_When_A_Remote_Attachment_Is_In_Clear;
   end;
 
 implementation
@@ -89,6 +91,54 @@ begin
     A := NewAttachments(Conn);
     try
       Assert.AreEqual(0, Integer(Length(A.Analyze(60, 3600))));
+    finally
+      A.Free;
+    end;
+  finally
+    Conn.Free;
+  end;
+end;
+
+procedure TAttachmentsTests.Wire_Encryption_Is_Reported_Only_Where_The_Engine_Can_Say;
+var
+  Conn: TFirebirdConnection;
+  A: TFirebirdAttachments;
+  T: TAttachmentInfo;
+  lCaps: TFirebirdCapabilities;
+begin
+  Conn := NewTestConnection;
+  try
+    lCaps := TFirebirdCapabilities.Detect(Conn);
+    A := NewAttachments(Conn);
+    try
+      for T in A.List do
+        Assert.IsTrue(lCaps.HasWireEncryptionMon = T.WireKnown,
+          'WireKnown must follow MON$WIRE_ENCRYPTED, which exists from 4.0');
+    finally
+      A.Free;
+    end;
+  finally
+    Conn.Free;
+  end;
+end;
+
+procedure TAttachmentsTests.WireAdvisories_Fire_Exactly_When_A_Remote_Attachment_Is_In_Clear;
+var
+  Conn: TFirebirdConnection;
+  A: TFirebirdAttachments;
+  T: TAttachmentInfo;
+  lRemoteClear: Boolean;
+begin
+  Conn := NewTestConnection;
+  try
+    A := NewAttachments(Conn);
+    try
+      lRemoteClear := False;
+      for T in A.List do
+        if T.WireKnown and (not T.Encrypted) and (T.RemoteAddress <> '') then
+          lRemoteClear := True;
+      Assert.AreEqual(Integer(Ord(lRemoteClear)), Integer(Length(A.WireAdvisories)),
+        'one advisory exactly when some remote attachment is in clear');
     finally
       A.Free;
     end;

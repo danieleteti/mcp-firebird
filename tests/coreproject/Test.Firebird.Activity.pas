@@ -12,6 +12,9 @@ type
     [Test] procedure Measure_Cancels_A_Statement_That_Outlives_Its_Deadline;
     [Test] procedure Measure_Refuses_A_Statement_Whose_Parameters_Nobody_Bound;
     [Test] procedure IsReadOnlySelect_Accepts_Select_And_With_Only;
+    [Test] procedure SummarizeTimings_Of_An_Odd_Count_Takes_The_Middle_One;
+    [Test] procedure SummarizeTimings_Of_An_Even_Count_Averages_The_Middle_Two;
+    [Test] procedure SummarizeTimings_Of_Nothing_Is_All_Zeros;
   end;
 implementation
 uses System.SysUtils, System.Classes, FireDAC.Comp.Client,
@@ -171,6 +174,31 @@ begin
   Assert.IsFalse(IsReadOnlySelect('UPDATE CUSTOMERS SET CITY = ''X'''));
   Assert.IsFalse(IsReadOnlySelect('EXECUTE BLOCK AS BEGIN DELETE FROM CUSTOMERS; END'));
   Assert.IsFalse(IsReadOnlySelect(''));
+end;
+
+procedure TActivityTests.SummarizeTimings_Of_An_Odd_Count_Takes_The_Middle_One;
+var S: TTimingSummary;
+begin
+  S := SummarizeTimings([90, 10, 40]);
+  Assert.AreEqual(3, S.Runs);
+  Assert.AreEqual(Int64(10), S.MinMs);
+  Assert.AreEqual(Int64(40), S.MedianMs);
+  Assert.AreEqual(Int64(90), S.MaxMs);
+end;
+
+procedure TActivityTests.SummarizeTimings_Of_An_Even_Count_Averages_The_Middle_Two;
+var S: TTimingSummary;
+begin
+  S := SummarizeTimings([100, 20, 40, 10]);
+  Assert.AreEqual(Int64(30), S.MedianMs, '(20 + 40) div 2');
+end;
+
+procedure TActivityTests.SummarizeTimings_Of_Nothing_Is_All_Zeros;
+var S: TTimingSummary;
+begin
+  S := SummarizeTimings([]);
+  Assert.AreEqual(0, S.Runs);
+  Assert.AreEqual(Int64(0), S.MedianMs);
 end;
 
 end.

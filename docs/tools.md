@@ -5,15 +5,17 @@
 The full catalogue: what every tool does, how the index advisor decides, the prompts and the
 resource, plus the raw `tools/call` shapes if you drive the server yourself.
 
-## The tools (16 free, plus 9 Enterprise announced in `tools/list`)
+## The tools (18 free, plus 9 Enterprise announced in `tools/list`)
 
 | Tool | Arguments | Purpose |
 |---|---|---|
 | `fb_info` | *(none)* | Engine version + detected capabilities (JSON) |
 | `fb_list_tables` | *(none)* | List user tables |
-| `fb_generate_documentation` | `table_name?` | Markdown docs for one table — columns (with the **domain** each is built on), PK, indexes, **CHECK constraints**, triggers with the event they fire on — or for the whole database, which also lists **views with their SELECT**, stored procedures with their parameters, functions and packages (3.0+). Given a view's name it documents the view |
+| `fb_generate_documentation` | `table_name?` | Markdown docs for one table — columns (with the **domain** each is built on), PK, indexes, **CHECK constraints**, **foreign keys** (with the table each points at), **column descriptions** (`COMMENT ON`), triggers with the event they fire on — or for the whole database, which also lists **views with their SELECT**, stored procedures with their parameters, functions and packages (3.0+). Given a view's name it documents the view |
+| `fb_describe_object` | `name`, `kind?` | The **PSQL source** of one stored procedure, trigger, function or package, as the engine stored it, with the signature or the event it fires on. `kind` is needed only when a name belongs to more than one. A view is documented by `fb_generate_documentation` given its name |
+| `fb_column_stats` | `table_name`, `columns?` | What the columns really contain, in **one scan**: rows, NULL fraction, distinct values and selectivity, set beside the selectivity the leading index holds and marked **stale** by the same test `fb_audit_table` uses. Default: every column except BLOBs, first 25. Scans the whole table, so on a large one it costs a full read |
 | `fb_query` | `sql`, `max_rows?` | Runs a read-only SELECT and returns the rows as a Markdown table, capped at `max_rows` (default 100, ceiling 1000) **and at ~20 000 characters**, because a row cap bounds rows and not width. Anything that is not a plain SELECT is refused, and so is a statement with unbound placeholders |
-| `fb_analyze_query` | `sql` | Access-plan analysis (NATURAL-scan + external-SORT detection), the engine's **explained plan** on 3.0+ (index names, match quality, join strategy) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported |
+| `fb_analyze_query` | `sql`, `runs?` | Access-plan analysis (NATURAL-scan + external-SORT detection), the engine's **explained plan** on 3.0+ (index names, match quality, join strategy) **and measured cost**: a plain SELECT is executed once and the records and pages it really touched are reported With `runs` (1–10) the SELECT is executed that many times and the fastest, median and slowest are reported; records and pages come from the first run only, and a first run over 5 s is not repeated |
 | `fb_suggest_indexes` | `sql` | Index advice for one query: plain B-tree, **expression** (`COMPUTED BY`), **partial** (5.0+) or an index for the **sort** — and **no index at all** when the scan is the correct plan. Refreshes stale statistics before proposing anything structural |
 | `fb_suggest_index_drops` | `table_name` | Flags duplicate / redundant-prefix / inactive / low-selectivity indexes |
 | `fb_audit_table` | `table_name` | Schema-health audit: missing PK, over-indexing, stale statistics |
@@ -22,7 +24,7 @@ resource, plus the raw `tools/call` shapes if you drive the server yourself.
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Deterministic goal check (drives the optimization loop) |
 | `fb_monitor_transactions` | `stale_minutes?` | Transaction/sweep health **at this instant**: OIT/OAT/Next gap, blocking long-running transactions (with their last SQL statement) |
 | `fb_sample_activity` | `seconds?` | Reads the MON$ counters twice over a window and reports the difference: records read sequentially and by index, pages moved, versions collected, and whether the transaction horizon advanced |
-| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Who is attached right now, from where and what each one is running; flags attachments idle beyond `idle_minutes` (default 30) and statements running beyond `long_statement_seconds` (default 60). It cannot see contention: MON$ counts work performed, never time spent waiting to perform it |
+| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Who is attached right now, from where and what each one is running; flags attachments idle beyond `idle_minutes` (default 30) and statements running beyond `long_statement_seconds` (default 60). It cannot see contention: MON$ counts work performed, never time spent waiting to perform it. On 4.0+ it also says whether each remote attachment's wire is **encrypted** (`MON$WIRE_ENCRYPTED`) and flags the ones in clear text; `fb_audit_security` repeats that finding |
 | `fb_backup_start` | *(none)* | Starts a `gbak` backup into `firebird.backup_dir` and **returns before the backup does**. The job then restores what it wrote into a scratch database and deletes it again |
 | `fb_backup_status` | *(none)* | The running or last backup: phase, size, how long each stage took, and whether the backup was proved restorable |
 
@@ -118,7 +120,7 @@ Three findings, in the order they matter:
 3. **A role with no members.** Either the privileges it carries are unused, or the accounts that
    should hold them are holding direct grants instead.
 
-## Prompts (4)
+## Prompts (7)
 
 - **`optimization_goal`**, the goal-driven loop: set an objective, the assistant iterates the
   `fb_*` tools and re-checks `fb_evaluate_goal` until it reports `met: true` (with a
@@ -133,6 +135,9 @@ Three findings, in the order they matter:
   the security database, create accounts or shut the server down.
 - **`health_check`**: guided whole-database health review — indexes table by table, then the
   grants in one pass, and it says where the grant half stops.
+- **`migration_planning`**: works from what the database contains, not from a generic checklist. Engine and capabilities (`fb_info`), every object (`fb_generate_documentation`), the PSQL that is most likely to behave differently (`fb_describe_object`), which clients connect today (`fb_monitor_attachments`), the grants that must arrive intact, and a backup proved by restoring it. Behaviour that differs between versions is sent to the release notes instead of being asserted from memory.
+- **`schema_design_review`**: keys, types, indexes and triggers of one table or the whole schema, with the data looked at (`fb_column_stats`) before the design is criticised. Each finding carries the evidence, the SQL and how to verify it; nothing is applied.
+- **`security_audit`**: grants, then who is connected and whether in clear text, then the statements that close each gap (`fb_suggest_grants`), and it says what an SQL connection cannot see (accounts and the password policy live in the security database).
 - **`classify_problem`**: starts from the symptom, not from a tool. Places the problem on six
   axes (temporal shape, volume vs concurrency, locality, coordination vs execution,
   sensitivity to observation, environment), names the dominant class of the seven, and says

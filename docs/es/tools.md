@@ -5,15 +5,17 @@
 El catálogo completo: qué hace cada herramienta, cómo decide el asesor de índices, los
 prompts y el recurso, más las llamadas `tools/call` en crudo si pilotas el servidor tú.
 
-## Las herramientas (16 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
+## Las herramientas (18 gratuitas, más 9 Enterprise anunciadas en `tools/list`)
 
 | Herramienta | Argumentos | Para qué sirve |
 |---|---|---|
 | `fb_info` | *(ninguno)* | Versión del motor y capacidades detectadas (JSON) |
 | `fb_list_tables` | *(ninguno)* | Lista las tablas de usuario |
-| `fb_generate_documentation` | `table_name?` | Documentación Markdown de una tabla — columnas (con el **dominio** en el que se apoyan), PK, índices, **restricciones CHECK**, triggers con el evento que los dispara — o de toda la base de datos, que además lista las **vistas con su SELECT**, los procedimientos con sus parámetros, las funciones y los paquetes (3.0+). Si el nombre es el de una vista, documenta la vista |
+| `fb_generate_documentation` | `table_name?` | Documentación Markdown de una tabla — columnas (con el **dominio** en el que se apoyan), PK, índices, **restricciones CHECK**, triggers con el evento que los dispara — o de toda la base de datos, que además lista las **vistas con su SELECT**, los procedimientos con sus parámetros, las funciones y los paquetes (3.0+). Si el nombre es el de una vista, documenta la vista. También lista las **claves foráneas** (con la tabla a la que apuntan) y las **descripciones de columna** (`COMMENT ON`) |
+| `fb_describe_object` | `name`, `kind?` | El **código PSQL** de un procedimiento almacenado, trigger, función o paquete, tal como lo guardó el motor, con su firma o el evento que lo dispara. `kind` solo hace falta cuando un nombre pertenece a más de un tipo. Una vista se documenta con `fb_generate_documentation` dándole su nombre |
+| `fb_column_stats` | `table_name`, `columns?` | Qué contienen de verdad las columnas, en **un solo escaneo**: filas, fracción de NULL, valores distintos y selectividad, junto a la selectividad del índice que encabeza la columna y marcada como **vieja** con el mismo test de `fb_audit_table`. Por defecto: todas las columnas salvo los BLOB, las primeras 25. Escanea la tabla entera: en una tabla grande cuesta una lectura completa |
 | `fb_query` | `sql`, `max_rows?` | Ejecuta un SELECT de solo lectura y devuelve las filas como tabla Markdown, con un tope de `max_rows` (por defecto 100, máximo 1000) **y de ~20 000 caracteres**, porque un tope de filas limita filas y no anchura. Se rechaza todo lo que no sea un SELECT simple, y también una sentencia con marcadores sin rellenar |
-| `fb_analyze_query` | `sql` | Análisis del plan de acceso (escaneos NATURAL y SORT externos), el **plan explicado** del motor en 3.0+ (nombres de índices, qué parte del índice usó la consulta, estrategia de join) **y coste medido**: un SELECT simple se ejecuta una vez y se informan los registros y las páginas que realmente tocó |
+| `fb_analyze_query` | `sql`, `runs?` | Análisis del plan de acceso (escaneos NATURAL y SORT externos), el **plan explicado** del motor en 3.0+ (nombres de índices, qué parte del índice usó la consulta, estrategia de join) **y coste medido**: un SELECT simple se ejecuta una vez y se informan los registros y las páginas que realmente tocó. Con `runs` (1–10) el SELECT se ejecuta ese número de veces y se informa de la más rápida, la mediana y la más lenta; registros y páginas salen de la primera ejecución, y una primera ejecución de más de 5 s no se repite |
 | `fb_suggest_indexes` | `sql` | Aconseja el índice para una consulta: B-tree normal, **de expresión** (`COMPUTED BY`), **parcial** (5.0+) o un índice para la **ordenación** — y **ningún índice** cuando el escaneo es el plan correcto. Antes de proponer algo estructural refresca las estadísticas obsoletas |
 | `fb_suggest_index_drops` | `table_name` | Señala índices duplicados, con prefijo redundante, inactivos o de baja selectividad |
 | `fb_audit_table` | `table_name` | Auditoría de salud del esquema: PK ausente, exceso de índices, estadísticas obsoletas |
@@ -22,7 +24,7 @@ prompts y el recurso, más las llamadas `tools/call` en crudo si pilotas el serv
 | `fb_evaluate_goal` | `goal_type`, `target`, `threshold` | Comprobación determinista del objetivo (es lo que mueve el bucle de optimización) |
 | `fb_monitor_transactions` | `stale_minutes?` | Salud de transacciones y sweep **en este instante**: distancia OIT/OAT/Next, transacciones largas que bloquean (con su última sentencia SQL) |
 | `fb_sample_activity` | `seconds?` | Lee los contadores MON$ dos veces a lo largo de una ventana e informa la diferencia: registros leídos en secuencia y por índice, páginas movidas, versiones recogidas, y si el horizonte de transacciones avanzó |
-| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Quién está conectado ahora, desde dónde y qué está ejecutando; marca las conexiones inactivas más de `idle_minutes` (por defecto 30) y las sentencias que llevan más de `long_statement_seconds` (por defecto 60). No ve la contención: MON$ cuenta el trabajo hecho, nunca el tiempo esperando permiso para hacerlo |
+| `fb_monitor_attachments` | `idle_minutes?`, `long_statement_seconds?` | Quién está conectado ahora, desde dónde y qué está ejecutando; marca las conexiones inactivas más de `idle_minutes` (por defecto 30) y las sentencias que llevan más de `long_statement_seconds` (por defecto 60). No ve la contención: MON$ cuenta el trabajo hecho, nunca el tiempo esperando permiso para hacerlo. Desde 4.0 dice además si la red de cada conexión remota va **cifrada** (`MON$WIRE_ENCRYPTED`) y marca las que van en claro; `fb_audit_security` repite el hallazgo |
 | `fb_backup_start` | *(ninguno)* | Lanza un backup `gbak` dentro de `firebird.backup_dir` y **vuelve antes de que el backup termine**. Después el job restaura lo que escribió en una base de datos desechable y la borra |
 | `fb_backup_status` | *(ninguno)* | El backup en curso o el último: fase, tamaño, cuánto duró cada etapa, y si se demostró que el backup se puede restaurar |
 
@@ -121,7 +123,7 @@ Tres hallazgos, en el orden en que importan:
 3. **Un rol sin miembros.** O los privilegios que lleva no se usan, o las cuentas que deberían
    tenerlos están usando permisos directos.
 
-## Prompts (4)
+## Prompts (7)
 
 - **`optimization_goal`**, el bucle guiado por objetivos: fija una meta y el asistente itera sobre
   las herramientas `fb_*` y vuelve a comprobar `fb_evaluate_goal` hasta que devuelve `met: true`
@@ -137,6 +139,9 @@ Tres hallazgos, en el orden en que importan:
   parar el servidor.
 - **`health_check`**: revisión guiada de la salud de toda la base de datos — los índices tabla
   por tabla, luego los permisos de una sola pasada, diciendo dónde se detiene esa parte.
+- **`migration_planning`**: parte de lo que contiene la base de datos, no de una lista genérica. Motor y capacidades (`fb_info`), cada objeto (`fb_generate_documentation`), el PSQL que más probablemente se comporte distinto (`fb_describe_object`), qué clientes se conectan hoy (`fb_monitor_attachments`), los permisos que deben llegar intactos y un backup probado restaurándolo. Lo que cambia entre versiones se remite a las notas de la versión, no se afirma de memoria.
+- **`schema_design_review`**: claves, tipos, índices y triggers de una tabla o de todo el esquema, mirando los datos (`fb_column_stats`) antes de criticar el diseño. Cada hallazgo lleva la evidencia, el SQL y cómo comprobarlo; no se aplica nada.
+- **`security_audit`**: los permisos, luego quién está conectado y si va en claro, luego las sentencias que cierran cada hueco (`fb_suggest_grants`); y dice qué no puede ver una conexión SQL (las cuentas y la política de contraseñas viven en la base de datos de seguridad).
 - **`classify_problem`**: parte del síntoma, no de una herramienta. Sitúa el problema en seis
   ejes (forma temporal, volumen frente a concurrencia, localidad, coordinación frente a
   ejecución, sensibilidad a la observación, entorno), nombra la clase dominante de las siete

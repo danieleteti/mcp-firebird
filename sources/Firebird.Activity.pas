@@ -57,6 +57,13 @@ type
     Delta: TActivityCounters;  // this attachment only, across the execution
   end;
 
+  { N executions of one statement, reduced to the three numbers worth reading. A single run is
+    an anecdote: the first one pays for cold caches, the next ones do not. }
+  TTimingSummary = record
+    Runs: Integer;
+    MinMs, MedianMs, MaxMs: Int64;
+  end;
+
   TFirebirdActivity = class
   private
     FConn: TFirebirdConnection;
@@ -76,6 +83,9 @@ type
     function Analyze(const ASample: TActivitySample): TArray<TAdvisory>;
   end;
 
+{ Empty input gives all zeros. The median of an even count is the mean of the middle two. }
+function SummarizeTimings(const AMs: TArray<Int64>): TTimingSummary;
+
 const
   MIN_SAMPLE_SECONDS = 1;
   MAX_SAMPLE_SECONDS = 60;
@@ -83,6 +93,7 @@ const
 implementation
 
 uses System.SysUtils, System.Classes, System.Diagnostics, System.Generics.Collections,
+  System.Generics.Defaults,
   FireDAC.Comp.Client, FireDAC.Stan.Error;
 
 { Below these, a window says nothing worth a finding. A handful of sequential reads is a lookup
@@ -93,6 +104,26 @@ const
   { A gap this wide with a horizon that never moved is the shape of blocked garbage collection.
     Same floor Firebird.TransactionMonitor uses for the idle case, for the same reason. }
   FROZEN_GAP_FLOOR = 20000;
+
+function SummarizeTimings(const AMs: TArray<Int64>): TTimingSummary;
+var
+  lSorted: TArray<Int64>;
+  lMid: Integer;
+begin
+  Result := Default(TTimingSummary);
+  if Length(AMs) = 0 then
+    Exit;
+  lSorted := Copy(AMs);
+  TArray.Sort<Int64>(lSorted);
+  Result.Runs := Length(lSorted);
+  Result.MinMs := lSorted[0];
+  Result.MaxMs := lSorted[High(lSorted)];
+  lMid := Length(lSorted) div 2;
+  if Odd(Length(lSorted)) then
+    Result.MedianMs := lSorted[lMid]
+  else
+    Result.MedianMs := (lSorted[lMid - 1] + lSorted[lMid]) div 2;
+end;
 
 function TActivityCounters.GarbageWork: Int64;
 begin

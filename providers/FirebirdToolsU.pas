@@ -16,8 +16,17 @@ type
     [MCPTool('fb_query', 'Runs a read-only SELECT and returns the rows as a Markdown table. Capped at max_rows (default 100, ceiling 1000); anything that is not a plain SELECT is refused, and so is a statement with unbound placeholders')]
     function FbQuery([MCPParam('The SELECT to run')] const sql: string;
       [MCPParam('Maximum rows to return (default 100, ceiling 1000)', TMCPParamPresence.Optional)] const max_rows: Integer): TMCPToolResult;
-    [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported')]
-    function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string): TMCPToolResult;
+    [MCPTool('fb_describe_object', 'The PSQL source of one stored procedure, trigger, function or package, as the engine stored it, with its signature or the event it fires on. Views are in fb_generate_documentation')]
+    function FbDescribeObject(
+      [MCPParam('Name of the procedure, trigger, function or package')] const name: string;
+      [MCPParam('procedure | trigger | function | package. Needed only when the name belongs to more than one kind', TMCPParamPresence.Optional)] const kind: string): TMCPToolResult;
+    [MCPTool('fb_column_stats', 'What the columns of one table really contain, in a single scan: rows, NULL fraction, distinct values and selectivity, set beside the selectivity the index on that column holds, with stale figures marked. Scans the whole table, so on a large one this costs a full read')]
+    function FbColumnStats(
+      [MCPParam('Table name')] const table_name: string;
+      [MCPParam('Comma-separated column names. Default: every column except BLOBs, first 25', TMCPParamPresence.Optional)] const columns: string): TMCPToolResult;
+    [MCPTool('fb_analyze_query', 'Access plan of a SQL query (flags NATURAL scans and external sorts) plus its measured cost: a plain SELECT is executed once and the records and pages it actually touched are reported. With runs it is executed up to 10 times and the fastest, median and slowest are reported')]
+    function FbAnalyzeQuery([MCPParam('The SQL query to analyze')] const sql: string;
+      [MCPParam('How many times to execute the query for timing, 1-10 (default 1). Records and pages are reported for the first run only', TMCPParamPresence.Optional)] const runs: Integer): TMCPToolResult;
     [MCPTool('fb_suggest_indexes', 'Index advice for one query, as ready-to-run DDL: plain B-tree, expression (COMPUTED BY) or partial (5.0+), whichever the predicate calls for — and no index at all when the scan is the correct plan. Refreshes stale statistics before proposing anything structural. Executes the query once to measure what the scan reads against what it returns, so on a large table this costs a full scan')]
     function FbSuggestIndexes([MCPParam('The SQL query to optimize')] const sql: string): TMCPToolResult;
     [MCPTool('fb_suggest_index_drops', 'Suggests droppable indexes for a table (duplicate/redundant/inactive/low-selectivity)')]
@@ -58,6 +67,7 @@ type
 implementation
 uses
   System.SysUtils, System.Classes, System.Diagnostics, System.StrUtils, System.DateUtils,
+  System.Math, System.Generics.Collections,
   JsonDataObjects,
   Firebird.Connection, Firebird.Capabilities, Firebird.Introspection,
   Firebird.DocGen, Firebird.PlanAnalyzer, Firebird.IndexAdvisor, Firebird.Advisory,
@@ -73,6 +83,11 @@ const DEFAULT_STALE_MINUTES = 5;
 const DEFAULT_SAMPLE_SECONDS = 5;
 const DEFAULT_IDLE_MINUTES = 30;
 const DEFAULT_LONG_STATEMENT_SECONDS = 60;
+const MAX_RUNS = 10;
+{ A query that already takes this long is the finding; running it ten more times only keeps the
+  database busy to say so again. }
+const REPEAT_FIRST_RUN_CAP_MS = 5000;
+const COLUMN_STATS_DEFAULT_LIMIT = 25;
 
 function EngineVersion(AConn: TFirebirdConnection): string;
 begin
@@ -234,6 +249,8 @@ begin
       R: TRoleInfo;
       lGrants: TArray<TGrantSummary>;
       lRoles: TArray<TRoleInfo>;
+      lWire: TFirebirdAttachments;
+      lWireFindings: TArray<TAdvisory>;
       SB: TStringBuilder;
     begin
       A := TFirebirdSecurityAudit.Create(Conn);
@@ -281,6 +298,19 @@ begin
         SB.Append(AdvisoriesToText(A.Analyze,
           'No grant issues found: nothing is held by PUBLIC, nothing carries a grant option, ' +
           'and every role has members.'));
+        { Who is reading the data in clear is a security question too, and the engine answers it
+          only where MON$WIRE_ENCRYPTED exists, so the section is simply absent below 4.0. }
+        lWire := TFirebirdAttachments.Create(Conn, TFirebirdCapabilities.Detect(Conn));
+        try
+          lWireFindings := lWire.WireAdvisories;
+        finally
+          lWire.Free;
+        end;
+        if Length(lWireFindings) > 0 then
+        begin
+          SB.AppendLine.AppendLine('### Connections in clear text').AppendLine;
+          SB.Append(AdvisoriesToText(lWireFindings, ''));
+        end;
         Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_audit_security'));
       finally
         SB.Free;
@@ -289,14 +319,156 @@ begin
     end);
 end;
 
-function TFirebirdTools.FbAnalyzeQuery(const sql: string): TMCPToolResult;
-var LSql: string;
+function TFirebirdTools.FbDescribeObject(const name, kind: string): TMCPToolResult;
+var LName, LKind: string;
+begin
+  LName := name.Trim.ToUpper;
+  LKind := kind.Trim.ToLower;
+  Result := Guard('fb_describe_object', Format('name=%s kind=%s', [LName, LKind]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      I: TFirebirdIntrospection;
+      lKinds: TArray<string>;
+      S: TObjectSource;
+      SB: TStringBuilder;
+    begin
+      I := TFirebirdIntrospection.Create(Conn);
+      SB := TStringBuilder.Create;
+      try
+        lKinds := I.ObjectKinds(LName);
+        if Length(lKinds) = 0 then
+          Exit(TMCPToolResult.Error(Format('No procedure, trigger, function or package is named %s. ' +
+            'fb_generate_documentation lists them, and documents a view given its name.', [LName])));
+        if LKind = '' then
+        begin
+          if Length(lKinds) > 1 then
+            Exit(TMCPToolResult.Error(Format('%s is more than one thing here (%s). Say which with ' +
+              'the kind argument.', [LName, string.Join(', ', lKinds)])));
+          LKind := lKinds[0];
+        end
+        else if not TArray.Contains<string>(lKinds, LKind) then
+          Exit(TMCPToolResult.Error(Format('There is no %s named %s; the name belongs to: %s.',
+            [LKind, LName, string.Join(', ', lKinds)])));
+
+        S := I.GetObjectSource(LName, LKind);
+        SB.AppendLine(Format('**%s %s**', [LKind, LName]));
+        if S.Detail <> '' then
+          SB.AppendLine.AppendLine(S.Detail);
+        SB.AppendLine;
+        if LKind = 'package' then
+        begin
+          SB.AppendLine('**Header:**').AppendLine('```sql').AppendLine(S.Header).AppendLine('```');
+          if S.Source = '' then
+            SB.AppendLine('The package has no body.')
+          else
+            SB.AppendLine('**Body:**').AppendLine('```sql').AppendLine(S.Source).AppendLine('```');
+        end
+        else if S.Source = '' then
+          SB.AppendLine('The engine stored no source for this object: a function declared from an ' +
+            'external module (a UDF) has none, and neither does an object created without it.')
+        else
+          SB.AppendLine('```sql').AppendLine(S.Source).AppendLine('```');
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_describe_object'));
+      finally
+        SB.Free;
+        I.Free;
+      end;
+    end);
+end;
+
+function TFirebirdTools.FbColumnStats(const table_name, columns: string): TMCPToolResult;
+var LTable, LColumns: string;
+begin
+  LTable := table_name.Trim.ToUpper;
+  LColumns := columns;
+  Result := Guard('fb_column_stats', Format('table_name=%s columns=%s', [LTable, LColumns]),
+    function(Conn: TFirebirdConnection): TMCPToolResult
+    var
+      A: TFirebirdSchemaAudit;
+      Intro: TFirebirdIntrospection;
+      C: TColumnInfo;
+      R: TColumnStatsRow;
+      lWanted: TArray<string>;
+      lCut: Integer;
+      lPart, lIndex: string;
+      lActual: Double;
+      SB: TStringBuilder;
+      lStats: TArray<TColumnStatsRow>;
+    begin
+      lWanted := [];
+      lCut := 0;
+      for lPart in LColumns.Split([',']) do
+        if lPart.Trim <> '' then
+          lWanted := lWanted + [lPart.Trim.ToUpper];
+      if Length(lWanted) = 0 then
+      begin
+        Intro := TFirebirdIntrospection.Create(Conn);
+        try
+          for C in Intro.GetColumns(LTable) do
+            { COUNT(DISTINCT) is not defined for a BLOB, and asking would fail the whole scan. }
+            if C.DataType <> 'BLOB' then
+              if Length(lWanted) < COLUMN_STATS_DEFAULT_LIMIT then
+                lWanted := lWanted + [C.FieldName]
+              else
+                Inc(lCut);
+        finally
+          Intro.Free;
+        end;
+      end;
+
+      A := TFirebirdSchemaAudit.Create(Conn);
+      SB := TStringBuilder.Create;
+      try
+        lStats := A.TableStats(LTable, lWanted);
+        if Length(lStats) = 0 then
+          Exit(TMCPToolResult.Error('Table ' + LTable + ' has no columns that can be counted.'));
+        SB.AppendLine(Format('**%s: %d row(s).** One scan; selectivity is 1 / distinct values.',
+          [LTable, lStats[0].Stats.Rows])).AppendLine;
+        SB.AppendLine('| Column | NULL | Distinct | Selectivity | Leading index (stored selectivity) |');
+        SB.AppendLine('|---|---:|---:|---:|---|');
+        for R in lStats do
+        begin
+          if R.Stats.Distinct > 0 then
+            lActual := R.Stats.Selectivity
+          else
+            lActual := 0;
+          if R.IndexName = '' then
+            lIndex := 'none active'
+          else if R.Stored < 0 then
+            lIndex := R.IndexName + ' (no figure)'
+          else
+          begin
+            lIndex := Format('%s (%.3g)', [R.IndexName, R.Stored], TFormatSettings.Invariant);
+            { Same test, same threshold, as fb_audit_table. }
+            if R.Stats.Comparable and IsStale(R.Stored, lActual) then
+              lIndex := lIndex + ' **stale** — SET STATISTICS INDEX ' + R.IndexName;
+          end;
+          SB.AppendLine(Format('| %s | %.0f%% | %d | %.3g | %s |',
+            [R.Column, R.Stats.NullFraction * 100, R.Stats.Distinct, lActual, lIndex],
+            TFormatSettings.Invariant));
+        end;
+        SB.AppendLine;
+        if lCut > 0 then
+          SB.AppendLine(Format('%d further column(s) not shown; name them in `columns` to see them.', [lCut]));
+        Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_column_stats'));
+      finally
+        SB.Free;
+        A.Free;
+      end;
+    end);
+end;
+
+function TFirebirdTools.FbAnalyzeQuery(const sql: string; const runs: Integer): TMCPToolResult;
+var LSql: string; LRuns: Integer;
 begin
   LSql := sql;
-  Result := Guard('fb_analyze_query', 'sql=' + LSql,
+  // Same optional-Integer caveat as fb_monitor_transactions: 0 means "not passed".
+  LRuns := EnsureRange(runs, 1, MAX_RUNS);
+  Result := Guard('fb_analyze_query', Format('sql=%s runs=%d', [LSql, LRuns]),
     function(Conn: TFirebirdConnection): TMCPToolResult
     var PA: TFirebirdPlanAnalyzer; R: TPlanResult; SB: TStringBuilder;
-        Caps: TFirebirdCapabilities; Act: TFirebirdActivity; Cost: TStatementCost;
+        Caps: TFirebirdCapabilities; Act: TFirebirdActivity; Cost, Again: TStatementCost;
+        Times: TArray<Int64>; T: TTimingSummary; I: Integer;
     begin
       Caps := TFirebirdCapabilities.Detect(Conn);
       PA := TFirebirdPlanAnalyzer.Create(Conn, Caps.EngineVersion); SB := TStringBuilder.Create;
@@ -320,7 +492,22 @@ begin
           "the plan uses an index" and "the query reads 400 000 records through that index" are
           the same report. }
         Act := TFirebirdActivity.Create(Conn, Caps);
-        try Cost := Act.Measure(LSql); finally Act.Free; end;
+        Times := [];
+        try
+          Cost := Act.Measure(LSql);
+          if Cost.Executed then
+          begin
+            Times := [Cost.ElapsedMs];
+            if Cost.ElapsedMs <= REPEAT_FIRST_RUN_CAP_MS then
+              for I := 2 to LRuns do
+              begin
+                Again := Act.Measure(LSql);
+                if not Again.Executed then
+                  Break;
+                Times := Times + [Again.ElapsedMs];
+              end;
+          end;
+        finally Act.Free; end;
         SB.AppendLine;
         if Cost.Executed then
         begin
@@ -333,6 +520,17 @@ begin
           if (Cost.Rows > 0) and (Cost.Delta.RecordReads > Cost.Rows * 10) then
             SB.AppendLine(Format('- the engine read %d records to return %d: the access path is ' +
               'reading far more than the query keeps.', [Cost.Delta.RecordReads, Cost.Rows]));
+          if LRuns > 1 then
+          begin
+            T := SummarizeTimings(Times);
+            if T.Runs > 1 then
+              SB.AppendLine(Format('- timing over %d runs: fastest %d ms, median %d ms, slowest %d ms. ' +
+                'The first run pays for cold caches, so a gap between fastest and slowest is that ' +
+                'and not noise.', [T.Runs, T.MinMs, T.MedianMs, T.MaxMs]))
+            else
+              SB.AppendLine(Format('- not repeated: the first run took %d ms, and a query this slow ' +
+                'is the finding; narrow it before timing it again.', [Cost.ElapsedMs]));
+          end;
         end
         else
           SB.AppendLine('**Not measured:** ' + Cost.SkipReason + '.');
@@ -573,13 +771,15 @@ begin
              IfThen(T.RemoteAddress = '', 'local', T.RemoteAddress),
              IfThen(T.RemoteProcess = '', '', ' (' + T.RemoteProcess + ')'),
              T.ConnectedSeconds,
-             IfThen(T.Active, 'active', 'idle')]));
+             IfThen(T.Active, 'active', 'idle') +
+             IfThen(T.WireKnown and (T.RemoteAddress <> ''),
+               IfThen(T.Encrypted, ', encrypted', ', clear text'), '')]));
           if T.CurrentSQL <> '' then
             SB.AppendLine(Format('  running %ds: `%s`', [T.StatementSeconds, T.CurrentSQL]));
         end;
         SB.AppendLine;
-        SB.Append(AdvisoriesToText(A.Analyze(LIdle, LLong),
-          'No idle-connection or long-statement issues found.'));
+        SB.Append(AdvisoriesToText(A.Analyze(LIdle, LLong) + A.WireAdvisories,
+          'No idle-connection, long-statement or unencrypted-connection issues found.'));
         Result := TMCPToolResult.Text(WithLimits(SB.ToString, 'fb_monitor_attachments'));
       finally
         SB.Free;

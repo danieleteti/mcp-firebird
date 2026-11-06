@@ -23,6 +23,11 @@ type
     ConnectedSeconds: Int64;
     CurrentSQL: string;       // '' when the attachment is running nothing
     StatementSeconds: Int64;  // age of that statement, 0 when there is none
+    { Whether the engine reports this attachment's wire as encrypted. Known only where
+      MON$WIRE_ENCRYPTED exists (4.0+); WireKnown is False below that, and Encrypted then
+      means nothing. }
+    WireKnown: Boolean;
+    Encrypted: Boolean;
   end;
 
   TFirebirdAttachments = class
@@ -33,11 +38,14 @@ type
     constructor Create(AConn: TFirebirdConnection; const ACaps: TFirebirdCapabilities);
     function List: TArray<TAttachmentInfo>;
     function Analyze(AIdleMinutes, ALongStatementSeconds: Integer): TArray<TAdvisory>;
+    { Remote attachments whose wire is in clear text. A local (XNET / embedded) attachment has
+      no wire to encrypt and is left out. Empty when this engine cannot say. }
+    function WireAdvisories: TArray<TAdvisory>;
   end;
 
 implementation
 
-uses System.SysUtils, System.Generics.Collections, FireDAC.Comp.Client;
+uses System.SysUtils, System.StrUtils, System.Generics.Collections, FireDAC.Comp.Client;
 
 const
   SQL_TEXT_LIMIT = 300;
@@ -78,6 +86,8 @@ begin
       '       COALESCE(TRIM(a.MON$REMOTE_PROCESS), '''') AS PROC, ' +
       '       COALESCE(a.MON$STATE, 0) AS ASTATE, ' +
       '       DATEDIFF(SECOND, a.MON$TIMESTAMP, CURRENT_TIMESTAMP) AS AGE_S, ' +
+      '       ' + IfThen(FCaps.HasWireEncryptionMon,
+        'CASE WHEN a.MON$WIRE_ENCRYPTED THEN 1 ELSE 0 END', '-1') + ' AS WIRE_ENC, ' +
       '       (SELECT FIRST 1 s.MON$SQL_TEXT FROM MON$STATEMENTS s ' +
       '         WHERE s.MON$ATTACHMENT_ID = a.MON$ATTACHMENT_ID AND s.MON$STATE = 1 ' +
       '         ORDER BY s.MON$TIMESTAMP DESC) AS CUR_SQL, ' +
@@ -96,6 +106,8 @@ begin
         T.RemoteProcess := Q.FieldByName('PROC').AsString;
         T.Active := Q.FieldByName('ASTATE').AsInteger = 1;
         T.ConnectedSeconds := Q.FieldByName('AGE_S').AsLargeInt;
+        T.WireKnown := Q.FieldByName('WIRE_ENC').AsInteger >= 0;
+        T.Encrypted := Q.FieldByName('WIRE_ENC').AsInteger = 1;
         T.CurrentSQL := Q.FieldByName('CUR_SQL').AsString.Trim;
         if T.CurrentSQL.Length > SQL_TEXT_LIMIT then
           T.CurrentSQL := T.CurrentSQL.Substring(0, SQL_TEXT_LIMIT) + '...';
@@ -111,6 +123,38 @@ begin
   finally
     L.Free;
   end;
+end;
+
+function TFirebirdAttachments.WireAdvisories: TArray<TAdvisory>;
+var
+  T: TAttachmentInfo;
+  lClear: Integer;
+  lWho: string;
+begin
+  Result := [];
+  if not FCaps.HasWireEncryptionMon then
+    Exit;
+  lClear := 0;
+  lWho := '';
+  for T in List do
+    if T.WireKnown and (not T.Encrypted) and (T.RemoteAddress <> '') then
+    begin
+      Inc(lClear);
+      if lClear <= 5 then
+        lWho := lWho + IfThen(lWho = '', '', ', ') +
+          Format('%d (%s from %s)', [T.AttachmentID, T.UserName, T.RemoteAddress]);
+    end;
+  if lClear = 0 then
+    Exit;
+  Result := [TAdvisory.Make(
+    Format('%d remote attachment(s) are connected without wire encryption, so everything they ' +
+      'send, including the password exchange and the data, crosses the network readable: %s%s',
+      [lClear, lWho, IfThen(lClear > 5, ' and others', '')]),
+    '-- firebird.conf: WireCrypt = Required',
+    'Re-run fb_monitor_attachments after the setting is changed and the clients reconnect: ' +
+    'the attachments should be listed as encrypted. A client that does not support encryption ' +
+    'will be refused, so confirm that before making it required.',
+    'warning')];
 end;
 
 function TFirebirdAttachments.Analyze(AIdleMinutes, ALongStatementSeconds: Integer): TArray<TAdvisory>;
