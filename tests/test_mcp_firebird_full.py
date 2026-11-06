@@ -1,7 +1,7 @@
 """
 Comprehensive end-to-end suite for the MCP Firebird stdio server.
 
-Exercises every JSON-RPC method, all 16 fb_ tools, all four prompts, the schema
+Exercises every JSON-RPC method, all 18 fb_ tools, all seven prompts, the schema
 resource, and the error/recovery paths against a real Firebird 5.0 seeded with
 tests/seed/seed.sql + problems.sql. Assertions are tied to the guaranteed seed
 fixtures and use substring/upper() checks rather than brittle exact equality.
@@ -55,7 +55,7 @@ def test_initialize_handshake(raw_client):
     res = r["result"]
     assert res["protocolVersion"] == "2025-03-26"
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.6.2"
+    assert res["serverInfo"]["version"] == "0.7.0"
     if not IS_ENTERPRISE:  # the Enterprise server announces its own, longer, tool list
         instr = res["instructions"]
         assert "read-only" in instr and "fb_analyze_query" in instr
@@ -68,7 +68,7 @@ def test_initialize_handshake_via_stored_result(client):
     # conftest stores the initialize response on the client object.
     res = client.init_result["result"]
     assert res["serverInfo"]["name"] == SERVER_NAME
-    assert res["serverInfo"]["version"] == "0.6.2"
+    assert res["serverInfo"]["version"] == "0.7.0"
     assert res["protocolVersion"] == "2025-03-26"
 
 
@@ -101,6 +101,8 @@ FREE_TOOLS = {
     "fb_backup_start",
     "fb_backup_status",
     "fb_monitor_attachments",
+    "fb_describe_object",
+    "fb_column_stats",
 }
 
 # Announced in tools/list, implemented only in the Enterprise edition.
@@ -481,6 +483,13 @@ def test_fb_monitor_attachments_sees_the_connection_asking(client):
     assert "SYSDBA" in text.upper()
 
 
+def test_fb_monitor_attachments_says_whether_each_remote_wire_is_encrypted(client):
+    # The server's own attachment arrives over TCP, so it is remote, and the 5.0 engine can say
+    # whether its wire is encrypted. The label is the proof the column was read, not assumed.
+    text = _tool_text(client, "fb_monitor_attachments", {})
+    assert re.search(r", (encrypted|clear text)\b", text), text
+
+
 def test_fb_monitor_attachments_thresholds_are_honoured(client):
     # Nothing here has been idle for a thousand minutes, so the generous call must find nothing.
     # Both thresholds are echoed nowhere, so what proves they arrived is the absence of findings.
@@ -489,7 +498,7 @@ def test_fb_monitor_attachments_thresholds_are_honoured(client):
         "fb_monitor_attachments",
         {"idle_minutes": 1000, "long_statement_seconds": 100000},
     )
-    assert "No idle-connection or long-statement issues found." in text, text
+    assert "Attachment" not in text and "attachments have been connected and idle" not in text, text
 
 
 # --------------------------------------------------------------------------- #
@@ -686,6 +695,8 @@ def test_prompts_list(client):
     assert "health_check" in prompts
     assert "classify_problem" in prompts
     assert "app_user_plan" in prompts
+    for new in ("migration_planning", "schema_design_review", "security_audit"):
+        assert new in prompts, new
     arg_names = {a["name"] for a in prompts["optimization_goal"]["arguments"]}
     assert "goal_type" in arg_names
     assert "target" in arg_names
@@ -731,6 +742,34 @@ def test_prompts_get_app_user_plan(client):
     assert "fb_suggest_grants" in blob
     assert "fb_audit_security" in blob
     assert "a Delphi order-entry client" in blob
+
+
+def test_prompts_get_migration_planning_works_from_the_database_and_not_from_memory(client):
+    r = client.call("prompts/get", {"name": "migration_planning", "arguments": {"target_version": "5.0"}})
+    blob = json.dumps(r["result"])
+    assert r["result"]["messages"]
+    assert "Firebird 5.0" in blob
+    for tool in ("fb_info", "fb_generate_documentation", "fb_describe_object",
+                 "fb_monitor_attachments", "fb_backup_start"):
+        assert tool in blob, tool
+    assert "release notes" in blob
+
+
+def test_prompts_get_schema_design_review_names_its_tools(client):
+    r = client.call("prompts/get", {"name": "schema_design_review", "arguments": {"table_name": "ORDERS"}})
+    blob = json.dumps(r["result"])
+    assert "ORDERS" in blob
+    for tool in ("fb_generate_documentation", "fb_audit_table", "fb_column_stats", "fb_suggest_index_drops"):
+        assert tool in blob, tool
+
+
+def test_prompts_get_security_audit_names_its_tools_and_its_blind_spot(client):
+    r = client.call("prompts/get", {"name": "security_audit", "arguments": {"user_name": "APP"}})
+    blob = json.dumps(r["result"])
+    assert "APP" in blob
+    for tool in ("fb_audit_security", "fb_monitor_attachments", "fb_suggest_grants"):
+        assert tool in blob, tool
+    assert "security database" in blob
 
 
 def test_prompts_get_classify_problem(client):
@@ -783,6 +822,7 @@ def test_resources_read_schema(client):
         ("fb_monitor_transactions", {}),
         ("fb_monitor_attachments", {}),
         ("fb_backup_status", {}),
+        ("fb_column_stats", {"table_name": "CUSTOMERS"}),
     ],
 )
 def test_tools_state_what_they_do_not_rule_out(client, name, arguments):
@@ -798,6 +838,24 @@ def test_fb_analyze_query_measures_the_query_it_analyzed(client):
     assert "**Measured:**" in text
     assert "5000 row(s)" in text
     assert re.search(r"records read: [1-9]\d*\s+sequential", text), text
+
+
+def test_fb_analyze_query_times_the_query_over_several_runs(client):
+    text = _tool_text(client, "fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS", "runs": 3})
+    m = re.search(r"timing over 3 runs: fastest (\d+) ms, median (\d+) ms, slowest (\d+) ms", text)
+    assert m, text
+    fastest, median, slowest = (int(g) for g in m.groups())
+    assert fastest <= median <= slowest
+
+
+def test_fb_analyze_query_runs_once_by_default_and_says_nothing_about_timing(client):
+    text = _tool_text(client, "fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS"})
+    assert "timing over" not in text
+
+
+def test_fb_analyze_query_clamps_runs_instead_of_hammering_the_database(client):
+    text = _tool_text(client, "fb_analyze_query", {"sql": "SELECT * FROM CUSTOMERS WHERE CUSTOMER_ID = 1", "runs": 500})
+    assert "timing over 10 runs" in text, text
 
 
 def test_fb_analyze_query_does_not_execute_a_statement_that_could_write(client):
@@ -922,3 +980,60 @@ def test_backup_start_returns_immediately_and_status_finishes(client):
         pytest.fail("backup did not finish within 300s")
 
     assert "restored into a scratch database" in status, status
+
+
+# --------------------------------------------------------------------------- #
+# 0.7.0 -- fb_describe_object, fb_column_stats, richer fb_generate_documentation
+# --------------------------------------------------------------------------- #
+def test_fb_describe_object_returns_a_procedures_source_and_signature(client):
+    text = _tool_text(client, "fb_describe_object", {"name": "sp_customer_total"})
+    assert "SUM(TOTAL)" in text, text
+    assert "in A_CUSTOMER_ID" in text and "out TOTAL_SPENT" in text, text
+
+
+def test_fb_describe_object_returns_a_triggers_source_and_event(client):
+    text = _tool_text(client, "fb_describe_object", {"name": "TR_ORDERS_BI", "kind": "trigger"})
+    assert "NEW.TOTAL" in text and "BEFORE INSERT" in text, text
+
+
+def test_fb_describe_object_on_an_unknown_name_is_an_error(client):
+    r = client.call("tools/call", {"name": "fb_describe_object", "arguments": {"name": "NO_SUCH_THING"}})
+    assert r["result"]["isError"] is True
+    assert "NO_SUCH_THING" in r["result"]["content"][0]["text"]
+
+
+def test_fb_describe_object_refuses_a_kind_the_name_does_not_have(client):
+    r = client.call("tools/call", {"name": "fb_describe_object",
+                                   "arguments": {"name": "SP_CUSTOMER_TOTAL", "kind": "trigger"}})
+    assert r["result"]["isError"] is True
+    assert "procedure" in r["result"]["content"][0]["text"]
+
+
+def test_fb_column_stats_counts_what_is_in_the_table(client):
+    text = _tool_text(client, "fb_column_stats", {"table_name": "customers", "columns": "city, status"})
+    assert "5000 row(s)" in text, text
+    city = next(l for l in text.splitlines() if l.startswith("| CITY "))
+    status = next(l for l in text.splitlines() if l.startswith("| STATUS "))
+    assert "| 4 |" in city, city          # Rome, Milan, Turin, Naples
+    assert "| 2 |" in status, status      # A, B
+    assert "IDX_CUST_STATUS" in status, status
+    assert "none active" in city, city    # IDX_CUST_CITY is inactive in the seed
+
+
+def test_fb_column_stats_without_columns_covers_the_table(client):
+    text = _tool_text(client, "fb_column_stats", {"table_name": "CUSTOMERS"})
+    for col in ("CUSTOMER_ID", "NAME", "CITY", "STATUS"):
+        assert f"| {col} " in text, col
+
+
+def test_fb_column_stats_refuses_a_column_the_table_does_not_have(client):
+    r = client.call("tools/call", {"name": "fb_column_stats",
+                                   "arguments": {"table_name": "CUSTOMERS", "columns": "NOPE"}})
+    assert r["result"]["isError"] is True
+
+
+def test_fb_generate_documentation_lists_foreign_keys_and_column_descriptions(client):
+    orders = _tool_text(client, "fb_generate_documentation", {"table_name": "ORDERS"})
+    assert "FK_ORDERS_CUSTOMER" in orders and "references `CUSTOMERS`" in orders, orders
+    customers = _tool_text(client, "fb_generate_documentation", {"table_name": "CUSTOMERS"})
+    assert "City of residence \\| as typed at sign-up" in customers, customers

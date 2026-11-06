@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-06
+
+More of the DBA's toolbox, all in the free edition: nothing here needs the Services Manager.
+Design notes in `docs/superpowers/specs/2026-11-06-0.7.0-dba-toolbox.md`.
+
+### Added
+
+- **`fb_describe_object`.** The PSQL source of one stored procedure, trigger, function or package
+  as the engine stored it, with the signature or the event it fires on. `fb_generate_documentation`
+  listed these objects but never showed what was inside them.
+- **`fb_column_stats`.** What the columns of a table really contain, from one scan: rows, NULL
+  fraction, distinct values and selectivity, set beside the selectivity of the index that leads on
+  the column and marked stale by the same test `fb_audit_table` uses. Column names are checked
+  against the catalogue before they reach the SQL.
+- **`runs` on `fb_analyze_query`.** Executes the SELECT up to 10 times and reports the fastest,
+  median and slowest. A first run over 5 seconds is not repeated.
+- **Wire encryption.** `fb_monitor_attachments` says whether each remote attachment is encrypted
+  and warns about the ones in clear text; `fb_audit_security` repeats the finding. Read from
+  `MON$ATTACHMENTS.MON$WIRE_ENCRYPTED`, so it is 4.0 and up: the column does not exist in 3.0
+  (measured on the 3.0.14, 4.0.7 and 5.0.4 kits).
+- **Three prompts:** `migration_planning`, `schema_design_review` and `security_audit`.
+- **`fb_generate_documentation`** now lists a table's **foreign keys** (the catalogue code was
+  there; nothing rendered it) and shows `COMMENT ON COLUMN` descriptions, in a column that appears
+  only when somebody wrote one.
+
+### Changed
+
+- The README opens with what the server is for: query tuning, index advice and database health,
+  not data access.
+
 ## [0.6.2] - 2026-10-24
 
 ### Added

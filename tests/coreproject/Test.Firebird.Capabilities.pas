@@ -9,6 +9,7 @@ type
     [Test] procedure Parse_30_HasExplainedPlanAndBoolean;
     [Test] procedure Parse_50_HasParallelWorkers;
     [Test] procedure Detect_FromSeedDB_MatchesParse;
+    [Test] procedure WireEncryptionMon_Starts_At_40;
   end;
 implementation
 uses System.SysUtils, Firebird.Capabilities, Firebird.Connection, TestFixtureU;
@@ -47,4 +48,12 @@ begin
     Assert.IsMatch('^\d+\.\d+', C.EngineVersion);
   finally Conn.Free; end;
 end;
+procedure TCapabilitiesTests.WireEncryptionMon_Starts_At_40;
+begin
+  { Measured on the kits: MON$WIRE_ENCRYPTED is absent from 3.0.14 and present in 4.0.7. }
+  Assert.IsFalse(TFirebirdCapabilities.Parse('3.0.14').HasWireEncryptionMon);
+  Assert.IsTrue(TFirebirdCapabilities.Parse('4.0.7').HasWireEncryptionMon);
+  Assert.IsTrue(TFirebirdCapabilities.Parse('5.0.4').HasWireEncryptionMon);
+end;
+
 end.

@@ -10,7 +10,7 @@ uses
 procedure ConfigureServerIdentity;
 begin
   TMCPServer.Instance.ServerName := 'mcp-firebird';
-  TMCPServer.Instance.ServerVersion := '0.6.2';
+  TMCPServer.Instance.ServerVersion := '0.7.0';
   { Sent once in the initialize reply; the client decides whether the model sees it. Facts about
     the server, not orders to the model: text that reads like a command is what clients learn to
     filter, and it is the shape a hostile server's description would take. }

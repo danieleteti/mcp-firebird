@@ -13,6 +13,8 @@ type
       A schema whose columns come from domains says something a resolved type does not: that
       the same rule holds everywhere the domain is used, and that changing it is one statement. }
     Domain: string;
+    { COMMENT ON COLUMN text, empty when nobody wrote one. }
+    Description: string;
   end;
   TIndexInfo = record
     IndexName: string; Columns: TArray<string>;
@@ -64,6 +66,17 @@ type
     Source: string;
   end;
 
+  { The PSQL behind one named object, as the engine stored it. }
+  TObjectSource = record
+    Kind, Name: string;
+    { What the source alone does not say: the event a trigger fires on, the signature of a
+      procedure. }
+    Detail: string;
+    { Packages only: the header; Source then carries the body. }
+    Header: string;
+    Source: string;
+  end;
+
   TFirebirdIntrospection = class
   private
     FConn: TFirebirdConnection;
@@ -92,13 +105,17 @@ type
       and the 2.5 RDB$FUNCTIONS holds external UDF declarations only. }
     function ListFunctions: TArray<TFunctionInfo>;
     function ListPackages: TArray<TPackageInfo>;
+    { Which kinds of object carry this name: 'procedure', 'function', 'trigger', 'package'.
+      Names are only unique within a kind, so a caller that is not told the kind has to ask. }
+    function ObjectKinds(const AName: string): TArray<string>;
+    function GetObjectSource(const AName, AKind: string): TObjectSource;
   end;
 
 { Wraps an identifier in double quotes for use in SQL text. }
 function QuoteIdent(const S: string): string;
 
 implementation
-uses System.SysUtils, System.Classes, Data.DB, FireDAC.Comp.Client;
+uses System.SysUtils, System.Classes, System.StrUtils, Data.DB, FireDAC.Comp.Client;
 
 function QuoteIdent(const S: string): string;
 begin Result := '"' + S.Replace('"', '""') + '"'; end;
@@ -186,7 +203,7 @@ begin
       'SELECT TRIM(rf.rdb$field_name), rf.rdb$field_position, ' +
       '       COALESCE(rf.rdb$null_flag,0), f.rdb$field_type, ' +
       '       COALESCE(f.rdb$character_length, f.rdb$field_length), f.rdb$field_scale, ' +
-      '       TRIM(rf.rdb$field_source) ' +
+      '       TRIM(rf.rdb$field_source), rf.rdb$description ' +
       'FROM rdb$relation_fields rf ' +
       'JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source ' +
       'WHERE rf.rdb$relation_name = ' + QuotedStr(ATable) +
@@ -203,6 +220,7 @@ begin
         lSource := Q.Fields[6].AsString;
         if not lSource.StartsWith('RDB$') then
           Rec.Domain := lSource;
+        Rec.Description := Q.Fields[7].AsString.Trim;
         L.Add(Rec); Q.Next;
       end;
     finally Q.Free; end;
@@ -560,6 +578,78 @@ begin
     Result := L.ToArray;
   finally
     L.Free;
+  end;
+end;
+
+function TFirebirdIntrospection.ObjectKinds(const AName: string): TArray<string>;
+var
+  L: TList<string>;
+  lName: string;
+
+  procedure Probe(const AKind, AFrom: string);
+  begin
+    if StrToIntDef(FConn.ScalarStr('SELECT COUNT(*) FROM ' + AFrom), 0) > 0 then
+      L.Add(AKind);
+  end;
+
+begin
+  lName := QuotedStr(AName);
+  L := TList<string>.Create;
+  try
+    { RDB$PACKAGE_NAME does not exist before 3.0; there a procedure is never in a package. }
+    Probe('procedure', 'RDB$PROCEDURES WHERE RDB$PROCEDURE_NAME = ' + lName +
+      IfThen(FCaps.HasPackages, ' AND RDB$PACKAGE_NAME IS NULL', ''));
+    Probe('trigger', 'RDB$TRIGGERS WHERE RDB$TRIGGER_NAME = ' + lName +
+      ' AND COALESCE(RDB$SYSTEM_FLAG, 0) = 0');
+    if FCaps.HasPackages then
+    begin
+      Probe('function', 'RDB$FUNCTIONS WHERE RDB$FUNCTION_NAME = ' + lName +
+        ' AND RDB$PACKAGE_NAME IS NULL');
+      Probe('package', 'RDB$PACKAGES WHERE RDB$PACKAGE_NAME = ' + lName);
+    end;
+    Result := L.ToArray;
+  finally
+    L.Free;
+  end;
+end;
+
+function TFirebirdIntrospection.GetObjectSource(const AName, AKind: string): TObjectSource;
+var
+  lName, lSig: string;
+begin
+  Result := Default(TObjectSource);
+  Result.Kind := AKind;
+  Result.Name := AName;
+  lName := QuotedStr(AName);
+  if AKind = 'procedure' then
+  begin
+    Result.Source := FConn.ScalarStr('SELECT RDB$PROCEDURE_SOURCE FROM RDB$PROCEDURES ' +
+      'WHERE RDB$PROCEDURE_NAME = ' + lName +
+      IfThen(FCaps.HasPackages, ' AND RDB$PACKAGE_NAME IS NULL', '')).Trim;
+    lSig := '';
+    for var R in RoutineParams(AName, '') do
+      lSig := lSig + IfThen(lSig = '', '', ', ') +
+        Format('%s %s %s', [IfThen(R.IsOutput, 'out', 'in'), R.ParamName, R.DataType]);
+    Result.Detail := AName + '(' + lSig + ')';
+  end
+  else if AKind = 'trigger' then
+  begin
+    Result.Source := FConn.ScalarStr('SELECT RDB$TRIGGER_SOURCE FROM RDB$TRIGGERS ' +
+      'WHERE RDB$TRIGGER_NAME = ' + lName).Trim;
+    for var T in ListTriggers do
+      if T.TriggerName = AName then
+        Result.Detail := Format('on %s, %s, position %d%s', [T.TableName, T.Event, T.Position,
+          IfThen(T.Inactive, ', INACTIVE', '')]);
+  end
+  else if AKind = 'function' then
+    Result.Source := FConn.ScalarStr('SELECT RDB$FUNCTION_SOURCE FROM RDB$FUNCTIONS ' +
+      'WHERE RDB$FUNCTION_NAME = ' + lName + ' AND RDB$PACKAGE_NAME IS NULL').Trim
+  else if AKind = 'package' then
+  begin
+    Result.Header := FConn.ScalarStr('SELECT RDB$PACKAGE_HEADER_SOURCE FROM RDB$PACKAGES ' +
+      'WHERE RDB$PACKAGE_NAME = ' + lName).Trim;
+    Result.Source := FConn.ScalarStr('SELECT RDB$PACKAGE_BODY_SOURCE FROM RDB$PACKAGES ' +
+      'WHERE RDB$PACKAGE_NAME = ' + lName).Trim;
   end;
 end;
 end.

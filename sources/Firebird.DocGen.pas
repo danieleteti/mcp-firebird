@@ -28,19 +28,27 @@ begin inherited Create; FIntro := AIntro; end;
 destructor TFirebirdDocGen.Destroy; begin FIntro.Free; inherited; end;
 
 function TFirebirdDocGen.ColumnTable(const ATable: string): string;
-var SB: TStringBuilder; C: TColumnInfo;
+var SB: TStringBuilder; C: TColumnInfo; lColumns: TArray<TColumnInfo>; lDescribed: Boolean;
 begin
+  lColumns := FIntro.GetColumns(ATable);
+  lDescribed := False;
+  for C in lColumns do
+    if C.Description <> '' then
+      lDescribed := True;
   SB := TStringBuilder.Create;
   try
-    SB.AppendLine('| Column | Type | Nullable |');
-    SB.AppendLine('|---|---|---|');
-    for C in FIntro.GetColumns(ATable) do
-      SB.AppendLine(Format('| %s | %s%s | %s |',
+    { The description column appears only when somebody wrote one: an empty column on every
+      table of a schema nobody commented is noise on every page. }
+    SB.AppendLine('| Column | Type | Nullable |' + IfThen(lDescribed, ' Description |', ''));
+    SB.AppendLine('|---|---|---|' + IfThen(lDescribed, '---|', ''));
+    for C in lColumns do
+      SB.AppendLine(Format('| %s | %s%s | %s |%s',
         [C.FieldName, C.DataType,
          { The domain is the answer to "why is this VARCHAR(11) everywhere": it is one rule with
            a name, and the name is what a reader can go and look up. }
          IfThen(C.Domain = '', '', Format(' *(domain %s)*', [C.Domain])),
-         BoolToStr(C.Nullable, True)]));
+         BoolToStr(C.Nullable, True),
+         IfThen(lDescribed, ' ' + C.Description.Replace('|', '\|').Replace(sLineBreak, ' ') + ' |', '')]));
     Result := SB.ToString;
   finally SB.Free; end;
 end;
@@ -85,6 +93,7 @@ function TFirebirdDocGen.TableMarkdown(const ATable: string): string;
 var
   SB: TStringBuilder; X: TIndexInfo; PK: TArray<string>; S: string;
   lChecks: TArray<TCheckInfo>;
+  lForeignKeys: TArray<TForeignKeyInfo>;
   lViewSource: string;
 begin
   lViewSource := FIntro.GetViewSource(ATable);
@@ -106,6 +115,16 @@ begin
       SB.AppendLine(S);
     end;
     SB.AppendLine;
+
+    lForeignKeys := FIntro.GetForeignKeys(ATable);
+    if Length(lForeignKeys) > 0 then
+    begin
+      SB.AppendLine('**Foreign keys:**');
+      for var F in lForeignKeys do
+        SB.AppendLine(Format('- `%s` (%s) references `%s`',
+          [F.ConstraintName, string.Join(', ', F.Columns), F.RefTable]));
+      SB.AppendLine;
+    end;
 
     lChecks := FIntro.GetChecks(ATable);
     if Length(lChecks) > 0 then

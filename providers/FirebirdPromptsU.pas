@@ -22,6 +22,18 @@ type
     [MCPPromptArg('user_name', 'The account you want it to use (default APP)', TMCPParamPresence.Optional)]
     function AppUserPlan(const Arguments: TJDOJsonObject): TMCPPromptResult;
 
+    [MCPPrompt('migration_planning', 'Plan a move to another Firebird version, or to another server: what the database contains that the move has to carry, what to verify before and after, in what order')]
+    [MCPPromptArg('target_version', 'The Firebird version you are moving to, e.g. 5.0', TMCPParamPresence.Optional)]
+    function MigrationPlanning(const Arguments: TJDOJsonObject): TMCPPromptResult;
+
+    [MCPPrompt('schema_design_review', 'Review the design of one table, or of the whole schema: keys, types, indexes, triggers and what the data really contains — with ready-to-run SQL for every finding and nothing applied')]
+    [MCPPromptArg('table_name', 'The table to review; leave empty for the whole schema', TMCPParamPresence.Optional)]
+    function SchemaDesignReview(const Arguments: TJDOJsonObject): TMCPPromptResult;
+
+    [MCPPrompt('security_audit', 'Audit who can reach what in this database, and who is reading it in clear text, ending with the statements that close each gap')]
+    [MCPPromptArg('user_name', 'One account to answer for (what it can reach, and how); leave empty to audit the whole database', TMCPParamPresence.Optional)]
+    function SecurityAudit(const Arguments: TJDOJsonObject): TMCPPromptResult;
+
     [MCPPrompt('classify_problem', 'Classify a performance symptom before investigating it: which kind of problem this is, which reasoning converges on it, and which of these tools can and cannot answer it')]
     [MCPPromptArg('symptom', 'What the users actually observe, in their words', TMCPParamPresence.Required)]
     function ClassifyProblem(const Arguments: TJDOJsonObject): TMCPPromptResult;
@@ -267,6 +279,110 @@ begin
         'Understood. I will classify along the six axes first, name the dominant class and my ' +
         'reasoning, and only then choose tools — reporting for each what it cannot rule out, and ' +
         'saying so if the class is beyond what an SQL connection can settle.')
+    ]);
+end;
+
+function TFirebirdPrompts.MigrationPlanning(const Arguments: TJDOJsonObject): TMCPPromptResult;
+var
+  lTarget: string;
+begin
+  lTarget := Arguments.S['target_version'];
+  Result := TMCPPromptResult.Create(
+    'Plan a Firebird migration',
+    [
+      PromptMessage('user',
+        'Plan a migration of this Firebird database to ' +
+        IfThen(lTarget = '', 'another version (ask which, and whether the server changes too)',
+          'Firebird ' + lTarget) + '.' + sLineBreak + sLineBreak +
+
+        'Work from what this database contains, not from a generic checklist.' + sLineBreak +
+        '1. fb_info: the engine version and capabilities the database runs on today. The distance ' +
+        'between that and the target is the size of the job.' + sLineBreak +
+        '2. fb_generate_documentation (no table_name): every table, view, procedure, function and ' +
+        'package. Note what is PSQL: that is the part most likely to behave differently.' + sLineBreak +
+        '3. fb_describe_object on the procedures and triggers that look complex or that touch ' +
+        'dates, strings, transactions or external code (a function declared from an external ' +
+        'module is a UDF, and a UDF is a file that has to exist on the new server).' + sLineBreak +
+        '4. fb_monitor_attachments: which applications and client libraries connect today. A ' +
+        'client that cannot talk to the target version is found here, not after the cut-over.' + sLineBreak +
+        '5. fb_audit_security: the grants that must arrive intact. Accounts live in the security ' +
+        'database, which this server cannot read: say that the user list has to be migrated ' +
+        'separately and ask how.' + sLineBreak +
+        '6. fb_backup_start then fb_backup_status: a backup proved by restoring it is the only ' +
+        'starting point worth migrating from.' + sLineBreak + sLineBreak +
+
+        'Then write the plan: what to verify BEFORE (list the above), the order of the steps, what ' +
+        'to measure AFTER on the new server (fb_analyze_query on the queries that matter, ' +
+        'fb_suggest_index_drops, fb_monitor_transactions) and how to go back if it fails.' + sLineBreak + sLineBreak +
+
+        'RULES. Behaviour that differs between versions comes from the Firebird release notes for ' +
+        'the target version, not from memory: name the release-notes section to read instead of ' +
+        'asserting a difference you have not seen. Nothing here applies a change; every statement ' +
+        'is for the user to run.')
+    ]);
+end;
+
+function TFirebirdPrompts.SchemaDesignReview(const Arguments: TJDOJsonObject): TMCPPromptResult;
+var
+  lTable: string;
+begin
+  lTable := Arguments.S['table_name'];
+  Result := TMCPPromptResult.Create(
+    'Review a schema design',
+    [
+      PromptMessage('user',
+        'Review the design of ' + IfThen(lTable = '', 'this schema', 'the table ' + lTable) +
+        ' for a team that has to live with it.' + sLineBreak + sLineBreak +
+
+        '1. fb_generate_documentation' + IfThen(lTable = '', ' (no table_name)', '(' + lTable + ')') +
+        ': keys, columns, domains, foreign keys, indexes, triggers.' + sLineBreak +
+        '2. fb_audit_table ' + IfThen(lTable = '', 'on every table that matters, starting with the ' +
+        'ones that have the most columns or indexes', 'on it') + ': missing keys, over-indexing, ' +
+        'stale statistics.' + sLineBreak +
+        '3. fb_suggest_index_drops on the same tables: duplicate, redundant, inactive and ' +
+        'low-selectivity indexes.' + sLineBreak +
+        '4. fb_column_stats on the tables you are going to criticise, before criticising them: a ' +
+        'column that is NULL in every row, a status column with two values, a "unique" code with ' +
+        'duplicates are all visible in the data and nowhere in the DDL.' + sLineBreak +
+        '5. fb_describe_object on triggers that change data: logic that lives in a trigger is ' +
+        'invisible to everyone who only reads the tables.' + sLineBreak + sLineBreak +
+
+        'Report findings in order of consequence, each with the evidence you measured, the SQL that ' +
+        'fixes it and how to verify it. Separate what is wrong from what is a matter of taste, ' +
+        'and say which is which. Do not recommend an index you have not seen a query for: an ' +
+        'index is paid for on every write, and fb_suggest_indexes needs the query. Nothing is ' +
+        'applied; every statement is for the user to run.')
+    ]);
+end;
+
+function TFirebirdPrompts.SecurityAudit(const Arguments: TJDOJsonObject): TMCPPromptResult;
+var
+  lUser: string;
+begin
+  lUser := Arguments.S['user_name'];
+  Result := TMCPPromptResult.Create(
+    'Audit database security',
+    [
+      PromptMessage('user',
+        'Audit the security of this Firebird database' +
+        IfThen(lUser = '', '.', ', with the account ' + lUser + ' as the question.') + sLineBreak + sLineBreak +
+
+        '1. fb_audit_security' + IfThen(lUser = '', '', ' (no user_name first, then with user_name=' + lUser + ')') +
+        ': every grant, then the three that are usually mistakes (PUBLIC, WITH GRANT OPTION, roles ' +
+        'nobody belongs to). If the report ends with a section on connections in clear text, that ' +
+        'is a finding of its own: say who is connected and from where.' + sLineBreak +
+        '2. fb_monitor_attachments: who is connected now. An application connecting as SYSDBA ' +
+        'is not subject to any grant, so every other finding is moot for it: say this first if ' +
+        'you see it.' + sLineBreak +
+        '3. For each gap, fb_suggest_grants to build the statements that close it: the ' +
+        'account, a role, the grants and the REVOKEs for what PUBLIC hands out.' + sLineBreak + sLineBreak +
+
+        'Order the findings by what an attacker or a mistake could actually reach, criticals ' +
+        'first. Then state what this audit cannot see: accounts, admin roles, the password ' +
+        'policy and who can reach the port live in the security database and the server ' +
+        'configuration, which an ordinary SQL connection does not attach to. A clean result is ' +
+        'a statement about grants, not about security. Nothing is applied; every statement is ' +
+        'for the user to run.')
     ]);
 end;
 

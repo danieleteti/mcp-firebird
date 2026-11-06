@@ -5,6 +5,11 @@ type
   [TestFixture]
   TIntrospectionTests = class
   public
+    [Test] procedure ObjectKinds_Finds_A_Procedure_By_Name;
+    [Test] procedure ObjectKinds_Finds_A_Trigger_By_Name;
+    [Test] procedure ObjectKinds_Of_An_Unknown_Name_Is_Empty;
+    [Test] procedure GetObjectSource_Of_A_Procedure_Returns_Its_Body_And_Signature;
+    [Test] procedure GetObjectSource_Of_A_Trigger_Returns_Its_Body_And_Event;
     [Test] procedure ListTables_IncludesSeedTables;
     [Test] procedure ListTables_ExcludesSystemTables;
     [Test] procedure GetColumns_Customers_HasCityColumn;
@@ -203,4 +208,62 @@ begin
     Conn.Free;
   end;
 end;
+procedure TIntrospectionTests.ObjectKinds_Finds_A_Procedure_By_Name;
+var Conn: TFirebirdConnection; I: TFirebirdIntrospection; K: TArray<string>;
+begin
+  Conn := NewTestConnection;
+  try I := TFirebirdIntrospection.Create(Conn);
+    try K := I.ObjectKinds('SP_CUSTOMER_TOTAL');
+      Assert.AreEqual(1, Integer(Length(K))); Assert.AreEqual('procedure', K[0]);
+    finally I.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TIntrospectionTests.ObjectKinds_Finds_A_Trigger_By_Name;
+var Conn: TFirebirdConnection; I: TFirebirdIntrospection; K: TArray<string>;
+begin
+  Conn := NewTestConnection;
+  try I := TFirebirdIntrospection.Create(Conn);
+    try K := I.ObjectKinds('TR_ORDERS_BI');
+      Assert.AreEqual(1, Integer(Length(K))); Assert.AreEqual('trigger', K[0]);
+    finally I.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TIntrospectionTests.ObjectKinds_Of_An_Unknown_Name_Is_Empty;
+var Conn: TFirebirdConnection; I: TFirebirdIntrospection;
+begin
+  Conn := NewTestConnection;
+  try I := TFirebirdIntrospection.Create(Conn);
+    try Assert.AreEqual(0, Integer(Length(I.ObjectKinds('NO_SUCH_THING'))));
+    finally I.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TIntrospectionTests.GetObjectSource_Of_A_Procedure_Returns_Its_Body_And_Signature;
+var Conn: TFirebirdConnection; I: TFirebirdIntrospection; S: TObjectSource;
+begin
+  Conn := NewTestConnection;
+  try I := TFirebirdIntrospection.Create(Conn);
+    try S := I.GetObjectSource('SP_CUSTOMER_TOTAL', 'procedure');
+      Assert.Contains(S.Source, 'SUM(TOTAL)');
+      Assert.Contains(S.Detail, 'in A_CUSTOMER_ID');
+      Assert.Contains(S.Detail, 'out TOTAL_SPENT');
+    finally I.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TIntrospectionTests.GetObjectSource_Of_A_Trigger_Returns_Its_Body_And_Event;
+var Conn: TFirebirdConnection; I: TFirebirdIntrospection; S: TObjectSource;
+begin
+  Conn := NewTestConnection;
+  try I := TFirebirdIntrospection.Create(Conn);
+    try S := I.GetObjectSource('TR_ORDERS_BI', 'trigger');
+      Assert.Contains(S.Source, 'NEW.TOTAL');
+      Assert.Contains(S.Detail, 'ORDERS');
+      Assert.Contains(S.Detail, 'BEFORE INSERT');
+    finally I.Free; end;
+  finally Conn.Free; end;
+end;
+
 end.

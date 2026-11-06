@@ -15,6 +15,9 @@ type
     [Test] procedure TableMarkdown_Does_Not_List_The_Check_Constraints_Triggers;
     [Test] procedure TableMarkdown_Of_A_View_Shows_Its_Source;
     [Test] procedure DatabaseMarkdown_Has_A_Views_Section;
+    [Test] procedure TableMarkdown_Lists_The_Foreign_Key_And_The_Table_It_Points_At;
+    [Test] procedure TableMarkdown_Shows_A_Column_Description_And_Escapes_Its_Pipe;
+    [Test] procedure TableMarkdown_Without_Descriptions_Has_No_Description_Column;
   end;
 implementation
 uses System.SysUtils, Firebird.Connection, Firebird.Introspection, Firebird.DocGen,
@@ -212,4 +215,46 @@ begin
     finally G.Free; end;
   finally Conn.Free; end;
 end;
+procedure TDocGenTests.TableMarkdown_Lists_The_Foreign_Key_And_The_Table_It_Points_At;
+var Conn: TFirebirdConnection; D: TFirebirdDocGen; MD: string;
+begin
+  Conn := NewTestConnection;
+  try
+    D := TFirebirdDocGen.Create(TFirebirdIntrospection.Create(Conn));
+    try
+      MD := D.TableMarkdown('ORDERS');
+      Assert.Contains(MD, 'FK_ORDERS_CUSTOMER');
+      Assert.Contains(MD, 'references `CUSTOMERS`');
+    finally D.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TDocGenTests.TableMarkdown_Shows_A_Column_Description_And_Escapes_Its_Pipe;
+var Conn: TFirebirdConnection; D: TFirebirdDocGen; MD: string;
+begin
+  Conn := NewTestConnection;
+  try
+    D := TFirebirdDocGen.Create(TFirebirdIntrospection.Create(Conn));
+    try
+      MD := D.TableMarkdown('CUSTOMERS');
+      Assert.Contains(MD, '| Description |');
+      { An unescaped pipe would split the cell and shift every column after it. }
+      Assert.Contains(MD, 'City of residence \| as typed at sign-up');
+    finally D.Free; end;
+  finally Conn.Free; end;
+end;
+
+procedure TDocGenTests.TableMarkdown_Without_Descriptions_Has_No_Description_Column;
+var Conn: TFirebirdConnection; D: TFirebirdDocGen; MD: string;
+begin
+  Conn := NewTestConnection;
+  try
+    D := TFirebirdDocGen.Create(TFirebirdIntrospection.Create(Conn));
+    try
+      MD := D.TableMarkdown('ORDERS');
+      Assert.IsFalse(MD.Contains('Description'), 'nobody commented ORDERS; no empty column');
+    finally D.Free; end;
+  finally Conn.Free; end;
+end;
+
 end.

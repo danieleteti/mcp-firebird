@@ -13,8 +13,14 @@
 
 # MCP Firebird
 
+**Der Firebird-MCP-Server für DBAs: Query-Tuning, Index-Beratung und Gesundheit der Datenbank.**
 **Frag deinen KI-Assistenten, warum eine Query langsam ist — und bekomm eine Antwort, mit der du
 etwas anfangen kannst.**
+
+Die meisten MCP-Server für Datenbanken sind ein Rohr: Der Assistent schickt SQL, Zeilen kommen zurück, und damit
+ist die Arbeit getan. MCP Firebird ist für **Optimierung und DBA-Arbeit** gebaut. Zeilen lesen ist eine
+Nebenfunktion (`fb_query`); es geht um das, was ein DBA tut: Zugriffspläne lesen, entscheiden, welchen Index man
+anlegt und welchen man löscht, ein Schema prüfen und finden, was die Datenbank bremst.
 
 Ein [Model-Context-Protocol](https://modelcontextprotocol.io)-Server für **Firebird 2.5 bis 5.0**.
 Richte ihn auf eine Datenbank, und dein Assistent liest die echten Zugriffspläne, sagt dir, welcher
@@ -28,11 +34,30 @@ als **Finding** (was nicht stimmt), **SQL** (das Statement, das es behebt) und *
 prüfst, dass es gewirkt hat). In deine Datenbank wird nichts geschrieben: der Server verbindet sich
 nur lesend, und das SQL, das er dir gibt, führst du selbst aus — wenn du willst.
 
-- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server-Identität:** `mcp-firebird` v`0.6.2`
+- **Transport:** stdio (JSON-RPC 2.0, MCP `2025-03-26`) · **Server-Identität:** `mcp-firebird` v`0.7.0`
 - **Engines:** Firebird 2.5, 3.0, 4.0, 5.0 — zur Laufzeit erkannt
 - **Kostenlos** auf deinen eigenen Datenbanken, in jeder Größe, ohne Schlüssel und ohne Ablauf. Eine
   Lizenz brauchst du erst, wenn die Software deine Hände verlässt
   ([Details](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/editions.md))
+
+---
+
+## Für den DBA gebaut, nicht für den Datenzugriff
+
+Ein SQL-Prompt gibt einem Assistenten Zeilen hinein und Zeilen heraus. MCP Firebird ist stattdessen um die Fragen
+des DBA herum aufgebaut und prüft jede Antwort an deiner Datenbank, bevor es sie gibt:
+
+- **Warum ist das langsam?** Der echte Plan, die NATURAL-Scans und externen Sorts darin, und was die Query gekostet
+  hat, als sie einmal lief: gelesene Records gegen gelieferte Zeilen.
+- **Welcher Index?** Das billigste Mittel, das den Plan erklärt: Statistiken auffrischen, einen Index reaktivieren
+  oder einen anlegen. Ist der Scan der richtige Plan, lautet die Antwort „kein Index“, mit den Zahlen.
+- **Was ist Ballast?** Doppelte, redundante, inaktive und wenig selektive Indizes, mit dem `DROP INDEX` und der
+  Prüfung dazu.
+- **Ist die Datenbank gesund?** Veraltete Statistiken, fehlende Schlüssel, die Transaktion, die die Garbage
+  Collection aufhält, wer verbunden ist und was läuft, wer was lesen darf, ein Backup, das durch Zurückspielen
+  bewiesen ist.
+- **Hat die Korrektur gewirkt?** Jede Antwort ist ein **Finding**, das **SQL** und ein **Verify**-Schritt, und die
+  `optimization_goal`-Schleife hört auf, wenn die Messung sagt, dass das Ziel erreicht ist.
 
 ---
 
@@ -96,9 +121,11 @@ Mehr ist die Installation nicht. Zeigt der Client den Server, aber keine Tools, 
 | *„Schlag einen Index vor“* | Das billigste Mittel, das den Plan erklärt — alte Statistiken auffrischen, einen inaktiven Index wecken oder einen anlegen — und **„kein Index, hier ist der Scan richtig“** samt Zahlen, wenn das die Antwort ist |
 | *„Welche Indizes kann ich löschen?“* | Duplikate, redundante Präfixe, inaktive und wenig selektive Indizes, mit `DROP INDEX` und Prüfschritt |
 | *„Prüf diese Tabelle“* | Fehlender Primärschlüssel, zu viele Indizes, veraltete Statistiken |
+| *„Was steht wirklich in diesen Spalten?“* | `fb_column_stats`: Zeilen, NULLs, verschiedene Werte und Selektivität aus einem einzigen Scan, neben dem, was der Index glaubt. Veraltete Werte sind markiert |
+| *„Zeig mir den Quelltext dieser Prozedur / dieses Triggers“* | `fb_describe_object`: das PSQL, wie die Engine es gespeichert hat, mit Signatur oder dem Ereignis, bei dem es feuert |
 | *„Optimiere weiter, bis diese Query keinen NATURAL-Scan mehr macht“* | Die Ziel-Schleife: ändern, auf der Datenbank neu messen, und aufhören, wenn die Messung es sagt — nicht wenn der Assistent es meint |
 | *„Jeden Nachmittag kriecht es, und niemand hat etwas geändert“* | Ordnet das Symptom ein, bevor ein Tool angefasst wird, und misst dann `MON$` über ein Fenster, um zu zeigen, was sich anhäuft |
-| *„Wer ist verbunden, und was läuft dort?“* | Jede Verbindung mit Benutzer, Adresse und Prozess, dem Statement, das gerade läuft, und seit wann |
+| *„Wer ist verbunden, und was läuft dort?“* | Jede Verbindung mit Benutzer, Adresse und Prozess, dem Statement, das gerade läuft, seit wann, und (ab 4.0) ob die Verbindung verschlüsselt ist |
 | *„Zeig mir die Zeilen, die wirklich drinstehen“* | `fb_query` führt das SELECT aus und gibt die Zeilen zurück, gedeckelt, damit eine Antwort eine Antwort bleibt. Sonst kommt nichts durch: kein UPDATE, kein DELETE, kein DDL |
 | *„Unsere Anwendung verbindet sich als SYSDBA. Was soll sie stattdessen nehmen?“* | `app_user_plan` fragt, was die Anwendung wirklich tut — wenige Fragen, von denen jede die Statements ändert — und `fb_suggest_grants` schreibt sie aus dem Katalog: das Konto, eine Rolle, die Rechte, und die Rolle so aktiviert, wie es diese Engine-Version verlangt |
 | *„Wer darf diese Tabelle lesen?“* | Jede in der Datenbank verzeichnete Berechtigung, und die drei, die meist ein Fehler sind: PUBLIC, `WITH GRANT OPTION` und Rollen ohne Mitglieder |
@@ -113,20 +140,24 @@ und eine Momentaufnahme sieht keine Anhäufung.
 
 ## Die Tools
 
-Sechzehn Tools, vier Prompts, eine Ressource. Vollständige Referenz — Argumente, was jedes
+Achtzehn Tools, sieben Prompts, eine Ressource. Vollständige Referenz — Argumente, was jedes
 entscheidet, die rohen `tools/call`-Aufrufe — in
 **[docs/de/tools.md](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/tools.md)**.
 
-`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_query` · `fb_analyze_query` ·
-`fb_suggest_indexes` · `fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` ·
-`fb_suggest_grants` · `fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
+`fb_info` · `fb_list_tables` · `fb_generate_documentation` · `fb_describe_object` ·
+`fb_column_stats` · `fb_query` · `fb_analyze_query` · `fb_suggest_indexes` ·
+`fb_suggest_index_drops` · `fb_audit_table` · `fb_audit_security` · `fb_suggest_grants` ·
+`fb_evaluate_goal` · `fb_monitor_transactions` · `fb_sample_activity` ·
 `fb_monitor_attachments` · `fb_backup_start` · `fb_backup_status`
 
 `fb_backup_start` kehrt zurück, bevor das Backup fertig ist — danach `fb_backup_status` pollen. Es
 braucht `firebird.backup_dir` in der `.env`, `gbak.exe` neben deiner `fbclient.dll` und Platz auf
 dieser Platte für eine zweite Kopie der Datenbank, solange die Prüf-Rücksicherung läuft.
 
-Prompts: `optimization_goal` (iteriert bis erreicht) · `health_check` · `classify_problem`.
+Prompts: `optimization_goal` (iteriert bis erreicht) · `health_check` · `classify_problem` ·
+`app_user_plan` (klären, was ein Anwendungskonto dürfen soll, und das SQL dazu erzeugen) ·
+`migration_planning` (auf eine andere Firebird-Version wechseln, ausgehend von dem, was die Datenbank enthält) ·
+`schema_design_review` · `security_audit`.
 Ressource: `firebird://schema`.
 
 Neun weitere Tools erscheinen in `tools/list` und gehören zur
@@ -157,7 +188,7 @@ Speicherbericht. Du willst sie, wenn das Schema in Ordnung ist und die Datenbank
 |---|---|
 | [Installation](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/setup.md) | Voraussetzungen, `.env`-Referenz, `--env <dir>`, mehrere Datenbanken aus einer Installation, Snippets je Client, manueller Test |
 | [Beispiele](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/usage.md) | Die Gespräche, wörtliche Tool-Ausgaben, eine komplette Optimierungsrunde |
-| [Tool-Referenz](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/tools.md) | Alle fünfzehn Tools, wie der Index-Berater entscheidet, Prompts, Ressourcen, Enterprise |
+| [Tool-Referenz](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/tools.md) | Alle Tools, wie der Index-Berater entscheidet, Prompts, Ressourcen, Enterprise |
 | [Editionen & Lizenzierung](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/editions.md) | Was kostenlos ist, was eine Lizenz braucht, was Enterprise dazugibt |
 | [Bauen und testen](https://github.com/danieleteti/mcp-firebird/blob/master/docs/de/development.md) | Delphi-Build, die Testmatrix 2.5→5.0, wie es mcp-server-delphi nutzt |  <!-- release:drop -->
 | [Problemkatalog](https://github.com/danieleteti/mcp-firebird/blob/master/docs/firebird-problem-catalog.md) | Jedes erkannte Problem, die Fixture, die es auslöst, der Meilenstein (auf Englisch) |
